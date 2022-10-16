@@ -1,4 +1,7 @@
+using System.Runtime.CompilerServices;
 using System.Text;
+using System;
+using System.Net.Mime;
 
 namespace Server;
 
@@ -79,12 +82,16 @@ public class WebServer
     private readonly WebApplicationBuilder builder;
     private readonly ProgramConfig programConfig;
     private readonly WebServerConfig serverConfig;
+
+    private byte[]? board;
+    private int lastBackup;
     
     public WebServer(ProgramConfig programConfig, WebServerConfig serverConfig)
     {
         this.programConfig = programConfig;
         this.serverConfig = serverConfig;
-        
+        lastBackup = new DateTimeOffset().Millisecond;
+
         builder = WebApplication.CreateBuilder();
         builder.Configuration["Kestrel:Certificates:Default:Path"] = programConfig.CertPath;
         builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = programConfig.KeyPath;
@@ -104,11 +111,8 @@ public class WebServer
 
         app.MapGet("/", () => Results.Content(indexTemplate, "text/html", Encoding.Unicode));
 
-        app.MapGet("/place", () =>
-        {
-            var stream = new FileStream(Path.Join(programConfig.CanvasFolder, "place"), FileMode.Open);
-            return Results.File(stream);
-        });
+        //Serve absolute latest board from memory.
+        app.MapGet("/place", () => board);
 
         // Lists all available backups. 
         app.MapGet("/backups", () =>
@@ -139,7 +143,18 @@ public class WebServer
 
     public async void IncomingBoard(byte[] canvas)
     {
-        await using var file = new StreamWriter(Path.Join(programConfig.CanvasFolder, "backuplist.txt"), append: true);
-        await file.WriteLineAsync();
+        //If it has been more than backup time, create a new backup
+        if (new DateTimeOffset().Millisecond - lastBackup > serverConfig.BackupFrequency)
+        {
+            var backupName = "place." + DateTime.Now.ToString("dd.MM.yyyy.HH:mm:ss");
+            await using var file = new StreamWriter(Path.Join(programConfig.CanvasFolder, "backuplist.txt"), append: true);
+            await file.WriteLineAsync(backupName);
+
+            await using var backupStream = File.Open(backupName, FileMode.OpenOrCreate);
+            backupStream.Seek(0, SeekOrigin.End);
+            await backupStream.WriteAsync(board);
+        }
+        
+        board = canvas;
     }
 }

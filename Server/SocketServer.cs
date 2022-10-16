@@ -27,7 +27,7 @@ public partial class SocketServer
         try
         {
             var boardFile = File.ReadAllBytes(Path.Join(programConfig.CanvasFolder, "place"));
-            if (boardFile.Length == 0) throw new Exception("Could not find place file! Creating new.");
+            if (boardFile.Length == 0) throw new Exception("Could not find canvas save file! Creating new.");
             board = boardFile;
         }
         catch (Exception exception)
@@ -49,6 +49,12 @@ public partial class SocketServer
             
             File.WriteAllBytes(Path.Join(programConfig.CanvasFolder, "place"), board);
         }
+        
+        //Make a canvas save file just before the program exits.
+        AppDomain.CurrentDomain.ProcessExit += (object sender, EventArgs e) =>
+        {
+            File.WriteAllBytes(Path.Join(programConfig.CanvasFolder, "place"), board);
+        };
     }
 
     public Task Start()
