@@ -4,3 +4,4 @@ Server/bin/*
 Server/server_config.json
 Server/canvas_server_config.json
 Server/game_server_config.json
+Server/Backups/place
