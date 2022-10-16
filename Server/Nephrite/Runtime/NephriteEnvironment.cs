@@ -9,8 +9,8 @@ namespace Nephrite.Runtime;
 internal class NephriteEnvironment
 {
     private readonly NephriteEnvironment? enclosing;
-    private readonly Dictionary<string, object?> values;
-    private readonly BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+    private readonly Dictionary<string, object> values;
+    private const BindingFlags BindingFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
 
     public NephriteEnvironment(NephriteEnvironment? enclosing = null)
     {
@@ -21,6 +21,9 @@ internal class NephriteEnvironment
     // Variables can not have empty names.
     public void Define(Token token, object? value)
         => values.Add(token.Value!.ToString()!, value);
+
+    public void Delete(Token token)
+        => values.Remove(token.Value?.ToString()!);
 
     public object? Get(Token name)
     {
@@ -36,7 +39,7 @@ internal class NephriteEnvironment
                 if (enclosing != null)
                     return enclosing.Get(name);
 
-                foreach (var fieldInfos in Assembly.GetExecutingAssembly().GetTypes().Select(type => type.GetFields(bindingFlags)))
+                foreach (var fieldInfos in Assembly.GetExecutingAssembly().GetTypes().Select(type => type.GetFields(BindingFlags)))
                 {
                     foreach (var field in fieldInfos)
                     {
@@ -72,7 +75,7 @@ internal class NephriteEnvironment
                     return;
                 }
                 
-                foreach (var fieldInfos in Assembly.GetExecutingAssembly().GetTypes().Select(type => type.GetFields(bindingFlags)))
+                foreach (var fieldInfos in Assembly.GetExecutingAssembly().GetTypes().Select(type => type.GetFields(BindingFlags)))
                 {
                     foreach (var field in fieldInfos)
                     {
@@ -85,7 +88,7 @@ internal class NephriteEnvironment
                         }
                         catch (Exception e)
                         {
-                            throw new RuntimeErrorException($"Cast error, could not modify type of reflected variable '{name}'.\n{e}'");
+                            throw new RuntimeErrorException($"Cast error, could could not cast value to type of '{name}'.\n{e}'");
                         }
                     }
                 }

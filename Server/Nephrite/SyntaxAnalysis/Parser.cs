@@ -55,22 +55,29 @@ namespace Nephrite.SyntaxAnalysis
         {
             if (Match(TokenType.Write))
                 return WriteStatement();
-            else if (Match(TokenType.WriteLine))
+            
+            if (Match(TokenType.WriteLine))
                 return WriteLineStatement();
-            else if (Match(TokenType.Exit))
+
+            if (Match(TokenType.Free))
+                return FreeStatement();
+
+            if (Match(TokenType.ObjectDump))
+                return ObjectDumpStatement();
+            
+            if (Match(TokenType.Exit))
                 return ExitStatement();
 
-            else if (Match(TokenType.If))
+            if (Match(TokenType.If))
                 return IfStatement();
 
-            else if (Match(TokenType.LeftBrace))
+            if (Match(TokenType.LeftBrace))
                 return new Block(BlockStatement());
 
-            else if (Match(TokenType.While))
+            if (Match(TokenType.While))
                 return WhileStatement();
-
-            else
-                return ExpressionStatement();
+            
+            return ExpressionStatement();
         }
 
         private Statement WriteStatement()
@@ -92,6 +99,20 @@ namespace Nephrite.SyntaxAnalysis
             var value = Expression();
             Consume(TokenType.Semicolon, "Expected ';' after exit code");
             return new Exit(value);
+        }
+
+        private Statement FreeStatement()
+        {
+            var name = Consume(TokenType.Identifier, "Expected variable name");
+            Consume(TokenType.Semicolon, "Expected ';' after variable name.");
+            return new Free(name);
+        }
+
+        private Statement ObjectDumpStatement()
+        {
+            var value = Expression();
+            Consume(TokenType.Semicolon, "Expected ';' after exit code");
+            return new ObjectDump(value);
         }
 
         private Statement IfStatement()

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Text;
 using Nephrite.Exceptions;
 using Nephrite.Lexer;
 using Nephrite.SyntaxAnalysis;
@@ -189,14 +190,18 @@ namespace Nephrite.Runtime
         {
             var value = Evaluate(write.Expression);
 
-            if (value is null)
-                Console.Write("null");
-
-            else if (value is double)
-                Console.Write(value.ToString());
-
-            else
-                Console.Write(value);
+            switch (value)
+            {
+                case null:
+                    Console.Write("null");
+                    break;
+                case double:
+                    Console.Write(value.ToString());
+                    break;
+                default:
+                    Console.Write(value);
+                    break;
+            }
 
             return write;
         }
@@ -205,14 +210,18 @@ namespace Nephrite.Runtime
         {
             var value = Evaluate(writeLine.Expression);
 
-            if (value is null)
-                Console.WriteLine("null");
-
-            else if (value is double)
-                Console.WriteLine(value.ToString());
-
-            else
-                Console.WriteLine(value);
+            switch (value)
+            {
+                case null:
+                    Console.WriteLine("null");
+                    break;
+                case double:
+                    Console.WriteLine(value.ToString());
+                    break;
+                default:
+                    Console.WriteLine(value);
+                    break;
+            }
 
             return writeLine;
         }
@@ -221,12 +230,17 @@ namespace Nephrite.Runtime
         {
            var value = Evaluate(exit.Expression);
 
-            if (value is null)
-                Environment.Exit(0);
-            else if (value is double || value is bool)
-                Environment.Exit(Convert.ToInt32(value));
-            else
-                throw new RuntimeErrorException("Statement 'exit' requires 'int' exit code.");
+            switch (value)
+            {
+                case null:
+                    Environment.Exit(0);
+                    break;
+                case double or bool:
+                    Environment.Exit(Convert.ToInt32(value));
+                    break;
+                default:
+                    throw new RuntimeErrorException("Statement 'exit' requires 'int' exit code.");
+            }
             
             return exit;
         }
@@ -255,6 +269,21 @@ namespace Nephrite.Runtime
             return @while;
         }
 
+        public object VisitFreeStatement(Free free)
+        {
+            environment.Delete(free.Name);
+            return free;
+        }
+
+        public object VisitObjectDumpStatement(ObjectDump objectDump)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine(objectDump.Expression.ToString());
+
+            Console.WriteLine(sb);
+            return objectDump;
+        }
+
         private void ExecuteBlock(List<Statement> statements, NephriteEnvironment environment)
         {
             var previous = this.environment;
@@ -262,7 +291,7 @@ namespace Nephrite.Runtime
             {
                 this.environment = environment;
 
-                foreach (Statement statement in statements)
+                foreach (var statement in statements)
                     Execute(statement);
             }
             finally
@@ -274,7 +303,7 @@ namespace Nephrite.Runtime
         private void Execute(Statement statement)
             => statement.Accept(this);
 
-        private bool IsTruthy(object? value)
+        private static bool IsTruthy(object? value)
         {
             if (value == null)
                 return false;
@@ -282,7 +311,7 @@ namespace Nephrite.Runtime
             return value is not bool b || b;
         }
 
-        private bool IsEqual(object? left, object? right)
+        private static bool IsEqual(object? left, object? right)
         {
             return left switch
             {
@@ -294,9 +323,10 @@ namespace Nephrite.Runtime
 
         private void CheckNumberOperands(Token @operator, params object[] operands)
         {
-            foreach (var item in operands)
-                if (item is not double)
-                    throw new RuntimeErrorException($"Operands must be a number ({@operator.Type})");
+            if (operands.Any(item => item is not double))
+            {
+                throw new RuntimeErrorException($"Operands must be a number ({@operator.Type})");
+            }
         }
     }
 }

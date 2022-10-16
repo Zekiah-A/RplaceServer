@@ -24,7 +24,9 @@ namespace Nephrite.Lexer
                 { "true", TokenType.True },
                 { "var", TokenType.Var },
                 { "while", TokenType.While },
-                { "exit", TokenType.Exit }
+                { "exit", TokenType.Exit },
+                { "free", TokenType.Free },
+                { "objectDump", TokenType.ObjectDump }
             };
 
         public static readonly IReadOnlyDictionary<char, TokenType> SingleCharacters =

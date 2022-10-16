@@ -95,7 +95,8 @@ public static class Program
             if (key.Key == ConsoleKey.Backspace)
             {
                 Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-                input.Remove(input.Length - 1);
+                if (input?.Length < 1) continue;
+                input = input[..^1];
                 Console.Write("\b \b");
                 continue;
             }
@@ -107,7 +108,7 @@ public static class Program
                 continue;
             }
             
-            input += key.KeyChar;
+            input += key.KeyChar.ToString();
             if (key.Key != ConsoleKey.Enter) continue;
             
             Console.WriteLine();

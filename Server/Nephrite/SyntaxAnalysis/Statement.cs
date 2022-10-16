@@ -19,12 +19,14 @@ namespace Nephrite.SyntaxAnalysis
         T VisitWriteStatement(Write write);
 
         T VisitWriteLineStatement(WriteLine writeLine);
-
+        
         T VisitExitStatement(Exit exit);
 
         T VisitVarStatement(Var var);
 
         T VisitWhileStatement(While @while);
+        T VisitFreeStatement(Free free);
+        T VisitObjectDumpStatement(ObjectDump objectDump);
     }
 
     internal record Block(List<Statement> Statements) : Statement
@@ -74,5 +76,17 @@ namespace Nephrite.SyntaxAnalysis
     {
         public override T Accept<T>(IStatementVisitor<T> visitor)
             => visitor.VisitWhileStatement(this);
+    }
+    
+    internal record Free(Token Name) : Statement
+    {
+        public override T Accept<T>(IStatementVisitor<T> visitor)
+            => visitor.VisitFreeStatement(this);
+    }
+    
+    internal record ObjectDump(Expression Expression) : Statement
+    {
+        public override T Accept<T>(IStatementVisitor<T> visitor)
+            => visitor.VisitObjectDumpStatement(this);
     }
 }
