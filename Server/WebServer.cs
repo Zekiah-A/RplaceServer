@@ -110,7 +110,7 @@ public class WebServer
         app.MapGet("/", () => Results.Content(indexTemplate, "text/html", Encoding.Unicode));
 
         //Serve absolute latest board from memory.
-        app.MapGet("/place", () => board);
+        app.MapGet("/place", () => Results.Bytes(board ?? Array.Empty<byte>()));
 
         // Lists all available backups. 
         app.MapGet("/backups", () =>

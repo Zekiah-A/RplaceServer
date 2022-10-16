@@ -63,15 +63,12 @@ public static class Program
             Environment.Exit(0);
         }
 
-        var programConfig = JsonSerializer.Deserialize<ProgramConfig>(File.ReadAllText(ProgramConfigPath)) ??
-                            throw new NullReferenceException();
-        var socketConfig = JsonSerializer.Deserialize<SocketServerConfig>(File.ReadAllText(SocketConfigPath)) ??
-                           throw new NullReferenceException();
-        var webConfig = JsonSerializer.Deserialize<WebServerConfig>(File.ReadAllText(WebConfigPath)) ??
-                        throw new NullReferenceException();
+        var programConfig = JsonSerializer.Deserialize<ProgramConfig>(await File.ReadAllTextAsync(ProgramConfigPath)) ?? throw new NullReferenceException();
+        var socketConfig = JsonSerializer.Deserialize<SocketServerConfig>(await File.ReadAllTextAsync(SocketConfigPath)) ?? throw new NullReferenceException();
+        var webConfig = JsonSerializer.Deserialize<WebServerConfig>(await File.ReadAllTextAsync(WebConfigPath)) ?? throw new NullReferenceException();
         
-        socketServer = new SocketServer(programConfig, socketConfig);
         webServer = new WebServer(programConfig, webConfig);
+        socketServer = new SocketServer(programConfig, socketConfig);
 
         await socketServer.Start();
         await webServer.Start();
@@ -92,22 +89,22 @@ public static class Program
         {
             var key = Console.ReadKey();
             
-            if (key.Key == ConsoleKey.Backspace)
+            switch (key.Key)
             {
-                Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-                if (input?.Length < 1) continue;
-                input = input[..^1];
-                Console.Write("\b \b");
-                continue;
+                case ConsoleKey.Backspace:
+                {
+                    Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+                    if (input?.Length < 1) continue;
+                    input = input?[..^1];
+                    Console.Write("\b \b");
+                    continue;
+                }
+                case ConsoleKey.UpArrow:
+                    input = replPrevious.ElementAtOrDefault(^replPreviousIndex);
+                    replPreviousIndex++;
+                    continue;
             }
 
-            if (key.Key == ConsoleKey.UpArrow)
-            {
-                input = replPrevious.ElementAtOrDefault(^replPreviousIndex);
-                replPreviousIndex++;
-                continue;
-            }
-            
             input += key.KeyChar.ToString();
             if (key.Key != ConsoleKey.Enter) continue;
             
@@ -133,6 +130,7 @@ public static class Program
         return targets;
     }
 
+    //Note: Socketserver spawning before webserver may result in null.
     public static void SendBoardToWebServer(byte[] canvas)
     {
         webServer?.IncomingBoard(canvas);
