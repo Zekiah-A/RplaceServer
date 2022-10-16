@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 using System.Text.Json;
 using Nephrite;
 
@@ -53,7 +52,7 @@ public static class Program
                     _ => throw new ArgumentOutOfRangeException()
                 };
 
-                File.WriteAllText(missingPath, JsonSerializer.Serialize(config, JsonOptions));
+                await File.WriteAllTextAsync(missingPath, JsonSerializer.Serialize(config, JsonOptions));
             }
             Console.ResetColor();
 
@@ -72,10 +71,10 @@ public static class Program
 
         await socketServer.Start();
         await webServer.Start();
-        StartNephriteRepl();
+        await StartNephriteRepl();
     }
     
-    private static async void StartNephriteRepl()
+    private static async Task StartNephriteRepl()
     {
         var runner = new NephriteRunner();
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -92,13 +91,11 @@ public static class Program
             switch (key.Key)
             {
                 case ConsoleKey.Backspace:
-                {
                     Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
                     if (input?.Length < 1) continue;
                     input = input?[..^1];
                     Console.Write("\b \b");
                     continue;
-                }
                 case ConsoleKey.UpArrow:
                     input = replPrevious.ElementAtOrDefault(^replPreviousIndex);
                     replPreviousIndex++;
@@ -131,7 +128,7 @@ public static class Program
     }
 
     //Note: Socketserver spawning before webserver may result in null.
-    public static void SendBoardToWebServer(byte[] canvas)
+    public static void SendBoardToWebServer(ref byte[] canvas)
     {
         webServer?.IncomingBoard(canvas);
     }

@@ -138,7 +138,7 @@ public class WebServer
         await app.RunAsync();
     }
 
-    public async void IncomingBoard(byte[] canvas)
+    public async Task IncomingBoard(byte[] canvas)
     {
         //If it has been more than backup time, create a new backup
         if (new DateTimeOffset().Millisecond - lastBackup > serverConfig.BackupFrequency)

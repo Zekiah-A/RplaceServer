@@ -56,7 +56,7 @@ public partial class SocketServer
             File.WriteAllBytes(Path.Join(programConfig.CanvasFolder, "place"), board);
         };
         
-        Program.SendBoardToWebServer(board);
+        Program.SendBoardToWebServer(ref board);
     }
 
     public async Task Start()
@@ -142,7 +142,7 @@ public partial class SocketServer
             clients[args.IpPort].Cooldown = new DateTimeOffset().Millisecond + serverConfig.Cooldown - 500;
             
             //Board instantly to http server, new clients always with the latest (no changes).
-            Program.SendBoardToWebServer(board);
+            Program.SendBoardToWebServer(ref board);
         };
 
         app.ClientDisconnected += (sender, args) =>
