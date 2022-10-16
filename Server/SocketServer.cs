@@ -55,9 +55,11 @@ public partial class SocketServer
         {
             File.WriteAllBytes(Path.Join(programConfig.CanvasFolder, "place"), board);
         };
+        
+        Program.SendBoardToWebServer(board);
     }
 
-    public Task Start()
+    public async Task Start()
     {
         app.ClientConnected += (sender, args) =>
         {
@@ -148,8 +150,7 @@ public partial class SocketServer
             players--;
         };
 
-        app.StartAsync();
-        return Task.CompletedTask;
+        await app.StartAsync();
     }
 
     [RegexGenerator("/\\W+/g")]

@@ -105,10 +105,8 @@ public class WebServer
         app.UseCors(policy => policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials());
     }
 
-    public Task Start()
+    public async Task Start()
     {
-        app.Run();
-
         app.MapGet("/", () => Results.Content(indexTemplate, "text/html", Encoding.Unicode));
 
         //Serve absolute latest board from memory.
@@ -137,8 +135,7 @@ public class WebServer
             return Results.File(stream);
         });*/
 
-        app.RunAsync();
-        return Task.CompletedTask;
+        await app.RunAsync();
     }
 
     public async void IncomingBoard(byte[] canvas)

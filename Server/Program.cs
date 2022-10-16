@@ -33,7 +33,7 @@ public static class Program
     private static List<string> replPrevious = new();
     private static int replPreviousIndex;
 
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         var missing = CheckFilesMissing(new[] {ProgramConfigPath, SocketConfigPath, WebConfigPath});
         if (missing.Count != 0)
@@ -73,11 +73,11 @@ public static class Program
         socketServer = new SocketServer(programConfig, socketConfig);
         webServer = new WebServer(programConfig, webConfig);
 
-        //socketServer.Start();
-        //webServer.Start();
+        await socketServer.Start();
+        await webServer.Start();
         StartNephriteRepl();
     }
-
+    
     private static async void StartNephriteRepl()
     {
         var runner = new NephriteRunner();
