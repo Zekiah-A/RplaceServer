@@ -1,0 +1,10 @@
+{
+  "Width": 1000,
+  "Height": 1000,
+  "PaletteSize": 31,
+  "Cooldown": 10,
+  "CaptchaEnabled": true,
+  "Vips": [],
+  "Bans": [],
+  "WebhookUrl": ""
+}

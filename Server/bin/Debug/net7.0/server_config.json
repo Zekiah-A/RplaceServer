@@ -1,0 +1,9 @@
+{
+  "Ssl": true,
+  "SocketPort": 443,
+  "HttpPort": 8080,
+  "CertPath": "",
+  "KeyPath": "",
+  "Origin": "https://rplace.tk",
+  "UseCloudflare": false
+}

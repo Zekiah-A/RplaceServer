@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>preview</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="WatsonWebsocket" Version="3.0.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="Nephrite\bin\Debug\net5.0\Nephrite.deps.json" />
+      <_ContentIncludedByDefault Remove="Nephrite\bin\Debug\net5.0\Nephrite.runtimeconfig.dev.json" />
+      <_ContentIncludedByDefault Remove="Nephrite\bin\Debug\net5.0\Nephrite.runtimeconfig.json" />
+      <_ContentIncludedByDefault Remove="Nephrite\bin\Debug\net6.0\Nephrite.deps.json" />
+      <_ContentIncludedByDefault Remove="Nephrite\bin\Debug\net6.0\Nephrite.runtimeconfig.json" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,118 @@
+{
+  "version": 3,
+  "targets": {
+    "net7.0": {
+      "WatsonWebsocket/3.0.1": {
+        "type": "package",
+        "compile": {
+          "lib/net6.0/WatsonWebsocket.dll": {}
+        },
+        "runtime": {
+          "lib/net6.0/WatsonWebsocket.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "WatsonWebsocket/3.0.1": {
+      "sha512": "f5awyDWsRv+PwwLufwmQJ9+VGAR8Qv3F5ohbSd/emgmiV3f0+mJs0UTxxjhB1rire3h0y/jMFChhRd0eAoobfQ==",
+      "type": "package",
+      "path": "watsonwebsocket/3.0.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE.md",
+        "lib/net461/WatsonWebsocket.dll",
+        "lib/net5.0/WatsonWebsocket.dll",
+        "lib/net5.0/WatsonWebsocket.xml",
+        "lib/net6.0/WatsonWebsocket.dll",
+        "lib/net6.0/WatsonWebsocket.xml",
+        "lib/netcoreapp3.1/WatsonWebsocket.dll",
+        "lib/netcoreapp3.1/WatsonWebsocket.xml",
+        "lib/netstandard2.1/WatsonWebsocket.dll",
+        "lib/netstandard2.1/WatsonWebsocket.xml",
+        "watson.png",
+        "watsonwebsocket.3.0.1.nupkg.sha512",
+        "watsonwebsocket.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net7.0": [
+      "WatsonWebsocket >= 3.0.1"
+    ]
+  },
+  "packageFolders": {
+    "/home/zekiah/.nuget/packages/": {},
+    "/home/zekiah/.local/share/godot/mono/GodotNuGetFallbackFolder": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/zekiah/Documents/Server/Server/Server.csproj",
+      "projectName": "Server",
+      "projectPath": "/home/zekiah/Documents/Server/Server/Server.csproj",
+      "packagesPath": "/home/zekiah/.nuget/packages/",
+      "outputPath": "/home/zekiah/Documents/Server/Server/obj/",
+      "projectStyle": "PackageReference",
+      "fallbackFolders": [
+        "/home/zekiah/.local/share/godot/mono/GodotNuGetFallbackFolder"
+      ],
+      "configFilePaths": [
+        "/home/zekiah/.nuget/NuGet/NuGet.Config",
+        "/home/zekiah/.nuget/NuGet/config/Godot.Offline.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net7.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {},
+        "https://nuget.avaloniaui.net/repository/avalonia-nightly/index.json": {},
+        "https://pkgs.dev.azure.com/azure-public/vside/_packaging/xamarin-impl/nuget/v3/index.json": {},
+        "https://www.myget.org/F/auraui/api/v3/index.json": {}
+      },
+      "frameworks": {
+        "net7.0": {
+          "targetAlias": "net7.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net7.0": {
+        "targetAlias": "net7.0",
+        "dependencies": {
+          "WatsonWebsocket": {
+            "target": "Package",
+            "version": "[3.0.1, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.AspNetCore.App": {
+            "privateAssets": "none"
+          },
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/home/zekiah/.dotnet/sdk/7.0.100-preview.6.22352.1/RuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}
