@@ -47,21 +47,18 @@ public static class Program
 
                 dynamic config = missingPath switch
                 {
-                    ProgramConfigPath => new ProgramConfig(true, 443, 8080, "", "", "https://rplace.tk", false, "./Backups/"),
-                    SocketConfigPath => new SocketServerConfig(1000, 1000, 31, 10, true, new List<string>(),
-                        new List<string>(), ""),
+                    ProgramConfigPath => new ProgramConfig(true, 443, 8080, "", "", "https://rplace.tk", false, "Backups"),
+                    SocketConfigPath => new SocketServerConfig(1000, 1000, 31, 10, true, new List<string>(), new List<string>(), ""),
                     WebConfigPath => new WebServerConfig(6000),
                     _ => throw new ArgumentOutOfRangeException()
                 };
 
                 File.WriteAllText(missingPath, JsonSerializer.Serialize(config, JsonOptions));
             }
-
             Console.ResetColor();
 
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine(
-                $"\n[INFO]: Config files recreated. Config created! Please check {Directory.GetCurrentDirectory()} and run this program again.");
+            Console.WriteLine($"\n[INFO]: Config files recreated. Please check {Directory.GetCurrentDirectory()} and run this program again.");
             Console.ResetColor();
             Environment.Exit(0);
         }

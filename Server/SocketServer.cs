@@ -26,17 +26,28 @@ public partial class SocketServer
         
         try
         {
-            var boardFile = File.ReadAllBytes(programConfig.CanvasFolder);
-            if (boardFile.Length == 0) throw new Exception("[WARNING]: Could not find place file! Creating new.");
+            var boardFile = File.ReadAllBytes(Path.Join(programConfig.CanvasFolder, "place"));
+            if (boardFile.Length == 0) throw new Exception("Could not find place file! Creating new.");
             board = boardFile;
         }
         catch (Exception exception)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine(exception);
+            Console.WriteLine("[WARNING]: " + exception.Message);
             Console.ResetColor();
-            
+
             board = new byte[serverConfig.Width * serverConfig.Height];
+
+            if (!Directory.Exists(programConfig.CanvasFolder))
+            {
+                Directory.CreateDirectory(programConfig.CanvasFolder);
+                
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("[INFO]: Created new canvas folder.");
+                Console.ResetColor();
+            }
+            
+            File.WriteAllBytes(Path.Join(programConfig.CanvasFolder, "place"), board);
         }
     }
 
@@ -56,7 +67,7 @@ public partial class SocketServer
                 return;
             }
             
-            clients.Add(args.IpPort, new SocketClient(idIpPort, 0, 0, 0));
+            clients.Add(args.IpPort, new SocketClient(idIpPort));
             var buffer = new byte[9];
             buffer[0] = 1;
             BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..],  1);
@@ -72,6 +83,7 @@ public partial class SocketServer
                 case 15:
                     if (clients[args.IpPort].LastChat + 2500 > new DateTimeOffset().Millisecond ||
                         args.Data.Count > 400) return;
+                    clients[args.IpPort].LastChat = new DateTimeOffset().Millisecond;
                     
                     foreach (var ipPort in app.ListClients())
                         await app.SendAsync(ipPort, args.Data);
@@ -103,10 +115,32 @@ public partial class SocketServer
             var colour = args.Data[5];
 
             if (index >= board.Length || colour >= serverConfig.PaletteSize) return;
+            var cd = clients[args.IpPort].Cooldown;
+
+            if (cd > new DateTimeOffset().Millisecond)
+            {
+                //reject
+                var buffer = new byte[10];
+                buffer[0] = 7;
+                BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..],  cd);
+                BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[5..], (int) index);
+                buffer[9] = board[index];
+                await app.SendAsync(args.IpPort, buffer);
+                return;
+            }
             
+            //accept
+            board[index] = colour;
+            clients[args.IpPort].Cooldown = new DateTimeOffset().Millisecond + serverConfig.Cooldown - 500;
+            
+            //Board instantly to http server, new clients always with the latest (no changes).
+            Program.SendBoardToWebServer(board);
         };
 
-        app.ClientDisconnected += (sender, args) => { };
+        app.ClientDisconnected += (sender, args) =>
+        {
+            players--;
+        };
 
         app.StartAsync();
         return Task.CompletedTask;
