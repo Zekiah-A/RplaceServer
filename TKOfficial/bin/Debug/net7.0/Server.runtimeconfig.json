@@ -1,0 +1,19 @@
+{
+  "runtimeOptions": {
+    "tfm": "net7.0",
+    "frameworks": [
+      {
+        "name": "Microsoft.NETCore.App",
+        "version": "7.0.0-preview.6.22324.4"
+      },
+      {
+        "name": "Microsoft.AspNetCore.App",
+        "version": "7.0.0-preview.6.22330.3"
+      }
+    ],
+    "configProperties": {
+      "System.GC.Server": true,
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false
+    }
+  }
+}

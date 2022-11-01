@@ -1,0 +1,154 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj": {}
+  },
+  "projects": {
+    "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj",
+        "projectName": "RplaceServer",
+        "projectPath": "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj",
+        "packagesPath": "/home/zekiah/.nuget/packages/",
+        "outputPath": "/home/zekiah/Documents/Server/RplaceServer/obj/",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "/home/zekiah/.local/share/godot/mono/GodotNuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "/home/zekiah/.nuget/NuGet/NuGet.Config",
+          "/home/zekiah/.nuget/NuGet/config/Godot.Offline.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net6.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {},
+          "https://nuget.avaloniaui.net/repository/avalonia-nightly/index.json": {},
+          "https://pkgs.dev.azure.com/azure-public/vside/_packaging/xamarin-impl/nuget/v3/index.json": {},
+          "https://www.myget.org/F/auraui/api/v3/index.json": {}
+        },
+        "frameworks": {
+          "net6.0": {
+            "targetAlias": "net6.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net6.0": {
+          "targetAlias": "net6.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[6.0.6, 6.0.6]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[6.0.6, 6.0.6]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/home/zekiah/.dotnet/sdk/7.0.100-preview.6.22352.1/RuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj",
+        "projectName": "TKOfficial",
+        "projectPath": "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj",
+        "packagesPath": "/home/zekiah/.nuget/packages/",
+        "outputPath": "/home/zekiah/Documents/Server/TKOfficial/obj/",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "/home/zekiah/.local/share/godot/mono/GodotNuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "/home/zekiah/.nuget/NuGet/NuGet.Config",
+          "/home/zekiah/.nuget/NuGet/config/Godot.Offline.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net7.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {},
+          "https://nuget.avaloniaui.net/repository/avalonia-nightly/index.json": {},
+          "https://pkgs.dev.azure.com/azure-public/vside/_packaging/xamarin-impl/nuget/v3/index.json": {},
+          "https://www.myget.org/F/auraui/api/v3/index.json": {}
+        },
+        "frameworks": {
+          "net7.0": {
+            "targetAlias": "net7.0",
+            "projectReferences": {
+              "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj": {
+                "projectPath": "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        }
+      },
+      "frameworks": {
+        "net7.0": {
+          "targetAlias": "net7.0",
+          "dependencies": {
+            "WatsonWebsocket": {
+              "target": "Package",
+              "version": "[3.0.1, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/home/zekiah/.dotnet/sdk/7.0.100-preview.6.22352.1/RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

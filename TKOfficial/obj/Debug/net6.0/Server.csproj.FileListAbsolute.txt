@@ -1,0 +1,6 @@
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.csproj.AssemblyReference.cache
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.GeneratedMSBuildEditorConfig.editorconfig
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.AssemblyInfoInputs.cache
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.AssemblyInfo.cs
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.csproj.CoreCompileInputs.cache
+/home/zekiah/Documents/Server/Server/obj/Debug/net6.0/Server.MvcApplicationPartsAssemblyInfo.cache

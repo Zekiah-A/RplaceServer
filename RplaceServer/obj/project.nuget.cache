@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "XPYdSO7YOiyHxsU6e/syeRiiLB+XgD489b4CxUN0JjyeSsWJlFqmHLcaZmRliUZv6bmcT3Kiug5vgltfuadl/w==",
+  "success": true,
+  "projectFilePath": "/home/zekiah/Documents/Server/RplaceServer/RplaceServer.csproj",
+  "expectedPackageFiles": [
+    "/home/zekiah/.nuget/packages/microsoft.netcore.app.ref/6.0.6/microsoft.netcore.app.ref.6.0.6.nupkg.sha512",
+    "/home/zekiah/.nuget/packages/microsoft.aspnetcore.app.ref/6.0.6/microsoft.aspnetcore.app.ref.6.0.6.nupkg.sha512"
+  ],
+  "logs": []
+}

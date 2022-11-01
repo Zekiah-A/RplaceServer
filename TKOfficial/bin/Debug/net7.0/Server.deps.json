@@ -1,0 +1,41 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v7.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v7.0": {
+      "Server/1.0.0": {
+        "dependencies": {
+          "WatsonWebsocket": "3.0.1"
+        },
+        "runtime": {
+          "Server.dll": {}
+        }
+      },
+      "WatsonWebsocket/3.0.1": {
+        "runtime": {
+          "lib/net6.0/WatsonWebsocket.dll": {
+            "assemblyVersion": "3.0.1.0",
+            "fileVersion": "3.0.1.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Server/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "WatsonWebsocket/3.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-f5awyDWsRv+PwwLufwmQJ9+VGAR8Qv3F5ohbSd/emgmiV3f0+mJs0UTxxjhB1rire3h0y/jMFChhRd0eAoobfQ==",
+      "path": "watsonwebsocket/3.0.1",
+      "hashPath": "watsonwebsocket.3.0.1.nupkg.sha512"
+    }
+  }
+}
