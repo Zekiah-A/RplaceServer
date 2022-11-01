@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TKOfficial", "TKOfficial\TK
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RplaceServer", "RplaceServer\RplaceServer.csproj", "{5A0FA12A-D834-49CF-8338-53A082858508}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TkOfficialGUI", "TkOfficialGUI\TkOfficialGUI.csproj", "{B73D026A-8570-48CE-A871-B00A8DA5E453}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{5A0FA12A-D834-49CF-8338-53A082858508}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5A0FA12A-D834-49CF-8338-53A082858508}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5A0FA12A-D834-49CF-8338-53A082858508}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B73D026A-8570-48CE-A871-B00A8DA5E453}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B73D026A-8570-48CE-A871-B00A8DA5E453}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B73D026A-8570-48CE-A871-B00A8DA5E453}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B73D026A-8570-48CE-A871-B00A8DA5E453}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
