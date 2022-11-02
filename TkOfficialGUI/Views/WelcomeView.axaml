@@ -4,5 +4,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="TkOfficialGUI.Views.WelcomeView">
-  Welcome to Avalonia!
+	<Grid RowDefinitions="Auto * Auto">
+		<TextBlock Grid.Row="0" Grid.RowSpan="2" FontSize="24" HorizontalAlignment="Center" Margin="0 64 0 0">Welcome to the rplace.tk official server software.</TextBlock>
+		<StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+			<Button HorizontalAlignment="Center" Width="128" HorizontalContentAlignment="Center">Continue</Button>
+			<Button HorizontalAlignment="Center" Width="128" HorizontalContentAlignment="Center">Create new</Button>
+			<Button HorizontalAlignment="Center" Width="128" HorizontalContentAlignment="Center">Settings</Button>
+		</StackPanel>
+		<TextBlock Grid.Row="2" HorizontalAlignment="Center" FontStyle="Italic">.TK Official GUI (c)Zekiah-A, rplace.tk</TextBlock>
+	</Grid>
 </UserControl>

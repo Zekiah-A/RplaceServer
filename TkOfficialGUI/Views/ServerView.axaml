@@ -4,5 +4,73 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="TkOfficialGUI.Views.ServerView">
-  Welcome to Avalonia!
+	
+	<UserControl.Styles>
+		<Style Selector="TabControl">
+			<Setter Property="Padding" Value="16"/>
+			<Setter Property="Background">
+				<LinearGradientBrush StartPoint="0,0" GradientStops="0, 30" EndPoint="0, 38" >
+					<GradientStop Offset="0" Color="Transparent"/>
+					<GradientStop Offset="0" Color="Transparent"/>
+					<GradientStop Offset="1" Color="Red"/>
+					<GradientStop Offset="2" Color="Red"/> <!--#F9F9F9-->
+				</LinearGradientBrush>
+			</Setter>
+		</Style>
+		
+		<Style Selector="TabItem">
+			<Setter Property="FontSize" Value="12"/>
+		</Style>
+		
+		<Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
+			<Setter Property="IsVisible" Value="False" />
+		</Style>
+            
+		<Style Selector="TabItem > Border">
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="Width" Value="96"/>
+		</Style>
+            
+		<Style Selector="TabItem:selected > Border">
+			<Setter Property="BorderThickness" Value="1 .5 1 0"/>
+			<Setter Property="CornerRadius" Value="8 8 0 0"/>
+			<Setter Property="Background" Value="#F9F9F9"/>
+			<Setter Property="BorderBrush" Value="LightGray"/>
+		</Style>
+            
+		<Style Selector="TabItem > Border > TextBlock">
+			<Setter Property="FontSize" Value="8"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+	</UserControl.Styles>
+	
+	<SplitView IsPaneOpen="True" DisplayMode="Inline" OpenPaneLength="360" PanePlacement="Right">
+		<SplitView.Pane>
+			<StackPanel Margin="8">
+				<TextBlock FontSize="24">Configure</TextBlock>
+				<TextBlock FontSize="18">Server</TextBlock>
+				
+				<TextBlock FontSize="18">Game</TextBlock>
+
+			</StackPanel>
+		</SplitView.Pane>
+		
+		<Grid>
+			<!--<ScrollViewer HorizontalScrollBarVisibility="Visible">-->
+			<TabControl VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+				<TabItem Header="Live preview">
+				</TabItem>
+				<TabItem Header="Resources">
+				</TabItem>
+				<TabItem Header="Chat">
+					<Grid RowDefinitions="* Auto">
+						<TextBox Grid.Row="0" IsReadOnly="True">Server live chat messages will appear here.</TextBox>
+						<TextBox Grid.Row="1" Margin="0 8 0 0">Broadcast message to all</TextBox>
+					</Grid>
+				</TabItem>
+				<TabItem Header="Players">
+				</TabItem>
+			</TabControl>
+		</Grid>
+	</SplitView>
 </UserControl>
