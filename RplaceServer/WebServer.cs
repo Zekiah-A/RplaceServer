@@ -90,7 +90,7 @@ internal class WebServer
         builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = keyPath;
         builder.Services.AddCors(options =>
         {
-            options.AddDefaultPolicy(policy => { policy.WithOrigins(programConfig.Origin, "*"); });
+            options.AddDefaultPolicy(policy => { policy.WithOrigins(origin, "*"); });
         });
 
         app = builder.Build();

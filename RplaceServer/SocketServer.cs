@@ -1,8 +1,11 @@
 using System.Buffers.Binary;
+using System.Buffers.Text;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Text.Unicode;
+using Microsoft.Extensions.Logging;
 using RplaceServer.Exceptions;
 using WatsonWebsocket;
 
@@ -13,13 +16,15 @@ public class SocketServer
     private readonly HttpClient httpClient = new();
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
-    
-    public SocketServer(GameData data, int socketPort, bool ssl)
+    private readonly string origin;
+
+    public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port, Logger<Action>? logger = null)
     {
         //TODO: Make my own watson fork, that has a mentally sane certificate implementation, and a proper unique way to identify clients.
-        app = new WatsonWsServer("localhost", socketPort, ssl);
+        app = new WatsonWsServer("localhost", port, ssl);
         gameData = data;
-        
+        this.origin = origin;
+
         try
         {
             var boardFile = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
@@ -61,38 +66,38 @@ public class SocketServer
 
     public void ClientConnected(object? sender, ClientConnectedEventArgs args)
     {
-        var idIpPort = GetIdIpPort(args.IpPort);
-        
+        var idIpPort = GetIdIpPort(args.Client.IpPort);
+
         if (gameData.UseCloudflare &&
             args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "origin")) !=
-            gameData.Origin || gameData.Bans.Contains(args.IpPort) || idIpPort.StartsWith("%"))
+            origin || gameData.Bans.Contains(args.Client.IpPort) || idIpPort.StartsWith("%"))
         {
             gameData.Bans.Add(idIpPort);
-            app.DisconnectClient(idIpPort);
+            app.DisconnectClient(args.Client);
             return;
         }
             
-        gameData.Clients.Add(idIpPort, new SocketClient(idIpPort));
+        gameData.Clients.Add(args.Client, new SocketClient(idIpPort));
         var buffer = new byte[9];
         buffer[0] = 1;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], gameData.Cooldown);
-        app.SendAsync(idIpPort, buffer);
+        app.SendAsync(args.Client, buffer);
         gameData.Players++;
     }
 
     public void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
-        var idIpPort = GetIdIpPort(args.IpPort);
+        var idIpPort = GetIdIpPort(args.Client.IpPort);
         
         switch (args.Data[0])
         {
-            case 15:                                                //Static Datetime.Now exists... :skull:
-                if (gameData.Clients[idIpPort].LastChat + 2500 > DateTime.Now || args.Data.Count > 400) return;
-                gameData.Clients[idIpPort].LastChat = DateTime.Now;
+            case 15:
+                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
+                gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
                 
-                foreach (var ipPort in app.ListClients())
-                    app.SendAsync(ipPort, args.Data);
+                foreach (var client in app.Clients)
+                    app.SendAsync(client, args.Data);
                 
                 if (string.IsNullOrEmpty(gameData.WebhookUrl) || args.Data.Array is null) return;
                 
@@ -108,7 +113,7 @@ public class SocketServer
                 var buffer = new byte[2];
                 buffer[1] = 16;
                 buffer[2] = 255;
-                app.SendAsync(idIpPort, buffer);
+                app.SendAsync(args.Client, buffer);
                 break;
             case 99:
                 break;
@@ -121,33 +126,85 @@ public class SocketServer
         var colour = args.Data[5];
 
         if (index >= gameData.Board.Length || colour >= gameData.PaletteSize) return;
-        var cd = gameData.Clients.GetValueOrDefault(idIpPort)?.Cooldown;
-        if (cd is null) return;
+        var cd = gameData.Clients[args.Client].Cooldown;
         
-        if (cd > DateTime.Now)
+        if (cd > DateTimeOffset.Now)
         {
             //reject
             var buffer = new byte[10];
             buffer[0] = 7;
-            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd);
+            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd.ToUnixTimeMilliseconds());
             BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[5..], (int) index);
             buffer[9] = gameData.Board[index];
-            app.SendAsync(idIpPort, buffer);
+            app.SendAsync(args.Client, buffer);
             return;
         }
         
         //accept
         gameData.Board[index] = colour;
-        gameData.Clients[idIpPort].Cooldown = DateTime.Now + gameData.Cooldown - 500;
+        gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown - 500);
     }
 
     public virtual void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
     {
-        var idIpPort = GetIdIpPort(args.IpPort);
         gameData.Players--;
-        gameData.Clients.Remove(idIpPort);
+        gameData.Clients.Remove(args.Client);
     }
 
+    /// <summary>
+    /// Increases the size of a canvas/board, by a given width and height.
+    /// </summary>
+    /// <param name="widthIncrease">The increase in pixels on the X axis.</param>
+    /// <param name="heightIncrease">The increase in pixels on the Y axis.</param>
+    public void ExpandCanvas(int widthIncrease, int heightIncrease)
+    {
+        var newHeight = gameData.BoardHeight + heightIncrease;
+        var newWidth = gameData.BoardWidth + widthIncrease;
+        //Array.Copy(array, offset, result, 0, length);
+        var newBoard = new byte[newHeight * newWidth];
+        for (var y = 0; y < gameData.BoardHeight; y++)
+        {
+            newBoard[y * newWidth] = gameData.Board[y * gameData.BoardWidth];
+        }
+
+        gameData.Board = newBoard;
+        gameData.BoardHeight = newHeight;
+        gameData.BoardWidth = newWidth;
+    }
+
+    /// <summary>
+    /// Sends a message inside of the game live chat to a specific client, or all connected clients.
+    /// </summary>
+    /// <param name="message">The message being sent.</param>
+    /// <param name="channel">The channel that the message will be broadcast to.</param>
+    /// <param name="client">The player that this chat message will be sent to, if no client provided, then it is sent to all</param>
+    public void BroadcastChatMessage(string message, string channel, ClientMetadata? client = null)
+    {
+        var messageBytes = Encoding.UTF8.GetBytes($"\x0f{message}\nserver\n{channel}");
+        messageBytes[0] = 15;
+
+        if (client is null)
+        {
+            foreach (var c in app.Clients)
+            {
+                app.SendAsync(c, messageBytes);
+            }
+            
+            return;
+        }
+
+        app.SendAsync(client, messageBytes);
+    }
+
+    
+    public void Fill(int startX, int startY, int endX, int endY, byte colour = 27)
+    {
+        while (startY < endY && startX < endX)
+        {
+            gameData.Board[startX++ + startY++ * gameData.BoardWidth] = colour;
+        }
+    }
+    
     private string GetIdIpPort(string ipPort)
     {
         return ipPort;

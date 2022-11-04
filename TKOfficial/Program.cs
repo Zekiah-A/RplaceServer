@@ -65,6 +65,11 @@ public static class Program
         var socketConfig = JsonSerializer.Deserialize<SocketServerConfig>(await File.ReadAllTextAsync(SocketConfigPath)) ?? throw new NullReferenceException();
         var webConfig = JsonSerializer.Deserialize<WebServerConfig>(await File.ReadAllTextAsync(WebConfigPath)) ?? throw new NullReferenceException();
 
+        var data = new GameData
+        {
+            
+        };
+        
         var server = new ServerInstance();
         await server.Start();
         await StartNephriteRepl();

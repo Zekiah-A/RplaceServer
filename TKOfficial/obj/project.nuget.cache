@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "NOG4bRE0s6/uwMH+kI8HQWyTkvEd47sMu+3wZFdrqMPe/gP444KtIHbtiBWppTYdH3A0GxN8SftwHa1O7wunSA==",
+  "dgSpecHash": "LH8ufdS2eHpRje+6n8QjwiFv6LjsXCFxm9AztIpxhgG4QqDq0JtqA2FruccvEjNCsAUBFV6wwFgS12sbkgkvyA==",
   "success": true,
   "projectFilePath": "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj",
   "expectedPackageFiles": [
-    "/home/zekiah/.nuget/packages/watsonwebsocket/3.0.1/watsonwebsocket.3.0.1.nupkg.sha512"
+    "/home/zekiah/.nuget/packages/watsonwebsocket/3.0.2/watsonwebsocket.3.0.2.nupkg.sha512"
   ],
   "logs": []
 }

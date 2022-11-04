@@ -21,11 +21,11 @@ public class ServerInstance
     private SocketServer socketServer;
     private WebServer webServer;
     
-    public ServerInstance()
+    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
-        data = new GameData();
-        socketServer = new SocketServer();
-        webServer = new WebServer();
+        this.data = data;
+        socketServer = new SocketServer(data, certPath, keyPath, origin, ssl, socketPort);
+        webServer = new WebServer(data, certPath, keyPath, origin, ssl, webPort);
     }
 
     public async Task Start()

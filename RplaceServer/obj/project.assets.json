@@ -1,11 +1,30 @@
 {
   "version": 3,
   "targets": {
-    "net6.0": {}
+    "net6.0": {
+      "WatsonWebsocket/3.0.2": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v6.0",
+        "compile": {
+          "bin/placeholder/WatsonWebsocket.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/WatsonWebsocket.dll": {}
+        }
+      }
+    }
   },
-  "libraries": {},
+  "libraries": {
+    "WatsonWebsocket/3.0.2": {
+      "type": "project",
+      "path": "../WatsonWebsocketPlus/src/WatsonWebsocket/WatsonWebsocket.csproj",
+      "msbuildProject": "../WatsonWebsocketPlus/src/WatsonWebsocket/WatsonWebsocket.csproj"
+    }
+  },
   "projectFileDependencyGroups": {
-    "net6.0": []
+    "net6.0": [
+      "WatsonWebsocket >= 3.0.2"
+    ]
   },
   "packageFolders": {
     "/home/zekiah/.nuget/packages/": {},
@@ -39,7 +58,11 @@
       "frameworks": {
         "net6.0": {
           "targetAlias": "net6.0",
-          "projectReferences": {}
+          "projectReferences": {
+            "/home/zekiah/Documents/Server/WatsonWebsocketPlus/src/WatsonWebsocket/WatsonWebsocket.csproj": {
+              "projectPath": "/home/zekiah/Documents/Server/WatsonWebsocketPlus/src/WatsonWebsocket/WatsonWebsocket.csproj"
+            }
+          }
         }
       },
       "warningProperties": {

@@ -1,3 +1,5 @@
+using WatsonWebsocket;
+
 namespace RplaceServer;
 
 public class GameData
@@ -9,7 +11,7 @@ public class GameData
     public bool CaptchaEnabled;
     public List<string> Vips;
     public List<string> Bans;
-    public Dictionary<string, SocketClient> Clients;
+    public Dictionary<ClientMetadata, SocketClient> Clients;
 
     //These require a server restart, or can be changed by server only
     public int BoardWidth; //Pixels
