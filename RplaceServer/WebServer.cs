@@ -122,6 +122,7 @@ internal class WebServer
             await File.ReadAllTextAsync(Path.Join(gameData.CanvasFolder, "backuplist.txt"))
         );
 
+        //TODO: Implement StarlkYT's timelapse generator
         /*app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo) =>
         {
             var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo.BackupStart, timelapseInfo.BackupEnd, timelapseInfo.Fps, 750, timelapseInfo.StartX, timelapseInfo.StartY, timelapseInfo.EndX, timelapseInfo.EndY, timelapseInfo.Reverse);
