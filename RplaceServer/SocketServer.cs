@@ -76,13 +76,22 @@ public class SocketServer
             app.DisconnectClient(args.Client);
             return;
         }
-            
+        
+        //Send player cooldown + other data
         gameData.Clients.Add(args.Client, new SocketClient(idIpPort));
         var buffer = new byte[9];
         buffer[0] = 1;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], gameData.Cooldown);
         app.SendAsync(args.Client, buffer);
+        
+        // Send player palette data (if using a custom palette)
+        var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
+        var paletteBuffer = new byte[1 + palette.Length * 4];
+        paletteBuffer[0] = 0;
+        Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
+        app.SendAsync(args.Client, paletteBuffer);
+        
         gameData.Players++;
     }
 
@@ -196,7 +205,14 @@ public class SocketServer
         app.SendAsync(client, messageBytes);
     }
 
-    
+    /// <summary>
+    /// Sets an area of the canvas to a specific colour.
+    /// </summary>
+    /// <param name="startX"></param>
+    /// <param name="startY"></param>
+    /// <param name="endX"></param>
+    /// <param name="endY"></param>
+    /// <param name="colour"></param>
     public void Fill(int startX, int startY, int endX, int endY, byte colour = 27)
     {
         while (startY < endY && startX < endX)

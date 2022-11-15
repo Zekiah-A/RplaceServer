@@ -9,7 +9,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="WatsonWebsocket" Version="3.0.1" />
+        <PackageReference Include="Natron.Library" Version="1.0.0" />
     </ItemGroup>
 
     <ItemGroup>

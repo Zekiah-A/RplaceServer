@@ -7,7 +7,8 @@ namespace RplaceServer;
 
 internal class WebServer
 {
-    private const string backuplistTemplate = @"
+    private const string backuplistTemplate =
+    @"
         <h1>rPlace canvas place file/backup list.</h1>
         <p>See [domain-url]/backuplist.txt for cleanly formatted list of backups saved here.</p>
         <span style=""color: red;"">(Do not try to iterate directly through this directory with code, for the sake of your own sanity, please instead use the plaintext list at /backuplist instead.)</span>
@@ -46,7 +47,8 @@ internal class WebServer
         </style>
     ";
 
-    private const string indexTemplate = @"
+    private const string indexTemplate =
+    @"
         <h1>rPlace canvas file server is running.</h1>
         <p>Visit /place in order to fetch the active place file, /backuplist to view a list of all backups, and fetch from /backups/<span style=""background-color: lightgray; border-radius: 4px;"">place file name</span> to obtain a backup by it's filename (in backuplist).</p>
         <pre>

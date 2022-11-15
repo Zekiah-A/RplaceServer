@@ -1,9 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "LH8ufdS2eHpRje+6n8QjwiFv6LjsXCFxm9AztIpxhgG4QqDq0JtqA2FruccvEjNCsAUBFV6wwFgS12sbkgkvyA==",
+  "dgSpecHash": "fNZe9PilpGeVT4Ar7oQMrlQA98RFGobjEufVQ4OkpQ4iu+aZx400Hy8Q/bFf70GK8SZH7AizwiygJK+iqvFJSw==",
   "success": true,
   "projectFilePath": "/home/zekiah/Documents/Server/TKOfficial/TKOfficial.csproj",
   "expectedPackageFiles": [
+    "/home/zekiah/.nuget/packages/natron.library/1.0.0/natron.library.1.0.0.nupkg.sha512",
+    "/home/zekiah/.nuget/packages/yamldotnet/12.0.2/yamldotnet.12.0.2.nupkg.sha512",
     "/home/zekiah/.nuget/packages/watsonwebsocket/3.0.2/watsonwebsocket.3.0.2.nupkg.sha512"
   ],
   "logs": []

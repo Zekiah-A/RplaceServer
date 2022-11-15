@@ -9,5 +9,6 @@ public record SocketServerConfig
     bool CaptchaEnabled,
     List<string> Vips,
     List<string> Bans,
+    List<int> PaletteOverride,
     string WebhookUrl
 );
