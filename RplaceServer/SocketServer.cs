@@ -1,13 +1,13 @@
 using System.Buffers.Binary;
-using System.Buffers.Text;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Text.Unicode;
 using Microsoft.Extensions.Logging;
+using RplaceServer.Events;
 using RplaceServer.Exceptions;
 using WatsonWebsocket;
+using ClientConnectedEventArgs = WatsonWebsocket.ClientConnectedEventArgs;
 
 namespace RplaceServer;
 
@@ -17,6 +17,11 @@ public class SocketServer
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
+    
+    public event EventHandler ChatMessageReceived;
+    public event EventHandler PixelPlacementReceived;
+    public event EventHandler PlayerConnected;
+    public event EventHandler PlayerDisconnected;
 
     public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port, Logger<Action>? logger = null)
     {
@@ -64,7 +69,7 @@ public class SocketServer
         await app.StartAsync();
     }
 
-    public void ClientConnected(object? sender, ClientConnectedEventArgs args)
+    private void ClientConnected(object? sender, ClientConnectedEventArgs args)
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
 
@@ -86,16 +91,19 @@ public class SocketServer
         app.SendAsync(args.Client, buffer);
         
         // Send player palette data (if using a custom palette)
-        var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
-        var paletteBuffer = new byte[1 + palette.Length * 4];
-        paletteBuffer[0] = 0;
-        Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
-        app.SendAsync(args.Client, paletteBuffer);
-        
+        if (gameData.Palette is not null)
+        {
+            var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
+            var paletteBuffer = new byte[1 + palette.Length * 4];
+            paletteBuffer[0] = 0;
+            Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
+            app.SendAsync(args.Client, paletteBuffer);
+        }
+
         gameData.Players++;
     }
-
-    public void MessageReceived(object? sender, MessageReceivedEventArgs args)
+    
+    private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
         
@@ -105,9 +113,13 @@ public class SocketServer
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
                 
+                ChatMessageReceived.Invoke(this, new ChatMessageEventArgs());
+
                 foreach (var client in app.Clients)
+                {
                     app.SendAsync(client, args.Data);
-                
+                }
+
                 if (string.IsNullOrEmpty(gameData.WebhookUrl) || args.Data.Array is null) return;
                 
                 var rawMessage = Encoding.UTF8.GetString(args.Data.Array, 1, args.Data.Array.Length - 1).Replace("@", "");
@@ -134,7 +146,7 @@ public class SocketServer
         var index = BinaryPrimitives.ReadUInt32BigEndian(args.Data.Array?[1..]);
         var colour = args.Data[5];
 
-        if (index >= gameData.Board.Length || colour >= gameData.PaletteSize) return;
+        if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31)) return;
         var cd = gameData.Clients[args.Client].Cooldown;
         
         if (cd > DateTimeOffset.Now)
@@ -154,7 +166,7 @@ public class SocketServer
         gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown - 500);
     }
 
-    public virtual void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
+    private void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
     {
         gameData.Players--;
         gameData.Clients.Remove(args.Client);
@@ -228,4 +240,7 @@ public class SocketServer
         //    ? args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "x-forwarded-for"))
         //    : args.IpPort;
     }
+    
+    
+    
 }

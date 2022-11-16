@@ -1,6 +1,6 @@
 namespace RplaceServer.Events;
 
-internal class PixelPlacedEventArgs : EventArgs
+public class PixelPlacedEventArgs : EventArgs
 {
     public int Colour { get; }
     public int X { get; }

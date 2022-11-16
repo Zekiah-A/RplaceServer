@@ -79,6 +79,7 @@ internal class WebServer
         <p>©Zekiah-A - rplace.tk ❤️</p>
     ";
 
+    private readonly ServerInstance instance;
     private readonly WebApplication app;
     private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;

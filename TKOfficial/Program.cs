@@ -46,7 +46,7 @@ public static class Program
                 dynamic config = missingPath switch
                 {
                     ProgramConfigPath => new ProgramConfig(true, 443, 8080, "", "", "https://rplace.tk", false, "Backups"),
-                    SocketConfigPath => new SocketServerConfig(1000, 1000, 31, 10, true, new List<string>(), new List<string>(), ""),
+                    SocketConfigPath => new SocketServerConfig(1000, 1000,  10, true, new List<string>(), new List<string>(), null, null),
                     WebConfigPath => new WebServerConfig(6000),
                     _ => throw new ArgumentOutOfRangeException()
                 };

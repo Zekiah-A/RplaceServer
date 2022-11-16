@@ -12,16 +12,15 @@ public class GameData
     public List<string> Vips;
     public List<string> Bans;
     public Dictionary<ClientMetadata, SocketClient> Clients;
-    public List<int> Palette;
+    public List<int>? Palette;
 
     //These require a server restart, or can be changed by server only
     public int BoardWidth; //Pixels
     public int BoardHeight; //Pixels
-    public int PaletteSize;
     public int BackupFrequency; //Seconds
-    public string WebhookUrl; //HTTP/HTTPS
     public bool UseCloudflare;
     public string CanvasFolder;
+    public string? WebhookUrl; //HTTP/HTTPS
 };
 
 // Palette:
