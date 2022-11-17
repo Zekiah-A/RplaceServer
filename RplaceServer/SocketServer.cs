@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Exceptions;
 using WatsonWebsocket;
@@ -13,11 +14,13 @@ namespace RplaceServer;
 
 public class SocketServer
 {
+    private readonly JsonSerializerOptions defaultJsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly HttpClient httpClient = new();
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
-    
+    private readonly Logger<Action>? logger;
+
     public event EventHandler ChatMessageReceived;
     public event EventHandler PixelPlacementReceived;
     public event EventHandler PlayerConnected;
@@ -29,6 +32,7 @@ public class SocketServer
         app = new WatsonWsServer("localhost", port, ssl);
         gameData = data;
         this.origin = origin;
+        this.logger = logger;
 
         try
         {
@@ -81,9 +85,10 @@ public class SocketServer
             app.DisconnectClient(args.Client);
             return;
         }
-        
+
         //Send player cooldown + other data
-        gameData.Clients.Add(args.Client, new SocketClient(idIpPort));
+        var playerSocketClient = new SocketClient(idIpPort);
+        gameData.Clients.Add(args.Client, playerSocketClient);
         var buffer = new byte[9];
         buffer[0] = 1;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
@@ -99,36 +104,56 @@ public class SocketServer
             Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
             app.SendAsync(args.Client, paletteBuffer);
         }
-
+        
         gameData.Players++;
+        PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(playerSocketClient));
     }
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
+        if (args.Data.Array is null)
+        {
+            logger?.Log(LogLevel.Warning, "Received null message Data.Array from {args.Client}", args.Client);
+            return;
+        }
         
         switch (args.Data[0])
         {
             case 15:
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
+
+                var rawMessage = Encoding.UTF8.GetString(args.Data.Array, 1, args.Data.Array.Length - 1);
+                var text = rawMessage.Split("\n").ElementAtOrDefault(0);
+                var name = new Regex("/\\W+/g").Replace(rawMessage.Split("\n").ElementAtOrDefault(1) ?? "anon", "");
+                var msgChannel = rawMessage.Split("\n").ElementAtOrDefault(2);
                 
-                ChatMessageReceived.Invoke(this, new ChatMessageEventArgs());
+                if (text is null || msgChannel is null) return;
+
+                var type = rawMessage.Split("\n").ElementAtOrDefault(3) switch
+                {
+                    "live" => ChatMessageType.LiveChat,
+                    "place" => ChatMessageType.PlaceChat,
+                    _ => ChatMessageType.LiveChat
+                };
+                
+                var x = rawMessage.Split("\n").ElementAtOrDefault(4);
+                var y = rawMessage.Split("\n").ElementAtOrDefault(5);
+                
+                ChatMessageReceived.Invoke(this, 
+                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, x is not null ? int.Parse(x) : null,y is not null ? int.Parse(y) : null)
+                );
 
                 foreach (var client in app.Clients)
                 {
                     app.SendAsync(client, args.Data);
                 }
 
-                if (string.IsNullOrEmpty(gameData.WebhookUrl) || args.Data.Array is null) return;
-                
-                var rawMessage = Encoding.UTF8.GetString(args.Data.Array, 1, args.Data.Array.Length - 1).Replace("@", "");
-                var text = rawMessage.Split("\n")[0];
-                var name = new Regex("/\\W+/g").Replace(rawMessage.Split("\n")[1], "");
-                var msgChannel = rawMessage.Split("\n")[2];
+                if (string.IsNullOrEmpty(gameData.WebhookUrl)) return;
 
-                var hook = $"{{'username': [{msgChannel}] {name}@rplace.tk`, 'content': {text}}}";
-                httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hook, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                var hookBody = new WebhookBody($"[{msgChannel}] {name}@rplace.tk", text);
+                httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
                 break;
             case 16:
                 var buffer = new byte[2];
@@ -161,7 +186,8 @@ public class SocketServer
             return;
         }
         
-        //accept
+        //Accept
+        PixelPlacementReceived.Invoke(this, new PixelPlacedEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index));
         gameData.Board[index] = colour;
         gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown - 500);
     }
@@ -169,6 +195,7 @@ public class SocketServer
     private void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
     {
         gameData.Players--;
+        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
         gameData.Clients.Remove(args.Client);
     }
 

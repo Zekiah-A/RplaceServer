@@ -1,10 +1,12 @@
 namespace RplaceServer.Events;
 
-public class ClientConnectedEventArgs : EventArgs
+public class PlayerConnectedEventArgs : EventArgs
 {
+    public SocketClient Player { get; }
+    
     //Give them the socket client instance
-    public ClientConnectedEventArgs()
+    public PlayerConnectedEventArgs(SocketClient player)
     {
-        
+        Player = player;
     }
 }

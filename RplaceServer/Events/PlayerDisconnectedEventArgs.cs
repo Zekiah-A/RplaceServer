@@ -4,9 +4,10 @@ namespace RplaceServer.Events;
 
 public class PlayerDisconnectedEventArgs : EventArgs
 {
-    //Give them the socket client instance
-    public PlayerDisconnectedEventArgs()
+    public SocketClient Player { get; }
+    
+    public PlayerDisconnectedEventArgs(SocketClient player)
     {
-        
+        Player = player;
     }
 }
