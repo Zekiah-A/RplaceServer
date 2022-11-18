@@ -1,7 +1,7 @@
 .idea/
-Server/obj/*
-Server/bin/*
-Server/server_config.json
-Server/canvas_server_config.json
-Server/game_server_config.json
-Server/Backups/place
+RplaceServer/obj/*
+RplaceServer/bin/*
+RplaceServer/server_config.json
+RplaceServer/canvas_server_config.json
+RplaceServer/game_server_config.json
+RplaceServer/Backups/
