@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
-namespace TkOfficialGUI.Views;
+namespace TKOfficialGUI.Views;
 
 public partial class ServerView : UserControl
 {

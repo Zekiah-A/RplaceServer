@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 
-namespace TkOfficialGUI.Views
+namespace TKOfficialGUI.Views
 {
     public partial class ShellView : Window
     {

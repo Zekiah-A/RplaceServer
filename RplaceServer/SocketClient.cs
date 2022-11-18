@@ -2,7 +2,8 @@ namespace RplaceServer;
 
 public record SocketClient
 (
-    string IdIpPort
+    string IdIpPort,
+    DateTimeOffset ConnectDate
 )
 {
     public int Voted { get; set; }

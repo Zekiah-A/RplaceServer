@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -8,7 +9,6 @@ using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Exceptions;
 using WatsonWebsocket;
-using ClientConnectedEventArgs = WatsonWebsocket.ClientConnectedEventArgs;
 
 namespace RplaceServer;
 
@@ -77,17 +77,39 @@ public class SocketServer
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
 
-        if (gameData.UseCloudflare &&
-            args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "origin")) !=
-            origin || gameData.Bans.Contains(args.Client.IpPort) || idIpPort.StartsWith("%"))
+        if (args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "origin")) !=
+            origin || gameData.Bans.Contains(args.Client.IpPort))
         {
-            gameData.Bans.Add(idIpPort);
+            logger?.LogInformation("Client {args.Client.IpPort} disconnected for violating ban or initial headers checks", args.Client.IpPort);
             app.DisconnectClient(args.Client);
             return;
         }
+        
+        // Create player client instance
+        var playerSocketClient = new SocketClient(idIpPort, DateTimeOffset.Now);
 
-        //Send player cooldown + other data
-        var playerSocketClient = new SocketClient(idIpPort);
+        // CF clearance cookie is made per device, per browser, as only 1 WS connection per browser/user/device is permitted,
+        // to prevent bots, we disconnect the last client with the same cookie, only allowing current to be connected to server
+        if (gameData.UseCloudflare)
+        {
+            var clearance = args.HttpRequest.Cookies["cf_clearance"];
+
+            if (clearance is null)
+            {
+                logger?.LogInformation("Client {args.Client.IpPort} disconnected for null cloudflare clearance cookie", args.Client.IpPort);
+                app.DisconnectClient(args.Client);
+                return;
+            }
+            
+            foreach (var metadata in gameData.Clients.Keys
+                .Where(metadata => metadata.WsContext.CookieCollection.Contains(clearance)))
+            {
+                logger?.LogInformation("Client {args.Client.IpPort} disconnected for new connection from the same clearance cookie", args.Client.IpPort);
+                app.DisconnectClient(metadata);
+            }
+        }
+
+        // Send player cooldown + other data
         gameData.Clients.Add(args.Client, playerSocketClient);
         var buffer = new byte[9];
         buffer[0] = 1;

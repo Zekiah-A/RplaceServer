@@ -4,7 +4,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TKOfficial", "TKOfficial\TK
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RplaceServer", "RplaceServer\RplaceServer.csproj", "{5A0FA12A-D834-49CF-8338-53A082858508}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TkOfficialGUI", "TkOfficialGUI\TkOfficialGUI.csproj", "{B73D026A-8570-48CE-A871-B00A8DA5E453}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TKOfficialGUI", "TKOfficialGUI\TKOfficialGUI.csproj", "{B73D026A-8570-48CE-A871-B00A8DA5E453}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WatsonWebsocket", "WatsonWebsocketPlus\src\WatsonWebsocket\WatsonWebsocket.csproj", "{36967963-2B16-47C2-B825-BB77EB055547}"
 EndProject

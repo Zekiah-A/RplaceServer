@@ -1,9 +1,8 @@
 ﻿using System;
 using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.ReactiveUI;
+using CommunityToolkit.Mvvm;
 
-namespace TkOfficialGUI
+namespace TKOfficialGUI
 {
     class Program
     {
@@ -18,7 +17,6 @@ namespace TkOfficialGUI
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
                 .UsePlatformDetect()
-                .LogToTrace()
-                .UseReactiveUI();
+                .LogToTrace();
     }
 }

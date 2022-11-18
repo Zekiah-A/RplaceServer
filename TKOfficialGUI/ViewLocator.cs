@@ -1,9 +1,9 @@
 using System;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
-using TkOfficialGUI.ViewModels;
+using TKOfficialGUI.ViewModels;
 
-namespace TkOfficialGUI
+namespace TKOfficialGUI
 {
     public class ViewLocator : IDataTemplate
     {

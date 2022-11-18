@@ -3,5 +3,5 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="1000"
-             x:Class="TkOfficialGUI.Views.SkCanvas">
+             x:Class="TKOfficialGUI.Views.SkCanvas">
 </UserControl>

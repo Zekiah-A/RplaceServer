@@ -1,10 +1,10 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using TkOfficialGUI.ViewModels;
-using TkOfficialGUI.Views;
+using TKOfficialGUI.ViewModels;
+using TKOfficialGUI.Views;
 
-namespace TkOfficialGUI
+namespace TKOfficialGUI
 {
     public partial class App : Application
     {

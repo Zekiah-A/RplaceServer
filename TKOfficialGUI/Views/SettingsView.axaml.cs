@@ -2,11 +2,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
-namespace TkOfficialGUI.Views;
+namespace TKOfficialGUI.Views;
 
-public partial class WelcomeView : UserControl
+public partial class SettingsView : UserControl
 {
-    public WelcomeView()
+    public SettingsView()
     {
         InitializeComponent();
     }

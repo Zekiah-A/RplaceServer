@@ -9,10 +9,10 @@ using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Threading;
 using SkiaSharp;
-using TkOfficialGUI.Utilities;
+using TKOfficialGUI.Utilities;
 
 
-namespace TkOfficialGUI.Views;
+namespace TKOfficialGUI.Views;
 public partial class SkCanvas : UserControl
 {
     public int CanvasWidth = 1000;

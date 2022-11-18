@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using SkiaSharp;
 
-namespace TkOfficialGUI.Utilities;
+namespace TKOfficialGUI.Utilities;
 
 //TODO: This is temporary.
 public static class StandardPalette

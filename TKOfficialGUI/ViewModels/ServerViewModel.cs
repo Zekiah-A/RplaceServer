@@ -1,6 +1,6 @@
 using RplaceServer;
 
-namespace TkOfficialGUI.ViewModels;
+namespace TKOfficialGUI.ViewModels;
 
 public class ServerViewModel : ViewModelBase
 {

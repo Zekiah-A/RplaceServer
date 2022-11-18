@@ -2,11 +2,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:views="clr-namespace:TkOfficialGUI.Views"
+             xmlns:views="clr-namespace:TKOfficialGUI.Views"
              xmlns:avalonia="http://oxyplot.org/avalonia"
-             xmlns:viewModels="clr-namespace:TkOfficialGUI.ViewModels"
+             xmlns:viewModels="clr-namespace:TKOfficialGUI.ViewModels"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-             x:Class="TkOfficialGUI.Views.ServerView">
+             x:Class="TKOfficialGUI.Views.ServerView">
 	
 	<Design.DataContext>
 		<viewModels:ServerViewModel/>
@@ -80,12 +80,12 @@
 						<ItemsControl HorizontalAlignment="Left">
 							<ItemsControl.Template>
 								<ControlTemplate>
-									<Border Width="96" Height="128" Background="LightGray" CornerRadius="8">
+									<Border Width="192" Height="256" Background="LightGray" CornerRadius="8">
 										<Grid RowDefinitions="* Auto Auto Auto" Margin="4">
-											<TextBlock Grid.Row="0" Text="192.168.1.1" FontWeight="Bold" HorizontalAlignment="Center"></TextBlock>
-											<TextBlock Grid.Row="1" Text="VIP: False"></TextBlock>
-											<TextBlock Grid.Row="2" Text="Connect date"></TextBlock>
-											<TextBlock Grid.Row="3" Text="Pixels placed"></TextBlock>
+											<TextBlock Grid.Row="0" Text="192.168.1.1" FontWeight="Bold" FontSize="24" HorizontalAlignment="Center"></TextBlock>
+											<TextBlock Grid.Row="1" FontSize="18" Text="VIP: False"></TextBlock>
+											<TextBlock Grid.Row="2" FontSize="18" Text="Connect date"></TextBlock>
+											<TextBlock Grid.Row="3" FontSize="18" Text="Pixels placed"></TextBlock>
 										</Grid>
 									</Border>
 								</ControlTemplate>
