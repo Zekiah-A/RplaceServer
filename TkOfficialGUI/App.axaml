@@ -8,5 +8,9 @@
 
     <Application.Styles>
         <FluentTheme Mode="Light"/>
+        
+        <!--Oxyplot-->
+        <StyleInclude Source="resm:OxyPlot.Avalonia.Themes.Default.xaml?assembly=OxyPlot.Avalonia"/>
+        <StyleInclude Source="avares://TkOfficialGUI/Styles/TabControl.axaml" />
     </Application.Styles>
 </Application>
