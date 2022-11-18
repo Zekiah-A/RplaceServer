@@ -64,7 +64,7 @@ public static class Program
         var programConfig = JsonSerializer.Deserialize<ProgramConfig>(await File.ReadAllTextAsync(ProgramConfigPath)) ?? throw new NullReferenceException();
         var socketConfig = JsonSerializer.Deserialize<SocketServerConfig>(await File.ReadAllTextAsync(SocketConfigPath)) ?? throw new NullReferenceException();
         var webConfig = JsonSerializer.Deserialize<WebServerConfig>(await File.ReadAllTextAsync(WebConfigPath)) ?? throw new NullReferenceException();
-
+        
         var data = new GameData
         (
             socketConfig.Cooldown,
@@ -79,7 +79,7 @@ public static class Program
             socketConfig.WebhookUrl,
             socketConfig.PaletteOverride
         );
-        
+
         var server = new ServerInstance(
             data,
             programConfig.CertPath,
@@ -129,7 +129,9 @@ public static class Program
             Console.Write(">> ");
 
             if (!string.IsNullOrEmpty(input))
+            {
                 await runner.Execute(input);
+            }
 
             replPrevious.Add(input);
             input = "";

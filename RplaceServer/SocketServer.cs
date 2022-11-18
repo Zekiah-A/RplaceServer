@@ -19,20 +19,18 @@ public class SocketServer
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
-    private readonly Logger<Action>? logger;
 
     public event EventHandler ChatMessageReceived;
     public event EventHandler PixelPlacementReceived;
     public event EventHandler PlayerConnected;
     public event EventHandler PlayerDisconnected;
 
-    public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port, Logger<Action>? logger = null)
+    public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
         //TODO: Make my own watson fork, that has a mentally sane certificate implementation, and a proper unique way to identify clients.
         app = new WatsonWsServer("localhost", port, ssl);
         gameData = data;
         this.origin = origin;
-        this.logger = logger;
 
         try
         {
@@ -80,7 +78,7 @@ public class SocketServer
         if (args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "origin")) !=
             origin || gameData.Bans.Contains(args.Client.IpPort))
         {
-            logger?.LogInformation("Client {args.Client.IpPort} disconnected for violating ban or initial headers checks", args.Client.IpPort);
+            Console.WriteLine($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
             return;
         }
@@ -96,7 +94,7 @@ public class SocketServer
 
             if (clearance is null)
             {
-                logger?.LogInformation("Client {args.Client.IpPort} disconnected for null cloudflare clearance cookie", args.Client.IpPort);
+                Console.WriteLine($"Client {args.Client.IpPort} disconnected for null cloudflare clearance cookie");
                 app.DisconnectClient(args.Client);
                 return;
             }
@@ -104,7 +102,7 @@ public class SocketServer
             foreach (var metadata in gameData.Clients.Keys
                 .Where(metadata => metadata.WsContext.CookieCollection.Contains(clearance)))
             {
-                logger?.LogInformation("Client {args.Client.IpPort} disconnected for new connection from the same clearance cookie", args.Client.IpPort);
+                Console.WriteLine($"Client {args.Client.IpPort} disconnected for new connection from the same clearance cookie");
                 app.DisconnectClient(metadata);
             }
         }

@@ -2,6 +2,7 @@ using WatsonWebsocket;
 
 namespace RplaceServer;
 
+// Gamedata contains any data used by the server that can be modified at runtime
 public record GameData
 (
     int Cooldown,
