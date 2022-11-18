@@ -2,25 +2,41 @@ using WatsonWebsocket;
 
 namespace RplaceServer;
 
-public class GameData
+public record GameData
+(
+    int Cooldown,
+    bool CaptchaEnabled,
+    List<string> Vips,
+    List<string> Bans,
+    int BoardWidth,
+    int BoardHeight,
+    int BackupFrequency,
+    bool UseCloudflare,
+    string CanvasFolder,
+    string? WebhookUrl = null,
+    List<int>? Palette = null
+)
 {
     //These will change frequently through the course of the game
     public byte[] Board;
     public uint Players;
-    public uint Cooldown;
-    public bool CaptchaEnabled;
-    public List<string> Vips;
-    public List<string> Bans;
     public Dictionary<ClientMetadata, SocketClient> Clients;
-    public List<int>? Palette;
 
-    //These require a server restart, or can be changed by server only
+    //These are persistent & saved in configs
+    public int Cooldown;
+    public bool CaptchaEnabled;
+    public List<string> Vips { get; set; }
+    public List<string> Bans;
     public int BoardWidth; //Pixels
     public int BoardHeight; //Pixels
     public int BackupFrequency; //Seconds
     public bool UseCloudflare;
     public string CanvasFolder;
-    public string? WebhookUrl; //HTTP/HTTPS
+    public string CanvasFile;
+    
+    //These are config-settable but also nullable
+    public string? WebhookUrl;
+    public List<int>? Palette;
 };
 
 // Palette:

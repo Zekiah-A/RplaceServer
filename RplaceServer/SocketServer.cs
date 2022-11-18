@@ -92,7 +92,7 @@ public class SocketServer
         var buffer = new byte[9];
         buffer[0] = 1;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], gameData.Cooldown);
+        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown);
         app.SendAsync(args.Client, buffer);
         
         // Send player palette data (if using a custom palette)

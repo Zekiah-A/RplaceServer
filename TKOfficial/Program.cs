@@ -66,11 +66,30 @@ public static class Program
         var webConfig = JsonSerializer.Deserialize<WebServerConfig>(await File.ReadAllTextAsync(WebConfigPath)) ?? throw new NullReferenceException();
 
         var data = new GameData
-        {
-            
-        };
+        (
+            socketConfig.Cooldown,
+            socketConfig.CaptchaEnabled,
+            socketConfig.Vips,
+            socketConfig.Bans,
+            socketConfig.Width,
+            socketConfig.Height,
+            webConfig.BackupFrequency,
+            programConfig.UseCloudflare,
+            programConfig.CanvasFolder,
+            socketConfig.WebhookUrl,
+            socketConfig.PaletteOverride
+        );
         
-        var server = new ServerInstance();
+        var server = new ServerInstance(
+            data,
+            programConfig.CertPath,
+            programConfig.KeyPath,
+            programConfig.Origin,
+            programConfig.SocketPort,
+            programConfig.HttpPort,
+            programConfig.Ssl
+        );
+        
         await server.Start();
         await StartNephriteRepl();
     }

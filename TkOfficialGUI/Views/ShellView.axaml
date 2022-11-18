@@ -10,10 +10,10 @@
         Title="TkOfficialGUI">
 
     <Design.DataContext>
-        <views:ShellView/>
+        <vm:MainWindowViewModel/>
     </Design.DataContext>
 
     <Grid>
-        <TabControl></TabControl>
+        <views:ServerView></views:ServerView>
     </Grid>
 </Window>
