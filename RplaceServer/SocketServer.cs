@@ -134,7 +134,7 @@ public class SocketServer
         var idIpPort = GetIdIpPort(args.Client.IpPort);
         if (args.Data.Array is null)
         {
-            logger?.Log(LogLevel.Warning, "Received null message Data.Array from {args.Client}", args.Client);
+            Console.WriteLine($"Received null message Data.Array from {args.Client}");
             return;
         }
         
