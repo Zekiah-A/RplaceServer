@@ -110,7 +110,7 @@ public class SocketServer
         var buffer = new byte[9];
         buffer[0] = (byte) ServerPacket.InitialInfo;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown);
+        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown * 1000);
         app.SendAsync(args.Client, buffer);
         
         // Send player palette data (if using a custom palette)
@@ -208,7 +208,7 @@ public class SocketServer
                 //Accept
                 PixelPlacementReceived.Invoke(this, new PixelPlacedEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index));
                 gameData.Board[index] = colour;
-                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
+                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown);
                 
                 break;
             }

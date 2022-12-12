@@ -14,4 +14,9 @@
       <ProjectReference Include="..\WatsonWebsocketPlus\src\WatsonWebsocket\WatsonWebsocket.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <Content Include="Pages\*">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
 </Project>
