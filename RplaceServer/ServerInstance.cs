@@ -29,9 +29,11 @@ public class ServerInstance
         webServer = new WebServer(data, certPath, keyPath, origin, ssl, webPort);
     }
 
-    public async Task Start()
+    public void Start()
     {
-        await socketServer.Start();
-        await webServer.Start();
+#pragma warning disable CS4014
+        socketServer.Start();
+        webServer.Start();
+#pragma warning restore CS4014
     }
 }

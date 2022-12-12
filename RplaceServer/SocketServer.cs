@@ -27,7 +27,7 @@ public class SocketServer
     public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
         //TODO: Make my own watson fork, that has a mentally sane certificate implementation, and a proper unique way to identify clients.
-        app = new WatsonWsServer("localhost", port, ssl);
+        app = new WatsonWsServer(port, "localhost");
         gameData = data;
         this.origin = origin;
 

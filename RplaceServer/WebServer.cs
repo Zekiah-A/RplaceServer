@@ -137,12 +137,14 @@ internal class WebServer
         });
         */
 
-        await app.RunAsync();
-        
         if (gameData.CreateBackups)
         {
-            await HandleBoardBackups();
+#pragma warning disable CS4014
+            HandleBoardBackups();
+#pragma warning restore CS4014
         }
+        
+        await app.RunAsync();
     }
 
     private async Task HandleBoardBackups()
