@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using RplaceServer.Events;
+using Timer = System.Timers.Timer;
 
 namespace RplaceServer;
 
@@ -61,19 +62,23 @@ internal class WebServer
 
         if (gameData.CreateBackups)
         {
-#pragma warning disable CS4014
             HandleBoardBackups();
-#pragma warning restore CS4014
         }
         
         await app.RunAsync();
     }
 
-    private async Task HandleBoardBackups()
+    private void HandleBoardBackups()
     {
-        var timer = new PeriodicTimer(TimeSpan.FromSeconds(gameData.BackupFrequency));
+        // Not the best way in the world.
+        var timer = new Timer
+        {
+            AutoReset = true,
+            Enabled = true,
+            Interval = TimeSpan.FromSeconds(gameData.BackupFrequency).TotalMilliseconds
+        };
 
-        while (await timer.WaitForNextTickAsync())
+        timer.Elapsed += async (_, _) =>
         {
             if (!gameData.CreateBackups)
             {
@@ -88,6 +93,6 @@ internal class WebServer
             await File.WriteAllBytesAsync(boardPath, gameData.Board);
             
             CanvasBackupCreated.Invoke(this, new CanvasBackupEventArgs(backupName, DateTime.Now, boardPath));
-        }
+        };
     }
 }
