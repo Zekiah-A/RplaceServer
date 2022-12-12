@@ -9,7 +9,7 @@ public static class StandardPalette
 {
     public static List<SKColor> SkiaColours => new(Colours.Select(item => new SKColor(item.Red, item.Green, item.Blue)));
 
-    public static readonly SKColor[] Colours =
+    public static SKColor[] Colours =
     {
         new(109, 0, 26),
         new(190, 0, 57),

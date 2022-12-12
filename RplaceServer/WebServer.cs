@@ -31,7 +31,7 @@ internal class WebServer
         app = builder.Build();
         app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
         app.UseCors(policy => policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials());
-        app.UseStaticFiles(new StaticFileOptions {FileProvider = new PhysicalFileProvider(pagesRoot) }); //TODO: Fix 404s, files not appearing to be served
+        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(pagesRoot) }); //TODO: Fix 404s, files not appearing to be served
     }
 
     public async Task Start()

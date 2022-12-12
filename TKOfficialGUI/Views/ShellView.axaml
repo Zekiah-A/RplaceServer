@@ -14,6 +14,13 @@
     </Design.DataContext>
 
     <Grid>
-        <views:ServerView></views:ServerView>
+        <TabControl VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+            <TabItem Header="Welcome">
+                <views:WelcomeView></views:WelcomeView>
+            </TabItem>
+            <TabItem Header="Instance 1">
+                <views:ServerView></views:ServerView>
+            </TabItem>
+        </TabControl>
     </Grid>
 </Window>

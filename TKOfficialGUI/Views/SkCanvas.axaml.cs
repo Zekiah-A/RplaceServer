@@ -34,7 +34,16 @@ public partial class SkCanvas : UserControl
             Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
         }
     }
-    
+
+    private byte[]? Changes
+    {
+        get => changes;
+        set
+        {
+            changes = value;
+            Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
+        }
+    }
     
     public SkCanvas()
     {
@@ -176,9 +185,8 @@ public partial class SkCanvas : UserControl
 
     public void AddPixel(int x, int y, int colour)
     {
-        changes ??= new byte[CanvasWidth * CanvasHeight];
-
-        changes[x % CanvasWidth + y % CanvasHeight * CanvasWidth] = (byte) colour;
+        Changes ??= new byte[CanvasWidth * CanvasHeight];
+        Changes[x % CanvasWidth + y % CanvasHeight * CanvasWidth] = (byte) colour;
     }
 }
 
