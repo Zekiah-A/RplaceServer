@@ -22,9 +22,7 @@ namespace TKOfficial;
 
 public static class Program
 {
-    private const string ProgramConfigPath = "server_config.json";
-    private const string SocketConfigPath = "game_server_config.json";
-    private const string WebConfigPath = "canvas_server_config.json";
+    private const string ConfigPath = "server_config.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new() {WriteIndented = true};
 
@@ -33,27 +31,14 @@ public static class Program
 
     public static async Task Main(string[] args)
     {
-        var missing = CheckFilesMissing(new[] {ProgramConfigPath, SocketConfigPath, WebConfigPath});
-        if (missing.Count != 0)
+        if (!File.Exists(ConfigPath))
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write("[Warning]: Could not find config files: ");
-            while (missing.Count > 0)
-            {
-                var missingPath = missing.Pop();
-                Console.Write(missingPath + ", ");
+            Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
-                dynamic config = missingPath switch
-                {
-                    ProgramConfigPath => new ProgramConfig(true, 443, 8080, "", "", "https://rplace.tk", false, "Backups"),
-                    SocketConfigPath => new SocketServerConfig(1000, 1000,  10, 10, true, new List<string>(), new List<string>(), null, null),
-                    WebConfigPath => new WebServerConfig(6000),
-                    _ => throw new ArgumentOutOfRangeException()
-                };
-
-                await File.WriteAllTextAsync(missingPath, JsonSerializer.Serialize(config, JsonOptions));
-            }
-            Console.ResetColor();
+            var defaultConfig = new Config(10000, true, true, new List<string>(), new List<string>(), 1000, 1000, 600,
+                false, "canvases", "", "", "https://rplace.tk", 443, 80, false);
+            await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"\n[INFO]: Config files recreated. Please check {Directory.GetCurrentDirectory()} and run this program again.");
@@ -61,34 +46,8 @@ public static class Program
             Environment.Exit(0);
         }
 
-        var programConfig = JsonSerializer.Deserialize<ProgramConfig>(await File.ReadAllTextAsync(ProgramConfigPath)) ?? throw new NullReferenceException();
-        var socketConfig = JsonSerializer.Deserialize<SocketServerConfig>(await File.ReadAllTextAsync(SocketConfigPath)) ?? throw new NullReferenceException();
-        var webConfig = JsonSerializer.Deserialize<WebServerConfig>(await File.ReadAllTextAsync(WebConfigPath)) ?? throw new NullReferenceException();
-        
-        var data = new GameData
-        (
-            socketConfig.Cooldown,
-            socketConfig.CaptchaEnabled,
-            socketConfig.Vips,
-            socketConfig.Bans,
-            socketConfig.Width,
-            socketConfig.Height,
-            webConfig.BackupFrequency,
-            programConfig.UseCloudflare,
-            programConfig.CanvasFolder,
-            socketConfig.WebhookUrl,
-            socketConfig.PaletteOverride
-        );
-
-        var server = new ServerInstance(
-            data,
-            programConfig.CertPath,
-            programConfig.KeyPath,
-            programConfig.Origin,
-            programConfig.SocketPort,
-            programConfig.HttpPort,
-            programConfig.Ssl
-        );
+        var config = JsonSerializer.Deserialize<Config>(await File.ReadAllTextAsync(ConfigPath)) ?? throw new NullReferenceException();
+        var server = new ServerInstance(config, config.CertPath, config.KeyPath, config.Origin, config.SocketPort, config.HttpPort, config.Ssl);
         
         await server.Start();
         await StartNephriteRepl();
@@ -136,16 +95,5 @@ public static class Program
             replPrevious.Add(input);
             input = "";
         }
-    }
-
-    private static Stack<string> CheckFilesMissing(IEnumerable<string> files)
-    {
-        var targets = new Stack<string>();
-
-        foreach (var file in files)
-            if (!File.Exists(file))
-                targets.Push(file);
-
-        return targets;
     }
 }

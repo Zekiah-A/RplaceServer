@@ -17,27 +17,27 @@ internal class WebServer
         <input type=""text"" placeholder=""Search.."" onkeyup=""search(this.value)"">
         <br> <br>
         <script>
-        function search(val) {
-            let str = val.toLowerCase().trim();
-            let links = document.getElementsByTagName('a');
-            for (let link of links) {
-                    let text = link.innerText.toLowerCase();
-                    if (text == '..') return;
-                    if (str.length && text.indexOf(str) || !str) link.classList.remove('highlight');
-                    else  link.classList.add('highlight');
+            function search(val) {
+                let str = val.toLowerCase().trim()
+                let links = document.getElementsByTagName('a')
+                for (let link of links) {
+                        let text = link.innerText.toLowerCase()
+                        if (text == '..') return
+                        if (str.length && text.indexOf(str) || !str) link.classList.remove('highlight')
+                        else  link.classList.add('highlight')
+                }
             }
-        }
-        async function getList() {
-            let blist = (await (await fetch('./backuplist')).text()).split('\n')
-            for (let backup of blist) {
-                  let a = document.createElement('a')
-                  a.innerText = backup
-                  a.href = './backups/' + backup
+            async function getList() {
+                let blist = (await (await fetch('./backuplist')).text()).split('\n')
+                for (let backup of blist) {
+                      let a = document.createElement('a')
+                      a.innerText = backup
+                      a.href = './backups/' + backup
                       document.body.appendChild(a)
                       document.body.appendChild(document.createElement('br'))
+                }
             }
-        }
-        getList()
+            getList()
         </script>
         <style>
             .highlight {
