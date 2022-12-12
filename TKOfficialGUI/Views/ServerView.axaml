@@ -80,14 +80,7 @@
 						<ItemsControl HorizontalAlignment="Left">
 							<ItemsControl.Template>
 								<ControlTemplate>
-									<Border Width="192" Height="256" Background="LightGray" CornerRadius="8">
-										<Grid RowDefinitions="* Auto Auto Auto" Margin="4">
-											<TextBlock Grid.Row="0" Text="192.168.1.1" FontWeight="Bold" FontSize="24" HorizontalAlignment="Center"></TextBlock>
-											<TextBlock Grid.Row="1" FontSize="18" Text="VIP: False"></TextBlock>
-											<TextBlock Grid.Row="2" FontSize="18" Text="Connect date"></TextBlock>
-											<TextBlock Grid.Row="3" FontSize="18" Text="Pixels placed"></TextBlock>
-										</Grid>
-									</Border>
+									<views:PlayerProfile></views:PlayerProfile>
 								</ControlTemplate>
 							</ItemsControl.Template>	
 						</ItemsControl>

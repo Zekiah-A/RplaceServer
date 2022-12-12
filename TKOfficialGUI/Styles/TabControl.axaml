@@ -11,9 +11,9 @@
 	</Design.PreviewWith>
 
 	<Style Selector="TabControl">
-		<Setter Property="Padding" Value="16"/>
+		<Setter Property="Padding" Value="8" />
 		<Setter Property="Background">
-			<LinearGradientBrush StartPoint="0, 0" EndPoint="0, 38" >
+			<LinearGradientBrush StartPoint="0, 0" EndPoint="0, 28" >
 				<GradientStop Offset="0.98" Color="Transparent"/>
 				<GradientStop Offset="0.99" Color="LightGray"/>
 				<GradientStop Offset="1" Color="#F9F9F9"/>
@@ -23,6 +23,8 @@
 		
 	<Style Selector="TabItem">
 		<Setter Property="FontSize" Value="12"/>
+		<Setter Property="Height" Value="28"/>
+		<Setter Property="MinHeight" Value="28"/>
 	</Style>
 		
 	<Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
