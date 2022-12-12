@@ -74,8 +74,7 @@ public class SocketServer
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
 
-        if (args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "origin")) !=
-            origin || gameData.Bans.Contains(args.Client.IpPort))
+        if (args.HttpRequest.Cookies["origin" ] != origin || gameData.Bans.Contains(args.Client.IpPort))
         {
             Console.WriteLine($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
@@ -99,7 +98,7 @@ public class SocketServer
             }
             
             foreach (var metadata in gameData.Clients.Keys
-                .Where(metadata => metadata.WsContext.CookieCollection.Contains(clearance)))
+                .Where(metadata => metadata.HttpContext.Request.Cookies["cf_clearance"] == clearance))
             {
                 Console.WriteLine($"Client {args.Client.IpPort} disconnected for new connection from the same clearance cookie");
                 app.DisconnectClient(metadata);
