@@ -9,6 +9,7 @@ public record GameData
 (
     int Cooldown,
     bool CaptchaEnabled,
+    bool CreateBackups,
     List<string> Vips,
     List<string> Bans,
     int BoardWidth,
@@ -39,6 +40,8 @@ public record GameData
     //These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;
     public List<int>? Palette { get; set; } = Palette;
+
+    public bool CreateBackups { get; set; } = CreateBackups;
 }
 
 // Default Palette:

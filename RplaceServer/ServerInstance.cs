@@ -14,9 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-using Microsoft.Extensions.Logging;
 using RplaceServer;
-using RplaceServer.Events;
 
 public class ServerInstance
 {
@@ -36,6 +34,4 @@ public class ServerInstance
         await socketServer.Start();
         await webServer.Start();
     }
-    
-    public event EventHandler CanvasBackupCreated;
 }

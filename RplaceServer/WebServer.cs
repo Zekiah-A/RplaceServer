@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using RplaceServer.Events;
 
 namespace RplaceServer;
 
@@ -83,6 +84,8 @@ internal class WebServer
     private readonly WebApplication app;
     private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;
+    
+    public event EventHandler CanvasBackupCreated;
 
     public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
@@ -125,30 +128,42 @@ internal class WebServer
             await File.ReadAllTextAsync(Path.Join(gameData.CanvasFolder, "backuplist.txt"))
         );
 
-        //TODO: Implement StarlkYT's timelapse generator
-        /*app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo) =>
+        // TODO: Implement StarlkYT's timelapse generator
+        /*
+        app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo) =>
         {
             var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo.BackupStart, timelapseInfo.BackupEnd, timelapseInfo.Fps, 750, timelapseInfo.StartX, timelapseInfo.StartY, timelapseInfo.EndX, timelapseInfo.EndY, timelapseInfo.Reverse);
             return Results.File(stream);
-        });*/
+        });
+        */
 
         await app.RunAsync();
-        await HandleBoardBackups();
+        
+        if (gameData.CreateBackups)
+        {
+            await HandleBoardBackups();
+        }
     }
 
-    public async Task HandleBoardBackups()
+    private async Task HandleBoardBackups()
     {
         var timer = new PeriodicTimer(TimeSpan.FromSeconds(gameData.BackupFrequency));
 
         while (await timer.WaitForNextTickAsync())
         {
+            if (!gameData.CreateBackups)
+            {
+                return;
+            }
+            
             var backupName = "place." + DateTime.Now.ToString("dd.MM.yyyy.HH:mm:ss");
             await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
             await file.WriteLineAsync(backupName);
 
-            await using var backupStream = File.Open(backupName, FileMode.OpenOrCreate);
-            backupStream.Seek(0, SeekOrigin.End);
-            await backupStream.WriteAsync(gameData.Board);
+            var boardPath = Path.Join(gameData.CanvasFolder, backupName);
+            await File.WriteAllBytesAsync(boardPath, gameData.Board);
+            
+            CanvasBackupCreated.Invoke(this, new CanvasBackupEventArgs(backupName, DateTime.Now, boardPath));
         }
     }
 }
