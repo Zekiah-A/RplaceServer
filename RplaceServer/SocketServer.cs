@@ -1,13 +1,12 @@
 using System.Buffers.Binary;
-using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
 using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Exceptions;
+using RplaceServer.Types;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -110,7 +109,7 @@ public class SocketServer
         // Send player cooldown + other data
         gameData.Clients.Add(args.Client, playerSocketClient);
         var buffer = new byte[9];
-        buffer[0] = 1;
+        buffer[0] = (byte) ServerPacket.InitialInfo;
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
         BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown);
         app.SendAsync(args.Client, buffer);
@@ -125,7 +124,7 @@ public class SocketServer
             app.SendAsync(args.Client, paletteBuffer);
         }
         
-        gameData.Players++;
+        gameData.PlayerCount++;
         PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(playerSocketClient));
     }
     
@@ -138,9 +137,10 @@ public class SocketServer
             return;
         }
         
-        switch (args.Data[0])
+        switch ((ClientPacket) args.Data[0])
         {
-            case 15:
+            case ClientPacket.ChatMessage:
+            {
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
@@ -175,46 +175,50 @@ public class SocketServer
                 var hookBody = new WebhookBody($"[{msgChannel}] {name}@rplace.tk", text);
                 httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
                 break;
-            case 16:
+            }
+            case ClientPacket.CaptchaSubmit:
+            {
                 var buffer = new byte[2];
-                buffer[1] = 16;
+                buffer[1] = (byte) ServerPacket.CaptchaSuccess;
                 buffer[2] = 255;
                 app.SendAsync(args.Client, buffer);
                 break;
-            case 99:
-                break;
-            case 20:
-                break;
-        }
-        
-        if (args.Data.Array?.Length < 6) return;
-        var index = BinaryPrimitives.ReadUInt32BigEndian(args.Data.Array?[1..]);
-        var colour = args.Data[5];
+            }
+            /*case 99: break; case 20: break;*/
+            default: // Pixel place
+            {
+                if (args.Data.Array?.Length < 6) return;
+                var index = BinaryPrimitives.ReadUInt32BigEndian(args.Data.Array?[1..]);
+                var colour = args.Data[5];
 
-        if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31)) return;
-        var cd = gameData.Clients[args.Client].Cooldown;
+                if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31)) return;
+                var cd = gameData.Clients[args.Client].Cooldown;
         
-        if (cd > DateTimeOffset.Now)
-        {
-            //reject
-            var buffer = new byte[10];
-            buffer[0] = 7;
-            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd.ToUnixTimeMilliseconds());
-            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[5..], (int) index);
-            buffer[9] = gameData.Board[index];
-            app.SendAsync(args.Client, buffer);
-            return;
+                if (cd > DateTimeOffset.Now)
+                {
+                    //reject
+                    var buffer = new byte[10];
+                    buffer[0] = (byte) ServerPacket.RejectPixel;
+                    BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd.ToUnixTimeMilliseconds());
+                    BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[5..], (int) index);
+                    buffer[9] = gameData.Board[index];
+                    app.SendAsync(args.Client, buffer);
+                    return;
+                }
+        
+                //Accept
+                PixelPlacementReceived.Invoke(this, new PixelPlacedEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index));
+                gameData.Board[index] = colour;
+                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
+                
+                break;
+            }
         }
-        
-        //Accept
-        PixelPlacementReceived.Invoke(this, new PixelPlacedEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index));
-        gameData.Board[index] = colour;
-        gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown - 500);
     }
 
     private void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
     {
-        gameData.Players--;
+        gameData.PlayerCount--;
         PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
         gameData.Clients.Remove(args.Client);
     }
@@ -249,7 +253,7 @@ public class SocketServer
     public void BroadcastChatMessage(string message, string channel, ClientMetadata? client = null)
     {
         var messageBytes = Encoding.UTF8.GetBytes($"\x0f{message}\nserver\n{channel}");
-        messageBytes[0] = 15;
+        messageBytes[0] = (byte) ServerPacket.ChatMessage;
 
         if (client is null)
         {
@@ -287,7 +291,4 @@ public class SocketServer
         //    ? args.HttpRequest.Headers.Get(Array.IndexOf(args.HttpRequest.Headers.AllKeys, "x-forwarded-for"))
         //    : args.IpPort;
     }
-    
-    
-    
 }

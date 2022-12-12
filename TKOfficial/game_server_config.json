@@ -1,10 +1,11 @@
 {
   "Width": 1000,
   "Height": 1000,
-  "PaletteSize": 31,
+  "PaletteSize": 10,
   "Cooldown": 10,
-  "CaptchaEnabled": false,
+  "CaptchaEnabled": true,
   "Vips": [],
   "Bans": [],
-  "WebhookUrl": ""
+  "PaletteOverride": null,
+  "WebhookUrl": null
 }

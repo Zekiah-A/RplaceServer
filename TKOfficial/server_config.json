@@ -1,10 +1,10 @@
 {
   "Ssl": false,
-  "SocketPort": 8086,
-  "HttpPort": 8087,
+  "SocketPort": 443,
+  "HttpPort": 8080,
   "CertPath": "",
   "KeyPath": "",
-  "Origin": "",
+  "Origin": "https://rplace.tk",
   "UseCloudflare": false,
   "CanvasFolder": "Backups"
 }
