@@ -21,19 +21,17 @@ public class ServerInstance
     private GameData data;
     private SocketServer socketServer;
     private WebServer webServer;
-    
-    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
+
+    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort,
+        bool ssl)
     {
         this.data = data;
         socketServer = new SocketServer(data, certPath, keyPath, origin, ssl, socketPort);
         webServer = new WebServer(data, certPath, keyPath, origin, ssl, webPort);
     }
 
-    public void Start()
+    public async Task Start()
     {
-#pragma warning disable CS4014
-        socketServer.Start();
-        webServer.Start();
-#pragma warning restore CS4014
+        await Task.WhenAll(socketServer.Start(), webServer.Start());
     }
 }

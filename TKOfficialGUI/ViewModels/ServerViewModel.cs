@@ -1,7 +1,8 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using RplaceServer;
 
 namespace TKOfficialGUI.ViewModels;
 
-public class ServerViewModel : ViewModelBase
+public class ServerViewModel : ObservableObject
 {
 }
