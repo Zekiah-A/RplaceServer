@@ -37,7 +37,5 @@ msbuild.wrn
 .vs/
 
 # Custom ignores
-RplaceServer/server_config.json
-RplaceServer/canvas_server_config.json
-RplaceServer/game_server_config.json
-RplaceServer/Backups/
+TKOfficial/server_config.json
+TKOfficial/Canvases/
