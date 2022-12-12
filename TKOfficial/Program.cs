@@ -48,9 +48,8 @@ public static class Program
 
         var config = JsonSerializer.Deserialize<Config>(await File.ReadAllTextAsync(ConfigPath)) ?? throw new NullReferenceException();
         var server = new ServerInstance(config, config.CertPath, config.KeyPath, config.Origin, config.SocketPort, config.HttpPort, config.Ssl);
-        
-        server.Start();
-        await StartNephriteRepl();
+
+        await Task.WhenAll(server.Start(), StartNephriteRepl());
     }
     
     private static async Task StartNephriteRepl()

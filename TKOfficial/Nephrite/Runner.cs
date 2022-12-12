@@ -16,7 +16,7 @@ public class NephriteRunner
 
             interpreter.Run(statements);
         }
-        catch (Exception error) when (error is ScanningErrorException || error is ParsingErrorException || error is RuntimeErrorException)
+        catch (Exception error) when (error is ScanningErrorException or ParsingErrorException or RuntimeErrorException)
         {
             ReportError(error.StackTrace == null ? error.Message : $"{error.Message}\n{error.StackTrace}");
         }
