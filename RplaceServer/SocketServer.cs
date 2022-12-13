@@ -11,7 +11,7 @@ using WatsonWebsocket;
 
 namespace RplaceServer;
 
-public class SocketServer
+internal sealed class SocketServer
 {
     private readonly JsonSerializerOptions defaultJsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly HttpClient httpClient = new();
@@ -19,10 +19,10 @@ public class SocketServer
     private readonly GameData gameData;
     private readonly string origin;
 
-    public event EventHandler ChatMessageReceived;
-    public event EventHandler PixelPlacementReceived;
-    public event EventHandler PlayerConnected;
-    public event EventHandler PlayerDisconnected;
+    public event EventHandler<ChatMessageEventArgs> ChatMessageReceived;
+    public event EventHandler<PixelPlacementEventArgs> PixelPlacementReceived;
+    public event EventHandler<PlayerConnectedEventArgs> PlayerConnected;
+    public event EventHandler<PlayerDisconnectedEventArgs> PlayerDisconnected;
 
     public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
@@ -30,6 +30,11 @@ public class SocketServer
         app = new WatsonWsServer(port, "localhost");
         gameData = data;
         this.origin = origin;
+        
+        ChatMessageReceived = DistributeChatMessage;
+        PixelPlacementReceived = DistributePixelPlacement;
+        PlayerConnected = (_, _) => { };
+        PlayerDisconnected = (_, _) => { };
 
         try
         {
@@ -74,6 +79,7 @@ public class SocketServer
     {
         var idIpPort = GetIdIpPort(args.Client.IpPort);
 
+        // Reject
         if (args.HttpRequest.Cookies["origin" ] != origin || gameData.Bans.Contains(args.Client.IpPort))
         {
             Console.WriteLine($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
@@ -81,9 +87,7 @@ public class SocketServer
             return;
         }
         
-        // Create player client instance
-        var playerSocketClient = new SocketClient(idIpPort, DateTimeOffset.Now);
-
+        // Reject
         // CF clearance cookie is made per device, per browser, as only 1 WS connection per browser/user/device is permitted,
         // to prevent bots, we disconnect the last client with the same cookie, only allowing current to be connected to server
         if (gameData.UseCloudflare)
@@ -104,32 +108,18 @@ public class SocketServer
                 app.DisconnectClient(metadata);
             }
         }
-
-        // Send player cooldown + other data
+        
+        // Accept
+        // Create player client instance
+        var playerSocketClient = new SocketClient(idIpPort, DateTimeOffset.Now);
         gameData.Clients.Add(args.Client, playerSocketClient);
-        var buffer = new byte[9];
-        buffer[0] = (byte) ServerPacket.InitialInfo;
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown * 1000);
-        app.SendAsync(args.Client, buffer);
-        
-        // Send player palette data (if using a custom palette)
-        if (gameData.Palette is not null)
-        {
-            var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
-            var paletteBuffer = new byte[1 + palette.Length * 4];
-            paletteBuffer[0] = 0;
-            Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
-            app.SendAsync(args.Client, paletteBuffer);
-        }
-        
         gameData.PlayerCount++;
+        
         PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(playerSocketClient));
     }
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
-        var idIpPort = GetIdIpPort(args.Client.IpPort);
         if (args.Data.Array is null)
         {
             Console.WriteLine($"Received null message Data.Array from {args.Client}");
@@ -140,6 +130,7 @@ public class SocketServer
         {
             case ClientPacket.ChatMessage:
             {
+                // Reject
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
@@ -148,6 +139,7 @@ public class SocketServer
                 var name = new Regex("/\\W+/g").Replace(rawMessage.Split("\n").ElementAtOrDefault(1) ?? "anon", "");
                 var msgChannel = rawMessage.Split("\n").ElementAtOrDefault(2);
                 
+                // Reject
                 if (text is null || msgChannel is null) return;
 
                 var type = rawMessage.Split("\n").ElementAtOrDefault(3) switch
@@ -160,19 +152,30 @@ public class SocketServer
                 var x = rawMessage.Split("\n").ElementAtOrDefault(4);
                 var y = rawMessage.Split("\n").ElementAtOrDefault(5);
                 
-                ChatMessageReceived.Invoke(this, 
-                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, x is not null ? int.Parse(x) : null,y is not null ? int.Parse(y) : null)
-                );
-
-                foreach (var client in app.Clients)
+                // Send player cooldown + other data
+                var buffer = new byte[9];
+                buffer[0] = (byte) ServerPacket.InitialInfo;
+                BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
+                BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown * 1000);
+                app.SendAsync(args.Client, buffer);
+        
+                // Send player palette data (if using a custom palette)
+                if (gameData.Palette is not null)
                 {
-                    app.SendAsync(client, args.Data);
+                    var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
+                    var paletteBuffer = new byte[1 + palette.Length * 4];
+                    paletteBuffer[0] = 0;
+                    Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
+                    app.SendAsync(args.Client, paletteBuffer);
                 }
 
-                if (string.IsNullOrEmpty(gameData.WebhookUrl)) return;
-
-                var hookBody = new WebhookBody($"[{msgChannel}] {name}@rplace.tk", text);
-                httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
+                // Accept
+                ChatMessageReceived.Invoke
+                (
+                    this, 
+                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, args.Data.Array!, x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
+                );
+                
                 break;
             }
             case ClientPacket.CaptchaSubmit:
@@ -184,18 +187,24 @@ public class SocketServer
                 break;
             }
             /*case 99: break; case 20: break;*/
-            default: // Pixel place
+            default: // Pixel placement
             {
-                if (args.Data.Array?.Length < 6) return;
+                //Reject
+                if (args.Data.Array.Length < 6)
+                {
+                    return;
+                }
+                
                 var index = BinaryPrimitives.ReadUInt32BigEndian(args.Data.Array?[1..]);
                 var colour = args.Data[5];
-
+                    
+                // Reject
                 if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31)) return;
                 var cd = gameData.Clients[args.Client].Cooldown;
         
                 if (cd > DateTimeOffset.Now)
                 {
-                    //reject
+                    // Reject
                     var buffer = new byte[10];
                     buffer[0] = (byte) ServerPacket.RejectPixel;
                     BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd.ToUnixTimeMilliseconds());
@@ -205,11 +214,12 @@ public class SocketServer
                     return;
                 }
         
-                //Accept
-                PixelPlacementReceived.Invoke(this, new PixelPlacedEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index));
-                gameData.Board[index] = colour;
-                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown);
-                
+                // Accept
+                PixelPlacementReceived.Invoke
+                (
+                    this,
+                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index, args.Client, args.Data.Array!)
+                );
                 break;
             }
         }
@@ -217,9 +227,39 @@ public class SocketServer
 
     private void ClientDisconnected(object? sender, ClientDisconnectedEventArgs args)
     {
-        gameData.PlayerCount--;
-        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
         gameData.Clients.Remove(args.Client);
+        gameData.PlayerCount--;
+        
+        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
+    }
+
+    /// <summary>
+    /// Internal event handler to distribute a chat message to all other clients, that can be inhibited
+    /// </summary>
+    private void DistributeChatMessage(object? sender, ChatMessageEventArgs args)
+    {
+        foreach (var client in app.Clients)
+        {
+            app.SendAsync(client, args.Message);
+        }
+
+        if (string.IsNullOrEmpty(gameData.WebhookUrl)) return;
+        var hookBody = new WebhookBody($"[{args.Channel}] {args.Name}@rplace.tk", args.Message);
+        httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
+    }
+
+    /// <summary>
+    /// Internal event handler to distribute a pixel placement to all other clients, that can be inhibited
+    /// </summary>
+    private void DistributePixelPlacement(object? sender, PixelPlacementEventArgs args)
+    {
+        gameData.Board[args.Index] = (byte) args.Colour;
+        gameData.Clients[args.Player].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown);
+        
+        foreach (var client in app.Clients)
+        {
+            app.SendAsync(client, args.Packet);
+        }
     }
 
     /// <summary>
@@ -281,6 +321,16 @@ public class SocketServer
         {
             gameData.Board[startX++ + startY++ * gameData.BoardWidth] = colour;
         }
+    }
+
+    public void BanPlayer(SocketClient player)
+    {
+        throw new NotImplementedException();
+    }
+
+    public void KickPlayer(SocketClient player)
+    {
+        throw new NotImplementedException();
     }
     
     private string GetIdIpPort(string ipPort)

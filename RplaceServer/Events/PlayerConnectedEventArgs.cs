@@ -1,6 +1,6 @@
 namespace RplaceServer.Events;
 
-public class PlayerConnectedEventArgs : EventArgs
+public sealed class PlayerConnectedEventArgs : EventArgs
 {
     public SocketClient Player { get; }
     

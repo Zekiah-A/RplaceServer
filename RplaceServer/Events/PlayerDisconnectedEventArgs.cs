@@ -2,7 +2,7 @@ using WatsonWebsocket;
 
 namespace RplaceServer.Events;
 
-public class PlayerDisconnectedEventArgs : EventArgs
+public sealed class PlayerDisconnectedEventArgs : EventArgs
 {
     public SocketClient Player { get; }
     

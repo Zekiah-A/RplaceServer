@@ -16,14 +16,13 @@
 
 using RplaceServer;
 
-public class ServerInstance
+public sealed class ServerInstance
 {
     private GameData data;
     private SocketServer socketServer;
     private WebServer webServer;
 
-    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort,
-        bool ssl)
+    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
         this.data = data;
         socketServer = new SocketServer(data, certPath, keyPath, origin, ssl, socketPort);

@@ -7,14 +7,14 @@ using Timer = System.Timers.Timer;
 
 namespace RplaceServer;
 
-internal class WebServer
+internal sealed class WebServer
 {
     private readonly ServerInstance instance;
     private readonly WebApplication app;
     private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;
     
-    public event EventHandler CanvasBackupCreated;
+    public event EventHandler<CanvasBackupCreatedEventArgs> CanvasBackupCreated = (_, _) => { };
 
     public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
@@ -70,7 +70,6 @@ internal class WebServer
 
     private void HandleBoardBackups()
     {
-        // Not the best way in the world.
         var timer = new Timer
         {
             AutoReset = true,
@@ -85,6 +84,8 @@ internal class WebServer
                 return;
             }
             
+            timer.Interval = TimeSpan.FromSeconds(gameData.BackupFrequency).TotalMilliseconds;
+            
             var backupName = "place." + DateTime.Now.ToString("dd.MM.yyyy.HH:mm:ss");
             await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
             await file.WriteLineAsync(backupName);
@@ -92,7 +93,7 @@ internal class WebServer
             var boardPath = Path.Join(gameData.CanvasFolder, backupName);
             await File.WriteAllBytesAsync(boardPath, gameData.Board);
             
-            CanvasBackupCreated.Invoke(this, new CanvasBackupEventArgs(backupName, DateTime.Now, boardPath));
+            CanvasBackupCreated.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
         };
     }
 }

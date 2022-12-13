@@ -1,3 +1,3 @@
 namespace RplaceServer;
 
-public record WebhookBody(string Username, string Content);
+internal sealed record WebhookBody(string Username, string Content);
