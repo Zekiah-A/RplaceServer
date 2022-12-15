@@ -64,7 +64,7 @@ internal sealed class WebServer
                 return Results.Unauthorized();
             }
             
-            var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo);
+            var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo, gameData);
             return Results.File(stream);
         });
         

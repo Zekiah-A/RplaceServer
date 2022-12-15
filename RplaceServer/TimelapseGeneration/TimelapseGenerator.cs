@@ -24,12 +24,13 @@ internal static class TimelapseGenerator
         new(81, 82, 82), new(137, 141, 144), new(212, 215, 217), new(255, 255, 255)
     };
     
-    public static async Task<Stream> GenerateTimelapseAsync(TimelapseInformation info)
+    public static async Task<Stream> GenerateTimelapseAsync(TimelapseInformation info, GameData gameData)
     {
-        var backups = Directory.GetFiles(Directory.GetCurrentDirectory())
+        var backups = Directory.GetFiles(gameData.CanvasFolder)
             .SkipWhile(backup => Path.GetFileName(backup) != info.BackupStart)
             .TakeWhile(backup => Path.GetFileName(backup) != info.BackupEnd)
             .ToArray();
+
 
         if (info.Reverse)
         {
@@ -42,7 +43,6 @@ internal static class TimelapseGenerator
         {
             if (!File.Exists(path))
             {
-                Console.WriteLine("[Error] Failed to find canvas backup @" + path);
                 continue;
             }
 
@@ -81,8 +81,8 @@ internal static class TimelapseGenerator
             frames.Add(frame);
         }
         
+        using var stream = new MemoryStream();
         var framesSource = new RawVideoPipeSource(frames) { FrameRate = info.Fps };
-        var stream = new MemoryStream();
         var outSink = new StreamPipeSink(stream);
         await FFMpegArguments
             .FromPipeInput(framesSource)
