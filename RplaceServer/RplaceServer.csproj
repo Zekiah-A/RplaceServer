@@ -19,4 +19,10 @@
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
     </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="FFMpegCore" Version="4.8.0" />
+      <PackageReference Include="SkiaSharp" Version="2.88.3" />
+      <PackageReference Include="System.Threading.RateLimiting" Version="7.0.0" />
+    </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using PlaceHttpsServer;
 using RplaceServer.Events;
 using Timer = System.Timers.Timer;
 
@@ -50,15 +51,14 @@ internal sealed class WebServer
         app.MapGet("/backuplist", async () =>
             await File.ReadAllTextAsync(Path.Join(gameData.CanvasFolder, "backuplist.txt"))
         );
-
-        // TODO: Implement StarlkYT's timelapse generator
-        /*
+        
         app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo) =>
         {
-            var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo.BackupStart, timelapseInfo.BackupEnd, timelapseInfo.Fps, 750, timelapseInfo.StartX, timelapseInfo.StartY, timelapseInfo.EndX, timelapseInfo.EndY, timelapseInfo.Reverse);
+            //TODO: Implement rate limiter per IP (1 generation per [customisable, default] 5 minutes) to prevent abuse. 
+            var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo);
             return Results.File(stream);
         });
-        */
+        
 
         if (gameData.CreateBackups)
         {
