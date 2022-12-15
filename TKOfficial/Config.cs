@@ -14,6 +14,7 @@ public record Config
     int BackupFrequency,
     bool UseCloudflare,
     string CanvasFolder,
+    int TimelapseLimitPeriod,
     string CertPath,
     string KeyPath,
     string Origin,
@@ -22,4 +23,4 @@ public record Config
     bool Ssl,
     string? WebhookUrl = null,
     List<int>? Palette = null
-) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, CanvasFolder, WebhookUrl, Palette);
+) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, CanvasFolder, TimelapseLimitPeriod, WebhookUrl, Palette);

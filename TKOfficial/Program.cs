@@ -37,7 +37,7 @@ public static class Program
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
             var defaultConfig = new Config(5, true, true, new List<string>(), new List<string>(), 1000, 1000, 600,
-                false, "Canvases", "", "", "https://rplace.tk", 443, 80, false);
+                false, "Canvases", 300, "", "", "https://rplace.tk", 443, 80, false);
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
             Console.ForegroundColor = ConsoleColor.Green;

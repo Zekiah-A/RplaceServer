@@ -17,6 +17,7 @@ public record GameData
     int BackupFrequency,
     bool UseCloudflare,
     string CanvasFolder,
+    int TimelapseLimitPeriod,
     string? WebhookUrl = null,
     List<int>? Palette = null
 )
@@ -36,11 +37,11 @@ public record GameData
     public int BackupFrequency { get; set; } = BackupFrequency; // Seconds
     public bool UseCloudflare { get; set; } = UseCloudflare;
     public string CanvasFolder { get; set; } = CanvasFolder;
+    public int TimelapseLimitPeriod { get; set; } = TimelapseLimitPeriod; // Seconds
     
     // These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;
     public List<int>? Palette { get; set; } = Palette;
-
     public bool CreateBackups { get; set; } = CreateBackups;
 }
 

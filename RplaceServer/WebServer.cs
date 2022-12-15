@@ -14,6 +14,7 @@ internal sealed class WebServer
     private readonly WebApplication app;
     private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;
+    private readonly RateLimiter rateLimiter;
     
     public event EventHandler<CanvasBackupCreatedEventArgs> CanvasBackupCreated = (_, _) => { };
 
@@ -34,6 +35,8 @@ internal sealed class WebServer
         app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
         app.UseCors(policy => policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials());
         app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(pagesRoot) }); //TODO: Fix 404s, files not appearing to be served
+
+        rateLimiter = new RateLimiter(TimeSpan.FromSeconds(gameData.TimelapseLimitPeriod));
     }
 
     public async Task Start()
@@ -52,9 +55,15 @@ internal sealed class WebServer
             await File.ReadAllTextAsync(Path.Join(gameData.CanvasFolder, "backuplist.txt"))
         );
         
-        app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo) =>
+        app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo, HttpContext context) =>
         {
-            //TODO: Implement rate limiter per IP (1 generation per [customisable, default] 5 minutes) to prevent abuse. 
+            var address = context.Connection.RemoteIpAddress;
+            
+            if (address is null || !rateLimiter.IsAuthorised(address))
+            {
+                return Results.Unauthorized();
+            }
+            
             var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo);
             return Results.File(stream);
         });
