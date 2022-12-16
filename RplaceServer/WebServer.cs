@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -100,7 +101,7 @@ internal sealed class WebServer
             await file.WriteLineAsync(backupName);
 
             var boardPath = Path.Join(gameData.CanvasFolder, backupName);
-            await File.WriteAllBytesAsync(boardPath, gameData.Board);
+            await File.WriteAllBytesAsync(boardPath, BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth));
             
             CanvasBackupCreated.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
         };

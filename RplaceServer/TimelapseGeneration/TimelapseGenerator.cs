@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using FFMpegCore;
 using FFMpegCore.Pipes;
+using RplaceServer;
 using SkiaSharp;
 
 namespace PlaceHttpsServer;
@@ -47,34 +49,27 @@ internal static class TimelapseGenerator
             }
 
             using var bitmap = new SKBitmap(info.EndX - info.StartX, info.EndY - info.StartY);
-            var board = await File.ReadAllBytesAsync(path);
-            var calculateSizeX = board.Length switch
-            {
-                250000 => 500,
-                562500 => 750,
-                _ => 500
-            };
+            var unpacked = BoardPacker.UnpackBoard(await File.ReadAllBytesAsync(path));
 
-            
-            var i = calculateSizeX * info.StartY + info.StartX;
-            while (i < board.Length)
+            var i = unpacked.Width * info.StartY + info.StartX;
+            while (i < unpacked.Board.Length)
             {
-                bitmap.SetPixel(i % calculateSizeX - info.StartX, i / calculateSizeX - info.StartY, Colours[board[i]]);
+                bitmap.SetPixel(i % unpacked.Width - info.StartX, i / unpacked.Width - info.StartY, Colours[unpacked.Board[i]]);
                 i++;
 
                 // If we exceed width, go to next row, otherwise continue
-                if (i % calculateSizeX < info.EndX)
+                if (i % unpacked.Width < info.EndX)
                 {
                     continue; 
                 }
 
                 // If we exceed end bottom, we are done drawing this
-                if (i / calculateSizeX == info.EndY - 1)
+                if (i / unpacked.Width == info.EndY - 1)
                 {
                     break; 
                 }
                 
-                i += calculateSizeX - (info.EndX - info.StartX);
+                i += unpacked.Width - (info.EndX - info.StartX);
             }
 
             using var frame = new SKBitmapFrame(bitmap);
