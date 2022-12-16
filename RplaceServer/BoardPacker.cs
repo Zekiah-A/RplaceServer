@@ -18,7 +18,7 @@ public static class BoardPacker
 
         if (palette is not null)
         {
-            for (var colour = board.Length + 4; colour < packedBoard.Length; colour++)
+            for (var colour = board.Length + 4; colour < packedBoard.Length - 2; colour++)
             {
                 BinaryPrimitives.WriteUInt32BigEndian(packedBoard[iteration..(iteration + 4)], (uint) palette[colour]);
                 iteration += 4;
@@ -41,7 +41,7 @@ public static class BoardPacker
         var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[boardLength..(boardLength + 4)]);
 
         var palette = new List<int>();
-        for (var i = boardLength + 2; i < packedBoard.Length - 2; i++)
+        for (var i = boardLength + 4; i < packedBoard.Length - 2; i++)
         {
             palette.Add((int) BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i+4)]));
         }
