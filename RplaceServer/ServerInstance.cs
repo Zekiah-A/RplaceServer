@@ -18,19 +18,19 @@ using RplaceServer;
 
 public sealed class ServerInstance
 {
-    private GameData data;
-    private SocketServer socketServer;
-    private WebServer webServer;
+    public GameData GameData;
+    public SocketServer SocketServer { get; set; }
+    public WebServer WebServer { get; set; }
 
-    public ServerInstance(GameData data, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
+    public ServerInstance(GameData gameData, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
-        this.data = data;
-        socketServer = new SocketServer(data, certPath, keyPath, origin, ssl, socketPort);
-        webServer = new WebServer(data, certPath, keyPath, origin, ssl, webPort);
+        GameData = gameData;
+        SocketServer = new SocketServer(gameData, certPath, keyPath, origin, ssl, socketPort);
+        WebServer = new WebServer(gameData, certPath, keyPath, origin, ssl, webPort);
     }
 
     public async Task Start()
     {
-        await Task.WhenAll(socketServer.Start(), webServer.Start());
+        await Task.WhenAll(SocketServer.Start(), WebServer.Start());
     }
 }

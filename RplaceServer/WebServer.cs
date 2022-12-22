@@ -1,21 +1,22 @@
-using System.Buffers.Binary;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
 using PlaceHttpsServer;
 using RplaceServer.Events;
 using Timer = System.Timers.Timer;
 
 namespace RplaceServer;
 
-internal sealed class WebServer
+public sealed class WebServer
 {
     private readonly ServerInstance instance;
     private readonly WebApplication app;
     private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;
     private readonly RateLimiter rateLimiter;
+    public Action<string>? Logger;
     
     public event EventHandler<CanvasBackupCreatedEventArgs> CanvasBackupCreated = (_, _) => { };
 
@@ -24,18 +25,30 @@ internal sealed class WebServer
         gameData = data;
         var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
 
-        builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = pagesRoot });
-        builder.Configuration["Kestrel:Certificates:Default:Path"] = certPath;
-        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = keyPath;
+        builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            WebRootPath = pagesRoot
+        });
+
         builder.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy => policy.WithOrigins(origin, "*"));
         });
 
+        builder.Configuration["Kestrel:Certificates:Default:Path"] = certPath;
+        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = keyPath;
+        
         app = builder.Build();
         app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
-        app.UseCors(policy => policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials());
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(pagesRoot) }); //TODO: Fix 404s, files not appearing to be served
+        app.UseCors(policy =>
+        {
+            policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials();
+        });
+        
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new PhysicalFileProvider(pagesRoot)
+        });
 
         rateLimiter = new RateLimiter(TimeSpan.FromSeconds(gameData.TimelapseLimitPeriod));
     }
@@ -62,6 +75,7 @@ internal sealed class WebServer
             
             if (address is null || !rateLimiter.IsAuthorised(address))
             {
+                Logger?.Invoke($"Timelapse generation rejected from client {address} due to exceeding rate limit");
                 return Results.Unauthorized();
             }
             

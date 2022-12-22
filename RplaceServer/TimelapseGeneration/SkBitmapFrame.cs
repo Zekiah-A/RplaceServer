@@ -15,7 +15,7 @@ public class SKBitmapFrame : IVideoFrame, IDisposable
     {
         if (bmp.ColorType != SKColorType.Bgra8888)
         {
-            throw new NotImplementedException("only 'bgra' colour type is supported");
+            throw new NotImplementedException("Only 'bgra' colour type is supported");
         }
         
         source = bmp;

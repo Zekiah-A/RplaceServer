@@ -15,12 +15,16 @@ public record Config
     bool UseCloudflare,
     string CanvasFolder,
     int TimelapseLimitPeriod,
+    
+    bool LogToConsole,
     string CertPath,
     string KeyPath,
     string Origin,
     int SocketPort,
     int HttpPort,
     bool Ssl,
+    
     string? WebhookUrl = null,
     List<int>? Palette = null
-) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, CanvasFolder, TimelapseLimitPeriod, WebhookUrl, Palette);
+) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
+    CanvasFolder, TimelapseLimitPeriod, WebhookUrl, Palette);

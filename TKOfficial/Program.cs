@@ -15,8 +15,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using System.Text.Json;
-using Nephrite;
-using RplaceServer;
 
 namespace TKOfficial;
 
@@ -37,7 +35,7 @@ public static class Program
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
             var defaultConfig = new Config(5, true, true, new List<string>(), new List<string>(), 1000, 1000, 600,
-                false, "Canvases", 300, "", "", "https://rplace.tk", 443, 80, false);
+                false, "Canvases", 300, true, "", "", "https://rplace.tk", 443, 80, false);
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
             Console.ForegroundColor = ConsoleColor.Green;
@@ -50,6 +48,19 @@ public static class Program
         var server = new ServerInstance(config, config.CertPath, config.KeyPath, config.Origin, config.SocketPort, config.HttpPort, config.Ssl);
 
         await Task.WhenAll(server.Start(), StartNephriteRepl());
+
+        if (config.LogToConsole)
+        {
+            server.SocketServer.Logger += message =>
+            {
+                Console.WriteLine("[SocketServer]: " + message);
+            };
+
+            server.WebServer.Logger += message =>
+            {
+                Console.WriteLine("[WebServer]: " + message);
+            };
+        }
     }
     
     private static async Task StartNephriteRepl()
