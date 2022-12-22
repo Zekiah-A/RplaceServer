@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Exceptions;
@@ -26,8 +27,7 @@ internal sealed class SocketServer
 
     public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
-        //TODO: Make my own watson fork, that has a mentally sane certificate implementation, and a proper unique way to identify clients.
-        app = new WatsonWsServer(port, "localhost");
+        app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         gameData = data;
         this.origin = origin;
         
@@ -39,7 +39,11 @@ internal sealed class SocketServer
         try
         {
             var boardFile = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
-            if (boardFile.Length == 0) throw new NoCanvasFileFoundException("Could not locate canvas file at", Path.Join(gameData.CanvasFolder, "place"));
+            if (boardFile.Length == 0)
+            {
+                throw new NoCanvasFileFoundException("Could not locate canvas file at", 
+                    Path.Join(gameData.CanvasFolder, "place"));
+            }
             gameData.Board = boardFile;
         }
         catch (Exception exception)
@@ -62,8 +66,11 @@ internal sealed class SocketServer
             File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
         }
         
-        //Make a canvas save file just before the program exits.
-        AppDomain.CurrentDomain.ProcessExit += (sender, e) => { File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board); };
+        // Make a canvas save file just before the program exits.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
+        };
     }
 
     public async Task Start()
@@ -80,7 +87,7 @@ internal sealed class SocketServer
         var idIpPort = GetIdIpPort(args.Client.IpPort);
 
         // Reject
-        if (args.HttpRequest.Cookies["origin" ] != origin || gameData.Bans.Contains(args.Client.IpPort))
+        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Cookies["origin" ] != origin) || gameData.Bans.Contains(args.Client.IpPort))
         {
             Console.WriteLine($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
@@ -120,11 +127,7 @@ internal sealed class SocketServer
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
-        if (args.Data.Array is null)
-        {
-            Console.WriteLine($"Received null message Data.Array from {args.Client}");
-            return;
-        }
+        var data = new Span<byte>(args.Data.ToArray());
         
         switch ((ClientPacket) args.Data[0])
         {
@@ -134,7 +137,7 @@ internal sealed class SocketServer
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400) return;
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
-                var rawMessage = Encoding.UTF8.GetString(args.Data.Array, 1, args.Data.Array.Length - 1);
+                var rawMessage = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1);
                 var text = rawMessage.Split("\n").ElementAtOrDefault(0);
                 var name = new Regex("/\\W+/g").Replace(rawMessage.Split("\n").ElementAtOrDefault(1) ?? "anon", "");
                 var msgChannel = rawMessage.Split("\n").ElementAtOrDefault(2);
@@ -153,11 +156,11 @@ internal sealed class SocketServer
                 var y = rawMessage.Split("\n").ElementAtOrDefault(5);
                 
                 // Send player cooldown + other data
-                var buffer = new byte[9];
+                var buffer = new Span<byte>(new byte[9]);
                 buffer[0] = (byte) ServerPacket.InitialInfo;
-                BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[1..], 1);
-                BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan()[5..], (uint) gameData.Cooldown * 1000);
-                app.SendAsync(args.Client, buffer);
+                BinaryPrimitives.WriteUInt32BigEndian(buffer[1..], 1);
+                BinaryPrimitives.WriteUInt32BigEndian(buffer[5..], (uint) gameData.Cooldown * 1000);
+                app.SendAsync(args.Client, buffer.ToArray());
         
                 // Send player palette data (if using a custom palette)
                 if (gameData.Palette is not null)
@@ -173,7 +176,8 @@ internal sealed class SocketServer
                 ChatMessageReceived.Invoke
                 (
                     this, 
-                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, args.Data.Array!, x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
+                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, 
+                    data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
                 );
                 
                 break;
@@ -186,16 +190,16 @@ internal sealed class SocketServer
                 app.SendAsync(args.Client, buffer);
                 break;
             }
-            /*case 99: break; case 20: break;*/
+            /* case 99: break; case 20: break; */
             default: // Pixel placement
             {
                 //Reject
-                if (args.Data.Array.Length < 6)
+                if (data.Length < 6)
                 {
                     return;
                 }
                 
-                var index = BinaryPrimitives.ReadUInt32BigEndian(args.Data.Array?[1..]);
+                var index = BinaryPrimitives.ReadUInt32BigEndian(data[1..]);
                 var colour = args.Data[5];
                     
                 // Reject
@@ -205,12 +209,12 @@ internal sealed class SocketServer
                 if (cd > DateTimeOffset.Now)
                 {
                     // Reject
-                    var buffer = new byte[10];
+                    var buffer = new Span<byte>(new byte[10]);
                     buffer[0] = (byte) ServerPacket.RejectPixel;
-                    BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[1..], (int) cd.ToUnixTimeMilliseconds());
-                    BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan()[5..], (int) index);
+                    BinaryPrimitives.WriteInt32BigEndian(buffer[1..], (int) cd.ToUnixTimeMilliseconds());
+                    BinaryPrimitives.WriteInt32BigEndian(buffer[5..], (int) index);
                     buffer[9] = gameData.Board[index];
-                    app.SendAsync(args.Client, buffer);
+                    app.SendAsync(args.Client, buffer.ToArray());
                     return;
                 }
         
@@ -218,7 +222,8 @@ internal sealed class SocketServer
                 PixelPlacementReceived.Invoke
                 (
                     this,
-                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth), (int) index / gameData.BoardHeight, (int) index, args.Client, args.Data.Array!)
+                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth),
+                    (int) index / gameData.BoardHeight, (int) index, args.Client, data.ToArray())
                 );
                 break;
             }
