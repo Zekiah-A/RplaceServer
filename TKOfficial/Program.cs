@@ -51,12 +51,12 @@ public static class Program
 
         if (config.LogToConsole)
         {
-            server.SocketServer.Logger += message =>
+            server.SocketServer.Logger = message =>
             {
                 Console.WriteLine("[SocketServer]: " + message);
             };
 
-            server.WebServer.Logger += message =>
+            server.WebServer.Logger = message =>
             {
                 Console.WriteLine("[WebServer]: " + message);
             };

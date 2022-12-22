@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using RplaceServer.Enums;
 using RplaceServer.Events;
@@ -45,7 +44,7 @@ public sealed class SocketServer
             var boardFile = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
             if (boardFile.Length == 0)
             {
-                throw new NoCanvasFileFoundException("Could not locate canvas file at", 
+                throw new NoCanvasFileFoundException("Could not read canvas file at", 
                     Path.Join(gameData.CanvasFolder, "place"));
             }
             
@@ -53,8 +52,7 @@ public sealed class SocketServer
         }
         catch (Exception exception)
         {
-            Logger?.Invoke("" + exception.Message);
-
+            Logger?.Invoke(exception.Message);
             gameData.Board = new byte[gameData.BoardWidth * gameData.BoardHeight];
 
             if (!Directory.Exists(gameData.CanvasFolder))
@@ -162,7 +160,7 @@ public sealed class SocketServer
                 //Reject
                 if (data.Length < 6)
                 {
-                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for invalid length ({data.Length})");
+                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for invalid packet length ({data.Length})");
                     return;
                 }
 
@@ -170,7 +168,11 @@ public sealed class SocketServer
                 var colour = args.Data[5];
 
                 // Reject
-                if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31)) return;
+                if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31))
+                {
+                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for exceeding canvas size or palette ({index}, {colour})");
+                    return;
+                }
                 var clientCooldown = gameData.Clients[args.Client].Cooldown;
 
                 if (clientCooldown > DateTimeOffset.Now)
@@ -187,6 +189,8 @@ public sealed class SocketServer
                 }
 
                 // Accept
+                
+                
                 PixelPlacementReceived.Invoke
                 (
                     this,
@@ -255,22 +259,7 @@ public sealed class SocketServer
 
         PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
     }
-
-    /// <summary>
-    /// Internal event handler to distribute a chat message to all other clients, that can be inhibited
-    /// </summary>
-    private void DistributeChatMessage(object? sender, ChatMessageEventArgs args)
-    {
-        foreach (var client in app.Clients)
-        {
-            app.SendAsync(client, args.Message);
-        }
-
-        if (string.IsNullOrEmpty(gameData.WebhookUrl)) return;
-        var hookBody = new WebhookBody($"[{args.Channel}] {args.Name}@rplace.tk", args.Message);
-        httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
-    }
-
+    
     /// <summary>
     /// Internal event handler to distribute a pixel placement to all other clients, that can be inhibited
     /// </summary>
@@ -279,12 +268,30 @@ public sealed class SocketServer
         gameData.Board[args.Index] = (byte) args.Colour;
         gameData.Clients[args.Player].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown);
 
+        var serverPixel = args.Packet;
+        serverPixel[0] = (byte) ServerPacket.PixelPlace;
+
+        foreach (var client in app.Clients)
+        {
+            app.SendAsync(client, serverPixel);
+        }
+    }
+
+    /// <summary>
+    /// Internal event handler to distribute a chat message to all other clients, that can be inhibited
+    /// </summary>
+    private void DistributeChatMessage(object? sender, ChatMessageEventArgs args)
+    {
         foreach (var client in app.Clients)
         {
             app.SendAsync(client, args.Packet);
         }
-    }
 
+        if (string.IsNullOrEmpty(gameData.WebhookUrl)) return;
+        var hookBody = new WebhookBody($"[{args.Channel}] {args.Name}@rplace.tk", args.Message);
+        httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
+    }
+    
     /// <summary>
     /// Increases the size of a canvas/board, by a given width and height.
     /// </summary>
