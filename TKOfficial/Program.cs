@@ -67,7 +67,7 @@ public static class Program
         }
     }
     
-    private static async Task StartNephriteRepl()
+    private static Task StartNephriteRepl()
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.Write($"You have entered the rPlace server Nephrite REPL. Enter a command to run it.\n");
@@ -109,41 +109,61 @@ public static class Program
                 switch (sections.ElementAtOrDefault(0))
                 {
                     case "server":
-                        var args = sections[2..];
+                        var args = new List<string?>();
+                        for (var i = 2; i < sections.Length; i++)
+                        {
+                            args.Add(sections.ElementAtOrDefault(i));
+                        }
                         
                         switch (sections.ElementAtOrDefault(1))
                         {
                             case "expand_canvas":
-                                server.SocketServer.ExpandCanvas(
-                                    int.Parse(args[0]),
-                                    int.Parse(args[1])
-                                );
+                                if
+                                (
+                                    !int.TryParse(args[0], out var widthIncrease) ||
+                                    int.TryParse(args[0], out var heightIncrease)
+                                )
+                                {
+                                    break;
+                                }
+                                
+                                server.SocketServer.ExpandCanvas(widthIncrease, heightIncrease);
                                 break;
                             case "broadcast_chat_message":
+                                if (args[0] is null || args[1] is null)
+                                {
+                                    break;
+                                }
+                                
                                 if (variable is null)
                                 {
-                                    server.SocketServer.BroadcastChatMessage(
-                                        args[0],
-                                        args[1]
-                                    );
+                                    server.SocketServer.BroadcastChatMessage(args[0]!, args[1]!);
                                 }
                                 else
                                 {
-                                    server.SocketServer.BroadcastChatMessage(
-                                        args[0],
-                                        args[1],
-                                         (ClientMetadata) variable
-                                    );
+                                    server.SocketServer.BroadcastChatMessage(args[0]!, args[1]!, (ClientMetadata) variable);
                                 }
                                 break;
                             case "fill":
-                                server.SocketServer.Fill(
-                                    int.Parse(args[0]),
-                                    int.Parse(args[1]),
-                                    int.Parse(args[2]),
-                                    int.Parse(args[3]),
-                                    byte.Parse(args[4])
-                                );
+                                if
+                                (
+                                    !int.TryParse(args[0], out var startX) ||
+                                    int.TryParse(args[1], out var startY) ||
+                                    int.TryParse(args[2], out var endX) ||
+                                    int.TryParse(args[3], out var endY)
+                                )
+                                {
+                                    break;
+                                }
+
+                                if (args[4] is null)
+                                {
+                                    server.SocketServer.Fill(startX, startY, endX, endY);
+                                }
+                                else
+                                {
+                                    server.SocketServer.Fill(startX, startY, endX, endY, byte.Parse(args[4]!));
+                                }
                                 break;
                             default:
                                 Console.WriteLine("Commands: fill [startX, startY, endX, endY, colour]," +
@@ -178,8 +198,8 @@ public static class Program
                                 }
                                 break;
                             case "data":
-                                var clientPair = server.GameData.Clients.FirstOrDefault(key =>
-                                        key.Key.IpPort == sections.ElementAtOrDefault(2));
+                                var clientPair = server.GameData.Clients.FirstOrDefault(pair =>
+                                        pair.Key.IpPort == sections.ElementAtOrDefault(2));
                                 
                                 Console.WriteLine(clientPair.Key + " loaded into 'variable'");
                                 variable = clientPair.Key;
@@ -190,6 +210,9 @@ public static class Program
                                 break;
                         }
                         break;
+                    case "stop":
+                        Environment.Exit(0);
+                        return Task.CompletedTask;
                 }
             }
 
