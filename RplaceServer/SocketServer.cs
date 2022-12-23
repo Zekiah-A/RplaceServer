@@ -8,6 +8,7 @@ using RplaceServer.Events;
 using RplaceServer.Exceptions;
 using RplaceServer.Types;
 using WatsonWebsocket;
+using Timer = System.Timers.Timer;
 
 namespace RplaceServer;
 
@@ -82,7 +83,7 @@ public sealed class SocketServer
 
         await app.StartAsync();
     }
-
+    
     private void ClientConnected(object? sender, ClientConnectedEventArgs args)
     {
         // Reject
@@ -140,7 +141,7 @@ public sealed class SocketServer
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
 
-        // TODO: Send player game information (updated every 5 seconds) 
+        // TODO: Send player player count & votes
         // var gameInfo = new Span<byte>(new byte[5]);
         // gameInfo[0] = (byte) ServerPacket.GameInfo;
         // BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) gameData.PlayerCount);
