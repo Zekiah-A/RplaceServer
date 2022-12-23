@@ -124,7 +124,7 @@ public static class Program
                                 if
                                 (
                                     !int.TryParse(args[0], out var widthIncrease) ||
-                                    int.TryParse(args[0], out var heightIncrease)
+                                    !int.TryParse(args[0], out var heightIncrease)
                                 )
                                 {
                                     break;
@@ -155,9 +155,9 @@ public static class Program
                                 if
                                 (
                                     !int.TryParse(args[0], out var startX) ||
-                                    int.TryParse(args[1], out var startY) ||
-                                    int.TryParse(args[2], out var endX) ||
-                                    int.TryParse(args[3], out var endY)
+                                    !int.TryParse(args[1], out var startY) ||
+                                    !int.TryParse(args[2], out var endX) ||
+                                    !int.TryParse(args[3], out var endY)
                                 )
                                 {
                                     break;
