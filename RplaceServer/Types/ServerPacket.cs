@@ -8,5 +8,5 @@ public enum ServerPacket
     PixelPlace = 6,
     RejectPixel = 7,
     ChatMessage = 15,
-    CaptchaSuccess = 16
+    Captcha = 16
 }

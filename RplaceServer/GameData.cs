@@ -25,7 +25,8 @@ public record GameData
     // These will be acessed & changed frequently, but are not saved in configs
     public byte[] Board;
     public int PlayerCount;
-    public Dictionary<ClientMetadata, SocketClient> Clients;
+    public Dictionary<ClientMetadata, ClientData> Clients;
+    public Dictionary<string, string> PendingCaptchas;
 
     // These are persistent & saved in configs
     public int Cooldown { get; set; } = Cooldown; // Seconds

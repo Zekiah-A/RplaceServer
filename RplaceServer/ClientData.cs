@@ -1,6 +1,6 @@
 namespace RplaceServer;
 
-public record SocketClient
+public record ClientData
 (
     string IdIpPort,
     DateTimeOffset ConnectDate

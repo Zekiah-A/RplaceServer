@@ -4,9 +4,9 @@ namespace RplaceServer.Events;
 
 public sealed class PlayerDisconnectedEventArgs : EventArgs
 {
-    public SocketClient Player { get; }
+    public ClientMetadata Player { get; }
     
-    public PlayerDisconnectedEventArgs(SocketClient player)
+    public PlayerDisconnectedEventArgs(ClientMetadata player)
     {
         Player = player;
     }

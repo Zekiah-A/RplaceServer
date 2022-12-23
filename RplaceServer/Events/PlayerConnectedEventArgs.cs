@@ -1,11 +1,13 @@
+using WatsonWebsocket;
+
 namespace RplaceServer.Events;
 
 public sealed class PlayerConnectedEventArgs : EventArgs
 {
-    public SocketClient Player { get; }
+    public ClientMetadata Player { get; }
     
     //Give them the socket client instance
-    public PlayerConnectedEventArgs(SocketClient player)
+    public PlayerConnectedEventArgs(ClientMetadata player)
     {
         Player = player;
     }

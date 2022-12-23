@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using RplaceServer.CaptchaGeneration;
 using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Exceptions;
@@ -66,7 +67,7 @@ public sealed class SocketServer
         }
         
         gameData.PlayerCount = 0;
-        gameData.Clients = new Dictionary<ClientMetadata, SocketClient>();
+        gameData.Clients = new Dictionary<ClientMetadata, ClientData>();
         
         // Make a canvas save file just before the program exits.
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
@@ -86,8 +87,10 @@ public sealed class SocketServer
     
     private void ClientConnected(object? sender, ClientConnectedEventArgs args)
     {
+        var address = args.Client.IpPort.Split(":")[0];
+
         // Reject
-        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Cookies["origin" ] != origin) || gameData.Bans.Contains(args.Client.IpPort))
+        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Cookies["origin" ] != origin) || gameData.Bans.Contains(address))
         {
             Logger?.Invoke($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
@@ -118,10 +121,30 @@ public sealed class SocketServer
         
         // Accept
         // Create player client instance
-        var playerSocketClient = new SocketClient(args.Client.IpPort, DateTimeOffset.Now);
+        var playerSocketClient = new ClientData(args.Client.IpPort, DateTimeOffset.Now);
         gameData.Clients.Add(args.Client, playerSocketClient);
         gameData.PlayerCount++;
         
+        if (gameData.CaptchaEnabled)
+        {
+            var result = CaptchaGenerator.Generate(CaptchaType.Emoji);
+            if (gameData.PendingCaptchas.ContainsKey(address))
+            {
+                gameData.PendingCaptchas[address] = result.Answer;
+            }
+            else
+            {
+                gameData.PendingCaptchas.Add(address, result.Answer);
+            }
+
+            var captchaBuffer = new byte[2 + result.ImageData.Length];
+            captchaBuffer[0] = (byte) ServerPacket.Captcha;
+            captchaBuffer[1] = (byte) CaptchaType.Emoji;
+            Encoding.UTF8.GetBytes(result.Dummies!).CopyTo(captchaBuffer, 2); // Length = 10
+            result.ImageData.CopyTo(captchaBuffer, 13);
+            app.SendAsync(args.Client, captchaBuffer);
+        }
+
         // Send player palette data (if using a custom palette)
         if (gameData.Palette is not null)
         {
@@ -147,11 +170,12 @@ public sealed class SocketServer
         // BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) gameData.PlayerCount);
         // app.SendAsync(args.Client, gameInfo.ToArray());
         
-        PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(playerSocketClient));
+        PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(args.Client));
     }
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
+        var address = args.Client.IpPort.Split(":")[0];
         var data = new Span<byte>(args.Data.ToArray());
         
         switch ((ClientPacket) args.Data[0])
@@ -190,8 +214,6 @@ public sealed class SocketServer
                 }
 
                 // Accept
-                
-                
                 PixelPlacementReceived.Invoke
                 (
                     this,
@@ -237,16 +259,27 @@ public sealed class SocketServer
                 ChatMessageReceived.Invoke
                 (
                     this, 
-                    new ChatMessageEventArgs(gameData.Clients[args.Client],text, msgChannel, name, type, 
+                    new ChatMessageEventArgs(args.Client,text, msgChannel, name, type, 
                     data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
                 );
                 break;
             }
             case ClientPacket.CaptchaSubmit:
             {
+                var response = Encoding.UTF8.GetString(data[1..]);
+                
+                if (gameData.PendingCaptchas.ContainsKey(address) ||
+                    !response.Equals(gameData.PendingCaptchas[address]))
+                {
+                    Logger?.Invoke($"Client {args.Client.IpPort} disconnected for invalid captcha response");
+                    app.DisconnectClient(args.Client);
+                    return;
+                }
+                
+                // Accept
                 var buffer = new byte[2];
-                buffer[1] = (byte) ServerPacket.CaptchaSuccess;
-                buffer[2] = 255;
+                buffer[1] = (byte) ServerPacket.Captcha;
+                buffer[2] = (byte) CaptchaType.Success;
                 app.SendAsync(args.Client, buffer);
                 break;
             }
@@ -258,7 +291,7 @@ public sealed class SocketServer
         gameData.Clients.Remove(args.Client);
         gameData.PlayerCount--;
 
-        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(gameData.Clients[args.Client]));
+        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(args.Client));
     }
     
     /// <summary>
@@ -354,13 +387,21 @@ public sealed class SocketServer
         }
     }
 
-    public void BanPlayer(SocketClient player)
+    public void BanPlayer(ClientMetadata client)
     {
-        throw new NotImplementedException();
+        var address = client.IpPort.Split(":")[0];
+        gameData.Bans.Add(address);
+        // TODO: Save to file
     }
 
-    public void KickPlayer(SocketClient player)
+    public void KickPlayer(ClientMetadata client)
     {
-        throw new NotImplementedException();
+        Logger?.Invoke($"Disconnected player {client.IpPort}");
+        app.DisconnectClient(client);
+    }
+
+    public ClientData GetClientData(ClientMetadata client)
+    {
+        return gameData.Clients[client];
     }
 }
