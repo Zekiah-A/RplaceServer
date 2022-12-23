@@ -109,7 +109,9 @@ public static class Program
                 switch (sections.ElementAtOrDefault(0))
                 {
                     case "server":
+                    {
                         var args = new List<string?>();
+                        
                         for (var i = 2; i < sections.Length; i++)
                         {
                             args.Add(sections.ElementAtOrDefault(i));
@@ -118,6 +120,7 @@ public static class Program
                         switch (sections.ElementAtOrDefault(1))
                         {
                             case "expand_canvas":
+                            {
                                 if
                                 (
                                     !int.TryParse(args[0], out var widthIncrease) ||
@@ -129,22 +132,26 @@ public static class Program
                                 
                                 server.SocketServer.ExpandCanvas(widthIncrease, heightIncrease);
                                 break;
+                            }
                             case "broadcast_chat_message":
+                            {
                                 if (args[0] is null || args[1] is null)
                                 {
                                     break;
                                 }
                                 
-                                if (variable is null)
+                                if (variable is not ClientMetadata client)
                                 {
                                     server.SocketServer.BroadcastChatMessage(args[0]!, args[1]!);
                                 }
                                 else
                                 {
-                                    server.SocketServer.BroadcastChatMessage(args[0]!, args[1]!, (ClientMetadata) variable);
+                                    server.SocketServer.BroadcastChatMessage(args[0]!, args[1]!, client);
                                 }
                                 break;
+                            }
                             case "fill":
+                            {
                                 if
                                 (
                                     !int.TryParse(args[0], out var startX) ||
@@ -165,54 +172,92 @@ public static class Program
                                     server.SocketServer.Fill(startX, startY, endX, endY, byte.Parse(args[4]!));
                                 }
                                 break;
-                            default:
-                                Console.WriteLine("Commands: fill [startX, startY, endX, endY, colour]," +
-                                                  "expand_canvas [widthIncrease, heightIncrease]," +
-                                                  "broadcast_chat_message [message, channel, client]");
+                            }
+                            case "ban":
+                            {
+                                if (variable is ClientMetadata client)
+                                {
+                                    server.SocketServer.BanPlayer(client);
+                                }
                                 break;
+                            }
+                            case "kick":
+                            {
+                                if (variable is ClientMetadata client)
+                                {
+                                    server.SocketServer.KickPlayer(client);
+                                }
+                                break;
+                            }
+                            default:
+                            {
+                                Console.WriteLine("fill [startX, startY, endX, endY, colour]," +
+                                                  "expand_canvas [widthIncrease, heightIncrease]," +
+                                                  "broadcast_chat_message [message, channel, client]" +
+                                                  "ban (will ban player instance in 'variable')" +
+                                                  "kick (will kick player instance in 'variable')");
+                                break;
+                            }
                         }
                         break;
+                    }
                     case "data":
+                    {
                         var property = sections.ElementAtOrDefault(1);
                         if (property is null)
                         {
                             Console.WriteLine("Put the name of a GameData variable after this command to display " +
-                                              "that variable and store it in the 'variable' variable");
+                                              "that variable and store it in the 'variable' variable, running this " +
+                                              "command with no arguments will clear the 'variable' variable, running" +
+                                              "this command with something not in game data will attempt to save that" +
+                                              "input into variable");
+                            
+                            variable = null;
                             break;
                         }
                         
                         var data = server.GameData.GetType().GetProperty(property);
-                        variable = data?.GetValue(server.GameData);
-                        
+                        variable = data is null ? property : data.GetValue(server.GameData);
                         Console.WriteLine(variable + " loaded into 'variable'");
                         break;
+                    }
                     case "clients":
+                    {
                         var command = sections.ElementAtOrDefault(1);
                         
                         switch (command)
                         {
                             case "list":
+                            {
                                 foreach (var client in server.GameData.Clients.Keys)
                                 {
                                     Console.Write(client.IpPort + ", ");
                                 }
                                 break;
+                            }
                             case "data":
+                            {
                                 var clientPair = server.GameData.Clients.FirstOrDefault(pair =>
-                                        pair.Key.IpPort == sections.ElementAtOrDefault(2));
+                                    pair.Key.IpPort == sections.ElementAtOrDefault(2));
                                 
                                 Console.WriteLine(clientPair.Key + " loaded into 'variable'");
                                 variable = clientPair.Key;
                                 break;
+                            }
                             default:
-                                Console.WriteLine("Commands: list (list ip:port of all players), " +
+                            {
+                                Console.WriteLine("list (list ip:port of all players), " +
                                                   "data [ip:port] (stores that player's instance into 'variable')");
                                 break;
+                            }
                         }
                         break;
+                    }
                     case "stop":
+                    {
                         Environment.Exit(0);
                         return Task.CompletedTask;
+                    }
                 }
             }
 
