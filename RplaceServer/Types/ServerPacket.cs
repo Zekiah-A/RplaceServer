@@ -4,7 +4,7 @@ public enum ServerPacket
 {
     Palette = 0,
     CanvasInfo = 1,
-    GameInfo = 3,
+    PlayerCount = 3,
     PixelPlace = 6,
     RejectPixel = 7,
     ChatMessage = 15,

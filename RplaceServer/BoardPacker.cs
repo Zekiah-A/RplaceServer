@@ -9,7 +9,7 @@ public static class BoardPacker
     {
         
         var metadataLength = 4 + (palette?.Count ?? 0) * 4 + 2;
-        var packedBoard = new Span<byte>(new byte[board.Length + metadataLength]);
+        var packedBoard = (Span<byte>) stackalloc byte[board.Length + metadataLength];
         board.CopyTo(packedBoard);
 
         var iteration = board.Length;
