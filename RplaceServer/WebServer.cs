@@ -58,6 +58,7 @@ public sealed class WebServer
         
         app.UseStaticFiles(new StaticFileOptions
         {
+            ServeUnknownFileTypes = true,
             FileProvider = new PhysicalFileProvider(pagesRoot)
         });
     }
