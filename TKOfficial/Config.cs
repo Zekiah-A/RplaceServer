@@ -14,6 +14,8 @@ public record Config
     int BackupFrequency,
     bool UseCloudflare,
     string CanvasFolder,
+    string PostsFolder,
+    int PostLimitPeriod,
     int TimelapseLimitPeriod,
     
     bool LogToConsole,
@@ -27,4 +29,4 @@ public record Config
     string? WebhookUrl = null,
     List<int>? Palette = null
 ) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
-    CanvasFolder, TimelapseLimitPeriod, WebhookUrl, Palette);
+    CanvasFolder, PostsFolder, PostLimitPeriod, TimelapseLimitPeriod, WebhookUrl, Palette);

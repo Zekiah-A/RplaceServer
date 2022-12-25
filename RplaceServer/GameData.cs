@@ -17,7 +17,9 @@ public record GameData
     int BackupFrequency,
     bool UseCloudflare,
     string CanvasFolder,
-    int TimelapseLimitPeriod,
+    string PostsFolder,
+    int PostLimitPeriod, // Seconds
+    int TimelapseLimitPeriod, // Seconds
     string? WebhookUrl = null,
     List<int>? Palette = null
 )
@@ -28,7 +30,7 @@ public record GameData
     public Dictionary<ClientMetadata, ClientData> Clients;
     public Dictionary<string, string> PendingCaptchas;
 
-    // These are persistent & saved in configs
+    // These are persistent & saved in configs + can be changed at runtime
     public int Cooldown { get; set; } = Cooldown; // Seconds
     public bool CaptchaEnabled { get; set; } = CaptchaEnabled;
     public List<string> Vips { get; set; } = Vips;
@@ -37,8 +39,6 @@ public record GameData
     public int BoardHeight { get; set; } = BoardHeight; // Pixels
     public int BackupFrequency { get; set; } = BackupFrequency; // Seconds
     public bool UseCloudflare { get; set; } = UseCloudflare;
-    public string CanvasFolder { get; set; } = CanvasFolder;
-    public int TimelapseLimitPeriod { get; set; } = TimelapseLimitPeriod; // Seconds
 
     // These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;

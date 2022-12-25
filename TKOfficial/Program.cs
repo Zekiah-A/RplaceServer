@@ -38,8 +38,11 @@ public static class Program
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
-            var defaultConfig = new Config(5, true, true, new List<string>(), new List<string>(), 1000, 1000, 600,
-                false, "Canvases", 300, true, "", "", "https://rplace.tk", 443, 80, false);
+            var defaultConfig = new Config(5, true, true, new List<string>(),
+            new List<string>(), 1000, 1000, 600,  false, 
+        "Canvases", "Posts", 60, 300, true, "", "",
+            "https://rplace.tk", 443, 80, false);
+            
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
             Console.ForegroundColor = ConsoleColor.Green;
@@ -70,7 +73,7 @@ public static class Program
     private static Task StartNephriteRepl()
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.Write($"You have entered the rPlace server Nephrite REPL. Enter a command to run it.\n");
+        Console.Write("You have entered the rPlace server REPL. Enter a command to run it.\n");
         Console.ResetColor();
 
         object? variable = null;
@@ -191,9 +194,9 @@ public static class Program
                             }
                             default:
                             {
-                                Console.WriteLine("fill [startX, startY, endX, endY, colour]," +
+                                Console.WriteLine("fill [startX, startY, endX, endY, colour?]," +
                                                   "expand_canvas [widthIncrease, heightIncrease]," +
-                                                  "broadcast_chat_message [message, channel, client]" +
+                                                  "broadcast_chat_message [message, channel, client?]" +
                                                   "ban (will ban player instance in 'variable')" +
                                                   "kick (will kick player instance in 'variable')");
                                 break;
@@ -257,6 +260,11 @@ public static class Program
                     {
                         Environment.Exit(0);
                         return Task.CompletedTask;
+                    }
+                    case "help":
+                    {
+                        Console.WriteLine("server, data, clients, stop");
+                        break;
                     }
                 }
             }

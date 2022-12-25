@@ -9,7 +9,6 @@ using RplaceServer.Events;
 using RplaceServer.Exceptions;
 using RplaceServer.Types;
 using WatsonWebsocket;
-using Timer = System.Timers.Timer;
 
 namespace RplaceServer;
 
@@ -76,7 +75,7 @@ public sealed class SocketServer
         };
     }
 
-    public async Task Start()
+    public async Task StartAsync()
     {
         app.ClientConnected += ClientConnected;
         app.MessageReceived += MessageReceived;
@@ -156,7 +155,7 @@ public sealed class SocketServer
         }
         
         // Send player cooldown + other data
-        var canvasInfo = new Span<byte>(new byte[17]);
+        var canvasInfo = (Span<byte>) stackalloc byte[17];
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1); //TODO: Previous cooldown that they may have had before disconnect
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], (uint) gameData.Cooldown * 1000);
@@ -164,11 +163,11 @@ public sealed class SocketServer
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
 
-        // TODO: Send player player count & votes
-        // var gameInfo = new Span<byte>(new byte[5]);
-        // gameInfo[0] = (byte) ServerPacket.GameInfo;
-        // BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) gameData.PlayerCount);
-        // app.SendAsync(args.Client, gameInfo.ToArray());
+        // TODO: Send player player count
+        var gameInfo = (Span<byte>) stackalloc byte[5 ];
+        gameInfo[0] = (byte) ServerPacket.GameInfo;
+        BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) gameData.PlayerCount);
+        app.SendAsync(args.Client, gameInfo.ToArray());
         
         PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(args.Client));
     }
@@ -204,7 +203,7 @@ public sealed class SocketServer
                 {
                     // Reject
                     Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for breaching cooldown ({clientCooldown})");
-                    var buffer = new Span<byte>(new byte[10]);
+                    var buffer = (Span<byte>) stackalloc byte[10];
                     buffer[0] = (byte) ServerPacket.RejectPixel;
                     BinaryPrimitives.WriteInt32BigEndian(buffer[1..], (int) clientCooldown.ToUnixTimeMilliseconds());
                     BinaryPrimitives.WriteInt32BigEndian(buffer[5..], (int) index);
@@ -398,10 +397,5 @@ public sealed class SocketServer
     {
         Logger?.Invoke($"Disconnected player {client.IpPort}");
         app.DisconnectClient(client);
-    }
-
-    public ClientData GetClientData(ClientMetadata client)
-    {
-        return gameData.Clients[client];
     }
 }

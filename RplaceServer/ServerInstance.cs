@@ -31,6 +31,6 @@ public sealed class ServerInstance
 
     public async Task Start()
     {
-        await Task.WhenAll(SocketServer.Start(), WebServer.Start());
+        await Task.WhenAll(SocketServer.StartAsync(), WebServer.StartAsync());
     }
 }

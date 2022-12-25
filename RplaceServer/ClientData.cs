@@ -6,7 +6,6 @@ public record ClientData
     DateTimeOffset ConnectDate
 )
 {
-    public int Voted { get; set; }
-    public DateTimeOffset LastChat { get; set; }
+    public DateTimeOffset LastChat { get; set; } = ConnectDate;
     public DateTimeOffset Cooldown { get; set; } = ConnectDate;
 }

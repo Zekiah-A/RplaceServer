@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace PlaceHttpsServer;
+namespace RplaceServer;
 
 public class RateLimiter
 {
