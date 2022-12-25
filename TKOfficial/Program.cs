@@ -194,10 +194,10 @@ public static class Program
                             }
                             default:
                             {
-                                Console.WriteLine("fill [startX, startY, endX, endY, colour?]," +
-                                                  "expand_canvas [widthIncrease, heightIncrease]," +
-                                                  "broadcast_chat_message [message, channel, client?]" +
-                                                  "ban (will ban player instance in 'variable')" +
+                                Console.WriteLine("fill [startX, startY, endX, endY, colour?], " +
+                                                  "expand_canvas [widthIncrease, heightIncrease], " +
+                                                  "broadcast_chat_message [message, channel, client?] " +
+                                                  "ban (will ban player instance in 'variable') " +
                                                   "kick (will kick player instance in 'variable')");
                                 break;
                             }
@@ -211,8 +211,8 @@ public static class Program
                         {
                             Console.WriteLine("Put the name of a GameData variable after this command to display " +
                                               "that variable and store it in the 'variable' variable, running this " +
-                                              "command with no arguments will clear the 'variable' variable, running" +
-                                              "this command with something not in game data will attempt to save that" +
+                                              "command with no arguments will clear the 'variable' variable, running " +
+                                              "this command with something not in game data will attempt to save that " +
                                               "input into variable");
                             
                             variable = null;

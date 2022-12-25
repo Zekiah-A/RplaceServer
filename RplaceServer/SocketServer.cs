@@ -262,8 +262,7 @@ public sealed class SocketServer
             {
                 var response = Encoding.UTF8.GetString(data[1..]);
                 
-                if (gameData.PendingCaptchas.ContainsKey(address) ||
-                    !response.Equals(gameData.PendingCaptchas[address]))
+                if (gameData.PendingCaptchas.TryGetValue(address, out var answer) || !response.Equals(answer))
                 {
                     Logger?.Invoke($"Client {args.Client.IpPort} disconnected for invalid captcha response");
                     app.DisconnectClient(args.Client);

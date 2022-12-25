@@ -1,13 +1,10 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using PlaceHttpsServer;
 using RplaceServer.Events;
 using RplaceServer.Types;
-using Timer = System.Timers.Timer;
 using UnbloatDB;
 using UnbloatDB.Serialisers;
 
@@ -55,7 +52,7 @@ public sealed class WebServer
         {
             policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials();
         });
-        
+
         app.UseStaticFiles(new StaticFileOptions
         {
             ServeUnknownFileTypes = true,
@@ -102,14 +99,10 @@ public sealed class WebServer
         });
         
         app.MapGet("/posts", () =>
-        {
-            return Results.Json(postsDB.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false));
-        });
+            Results.Json(postsDB.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false)));
 
         app.MapGet("/posts/{masterKey}", (string masterKey) =>
-        {
-            return Results.Json(postsDB.GetRecord<Post>(masterKey));
-        });
+            Results.Json(postsDB.GetRecord<Post>(masterKey)));
         
         app.MapPost("/posts/upload", async (Post submission, HttpContext context) =>
         {
@@ -190,7 +183,7 @@ public sealed class WebServer
 
     private void HandleBoardBackups()
     {
-        var timer = new Timer
+        var timer = new System.Timers.Timer
         {
             AutoReset = true,
             Enabled = true,
