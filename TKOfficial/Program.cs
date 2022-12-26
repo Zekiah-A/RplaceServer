@@ -54,8 +54,6 @@ public static class Program
         var config = JsonSerializer.Deserialize<Config>(await File.ReadAllTextAsync(ConfigPath)) ?? throw new NullReferenceException();
         server = new ServerInstance(config, config.CertPath, config.KeyPath, config.Origin, config.SocketPort, config.HttpPort, config.Ssl);
 
-        await Task.WhenAll(server.Start(), StartNephriteRepl());
-
         if (config.LogToConsole)
         {
             server.SocketServer.Logger = message =>
@@ -68,6 +66,8 @@ public static class Program
                 Console.WriteLine("[WebServer]: " + message);
             };
         }
+
+        await Task.WhenAll(server.Start(), StartNephriteRepl());
     }
     
     private static Task StartNephriteRepl()

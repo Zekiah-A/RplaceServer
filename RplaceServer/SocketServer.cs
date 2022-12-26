@@ -66,6 +66,7 @@ public sealed class SocketServer
         }
         
         gameData.PlayerCount = 0;
+        gameData.PendingCaptchas = new Dictionary<string, string>();
         gameData.Clients = new Dictionary<ClientMetadata, ClientData>();
         
         // Make a canvas save file just before the program exits.

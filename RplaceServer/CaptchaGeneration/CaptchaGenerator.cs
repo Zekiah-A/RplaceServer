@@ -10,11 +10,11 @@ internal static class CaptchaGenerator
 
     private static readonly string[] Emojis =
     {
-        "😎", "🤖", "🗣️", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶", "🌳", "🌍", "🌈", "🎅", "👶", "👼",
-        "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "ඞ", "📱", "🔑", "❤️", "👺", "🤯", "🤬", "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪",
+        "😎", "🤖", "🗣", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶", "🌳", "🌍", "🌈", "🎅", "👶", "👼",
+        "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "ඞ", "📱", "🔑", "❤", "👺", "🤯", "🤬", "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪",
         "🕋", "🎉", "📋", "🚦", "🔇", "🥶", "💼", "🎩", "🎒", "🦅", "🧊", "★", "✅", "😂", "😍", "🚀", "😈", "👟", "🍷",
         "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "🖱", "😷", "🌱", "🏀", "🛠", "🤮", "💂", "📎",
-        "🎄", "🕯️", "🔔", "⛪", "☃️", "🍷", "❄️", "🎁", "🩸"
+        "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
     };
 
     private static readonly string[] Strings =
@@ -23,6 +23,7 @@ internal static class CaptchaGenerator
         "canvas", "board", "anarchy", "reddit", "blank", "colour", "play", "teams", "war", "raid", "make", "learn", "fun"
     };
     
+    // TODO: There are currently skia-related crashes in the generator - fix.
     internal static (string Answer, string? Dummies, byte[] ImageData) Generate(CaptchaType type)
     {
         var answer = "";
@@ -31,11 +32,12 @@ internal static class CaptchaGenerator
         switch (type)
         {
             case CaptchaType.Emoji:
-                Buffer.BlockCopy(Emojis, random.Next(0, Emojis.Length - 10), dummies, 0, 10);
+                var position = random.Next(0, Emojis.Length - 40);
+                dummies = Emojis[position..(position + 10)];
                 answer = dummies[random.Next(0, 10)];
                 break;
             case CaptchaType.String:
-                Buffer.BlockCopy(Strings, random.Next(0, Emojis.Length - 10), dummies, 0, 10);
+                Buffer.BlockCopy(Strings, random.Next(0, Emojis.Length - 40), dummies, 0, 40);
                 answer = dummies[random.Next(0, 10)];
                 break;
             case CaptchaType.Number:
