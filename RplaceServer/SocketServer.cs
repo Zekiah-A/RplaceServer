@@ -148,7 +148,7 @@ public sealed class SocketServer
         // Send player palette data (if using a custom palette)
         if (gameData.Palette is not null)
         {
-            var palette = gameData.Palette.Select(Convert.ToUInt32).ToArray();
+            var palette = gameData.Palette.ToArray();
             var paletteBuffer = new byte[1 + palette.Length * 4];
             paletteBuffer[0] = (byte) ServerPacket.Palette;
             Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);

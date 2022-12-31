@@ -21,7 +21,7 @@ public record GameData
     int PostLimitPeriod, // Seconds
     int TimelapseLimitPeriod, // Seconds
     string? WebhookUrl = null,
-    List<int>? Palette = null
+    List<uint>? Palette = null
 )
 {
     // These will be acessed & changed frequently, but are not saved in configs
@@ -42,7 +42,7 @@ public record GameData
 
     // These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;
-    public List<int>? Palette { get; set; } = Palette;
+    public List<uint>? Palette { get; set; } = Palette;
     public bool CreateBackups { get; set; } = CreateBackups;
 }
 

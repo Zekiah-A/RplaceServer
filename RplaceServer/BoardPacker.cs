@@ -5,7 +5,7 @@ namespace RplaceServer;
 
 public static class BoardPacker
 {
-    public static byte[] PackBoard(byte[] board, List<int>? palette, int boardWidth)
+    public static byte[] PackBoard(byte[] board, List<uint>? palette, int boardWidth)
     {
         
         var metadataLength = 4 + (palette?.Count ?? 0) * 4 + 2;

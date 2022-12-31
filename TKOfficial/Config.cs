@@ -27,6 +27,6 @@ public record Config
     bool Ssl,
     
     string? WebhookUrl = null,
-    List<int>? Palette = null
+    List<uint>? Palette = null
 ) : GameData(Cooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
     CanvasFolder, PostsFolder, PostLimitPeriod, TimelapseLimitPeriod, WebhookUrl, Palette);
