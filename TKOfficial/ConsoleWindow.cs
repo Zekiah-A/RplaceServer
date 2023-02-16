@@ -185,10 +185,10 @@ public class ConsoleWindow : Window
             },
             ColorScheme = Colors.Base,
         };
-        clientsPanel.Child = new ListView(clientsPanel.Bounds, // TODO: Fix this
+        clientsPanel.Child = new ListView(new Rect(0, 0, 64, 16), // TODO: Fix this
             new List<string>{ "No clients are connected yet... Invite some friends!" })
         {
-            Width = Dim.Fill()
+            Width = Dim.Fill(),
         };
         
         var statisticLogLabel = new Label
@@ -238,14 +238,13 @@ public class ConsoleWindow : Window
             },
             ColorScheme = Colors.Base,
         };
-        serverLogPanel.Child = new ListView(serverLogPanel.Bounds, serverLogs)
+        serverLogPanel.Child = new ListView(new Rect(0, 0, 128, 8), serverLogs)
         {
             Width = Dim.Fill()
         };
 
         Add(serverActionsPanel, clientsPanel, statisticLogLabel, serverUptimeLabel, serverIpPortLabel,
             serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel);
-        Thread.Sleep(2000);
         
         // Server uptime timer
         var elapsedSeconds = 0;
@@ -275,14 +274,14 @@ public class ConsoleWindow : Window
             {
                 serverLogs.Add("[WebServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
             };
+            
+            serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]: " + "Server software started");
         }
         else
         {
             serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]:" +
                            "Server logging to console has been disabled. Logs will not appear here.");
         }
-        serverLogs.Add("[SocketServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + "Hi");
-        serverLogs.Add("[SocketServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + "Started");
 
         // Update clients panel with a list of all currently connected clients
         Program.Server.SocketServer.PlayerConnected += (_, _) =>
