@@ -29,8 +29,14 @@ public sealed class ServerInstance
         WebServer = new WebServer(gameData, certPath, keyPath, origin, ssl, webPort);
     }
 
-    public async Task Start()
+    public async Task StartAsync()
     {
         await Task.WhenAll(SocketServer.StartAsync(), WebServer.StartAsync());
+    }
+
+    public async Task StopAsync()
+    {
+        await SocketServer.StopAsync();
+        await WebServer.StopAsync();
     }
 }

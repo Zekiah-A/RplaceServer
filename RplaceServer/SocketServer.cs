@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Net.Http.Json;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -159,7 +160,7 @@ public sealed class SocketServer
         var canvasInfo = (Span<byte>) stackalloc byte[17];
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1); //TODO: Previous cooldown that they may have had before disconnect
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], (uint) gameData.Cooldown * 1000);
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], (uint) gameData.Cooldown);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], (uint) gameData.BoardWidth);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
@@ -221,7 +222,7 @@ public sealed class SocketServer
             case ClientPacket.ChatMessage:
             {
                 // Reject
-                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(2500) > DateTimeOffset.Now || args.Data.Count > 400)
+                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldown) > DateTimeOffset.Now || args.Data.Count > 400)
                 {
                     Logger?.Invoke($"Chat from client {args.Client.IpPort} rejected for breaching length/cooldown rules");
                     return;
@@ -310,7 +311,7 @@ public sealed class SocketServer
     private void DistributePixelPlacement(object? sender, PixelPlacementEventArgs args)
     {
         gameData.Board[args.Index] = (byte) args.Colour;
-        gameData.Clients[args.Player].Cooldown = DateTimeOffset.Now.AddSeconds(gameData.Cooldown);
+        gameData.Clients[args.Player].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
 
         var serverPixel = args.Packet;
         serverPixel[0] = (byte) ServerPacket.PixelPlace;
@@ -408,5 +409,15 @@ public sealed class SocketServer
     {
         Logger?.Invoke($"Disconnected player {client.IpPort}");
         app.DisconnectClient(client);
+    }
+
+    public async Task StopAsync()
+    {
+        foreach (var client in app.Clients)
+        {
+            app.DisconnectClient(client);
+        }
+        
+        await app.StopAsync();
     }
 }

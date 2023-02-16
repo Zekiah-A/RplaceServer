@@ -8,6 +8,7 @@ namespace RplaceServer;
 public record GameData
 (
     int Cooldown,
+    int ChatCooldown,
     bool CaptchaEnabled,
     bool CreateBackups,
     List<string> Vips,
@@ -31,13 +32,14 @@ public record GameData
     public Dictionary<string, string> PendingCaptchas;
 
     // These are persistent & saved in configs + can be changed at runtime
-    public int Cooldown { get; set; } = Cooldown; // Seconds
+    public int Cooldown { get; set; } = Cooldown; // Milliseconds
+    public int ChatCooldown { get; set; } = ChatCooldown; // Milliseconds
     public bool CaptchaEnabled { get; set; } = CaptchaEnabled;
     public List<string> Vips { get; set; } = Vips;
     public List<string> Bans { get; set; } = Bans;
     public int BoardWidth { get; set; } = BoardWidth; // Pixels
     public int BoardHeight { get; set; } = BoardHeight; // Pixels
-    public int BackupFrequency { get; set; } = BackupFrequency; // Seconds
+    public int BackupFrequency { get; set; } = BackupFrequency; // Milliseconds
     public bool UseCloudflare { get; set; } = UseCloudflare;
 
     // These are config-settable, and live changeable, but not necessary (nullable)

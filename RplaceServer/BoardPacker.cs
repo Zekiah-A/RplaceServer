@@ -20,7 +20,7 @@ public static class BoardPacker
         {
             for (var colour = board.Length + 4; colour < packedBoard.Length - 2; colour++)
             {
-                BinaryPrimitives.WriteUInt32BigEndian(packedBoard[iteration..(iteration + 4)], (uint) palette[colour]);
+                BinaryPrimitives.WriteUInt32BigEndian(packedBoard[iteration..(iteration + 4)], palette[colour]);
                 iteration += 4;
             }
         }

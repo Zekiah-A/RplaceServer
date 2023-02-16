@@ -187,7 +187,7 @@ public sealed class WebServer
         {
             AutoReset = true,
             Enabled = true,
-            Interval = TimeSpan.FromSeconds(gameData.BackupFrequency).TotalMilliseconds
+            Interval = gameData.BackupFrequency
         };
 
         timer.Elapsed += async (_, _) =>
@@ -197,16 +197,26 @@ public sealed class WebServer
                 return;
             }
             
-            timer.Interval = TimeSpan.FromSeconds(gameData.BackupFrequency).TotalMilliseconds;
-            
-            var backupName = "place." + DateTime.Now.ToString("dd.MM.yyyy.HH:mm:ss");
-            await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
-            await file.WriteLineAsync(backupName);
-
-            var boardPath = Path.Join(gameData.CanvasFolder, backupName);
-            await File.WriteAllBytesAsync(boardPath, BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth));
-            
-            CanvasBackupCreated.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
+            timer.Interval = gameData.BackupFrequency;
+            await SaveCanvasBackup();
         };
+    }
+
+    public async Task SaveCanvasBackup()
+    {
+        var backupName = "place " + DateTime.Now.ToString("yyyy_MM_dd HH_mm_ss");
+        await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
+        await file.WriteLineAsync(backupName);
+
+        var boardPath = Path.Join(gameData.CanvasFolder, backupName);
+        await File.WriteAllBytesAsync(boardPath, BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth));
+            
+        CanvasBackupCreated.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
+    }
+
+    public async Task StopAsync()
+    {
+        await SaveCanvasBackup();
+        await app.StopAsync();
     }
 }
