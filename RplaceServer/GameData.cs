@@ -7,25 +7,26 @@ namespace RplaceServer;
 /// </summary>
 public record GameData
 (
-    int Cooldown,
-    int ChatCooldown,
+    int Cooldown, // Milliseconds
+    int ChatCooldown, // Milliseconds
     bool CaptchaEnabled,
     bool CreateBackups,
     List<string> Vips,
     List<string> Bans,
     int BoardWidth,
     int BoardHeight,
-    int BackupFrequency,
+    int BackupFrequency, // Milliseconds
     bool UseCloudflare,
     string CanvasFolder,
     string PostsFolder,
-    int PostLimitPeriod, // Seconds
-    int TimelapseLimitPeriod, // Seconds
+    int PostLimitPeriod, // Milliseconds
+    int TimelapseLimitPeriod, // Milliseconds
     string? WebhookUrl = null,
     List<uint>? Palette = null
 )
 {
-    // These will be acessed & changed frequently, but are not saved in configs
+    // These will be accessed & changed frequently, but are not saved in configs, 
+    // and are instead managed by the server instance itself.
     public byte[] Board;
     public int PlayerCount;
     public Dictionary<ClientMetadata, ClientData> Clients;

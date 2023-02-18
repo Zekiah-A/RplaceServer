@@ -28,8 +28,8 @@ public sealed class WebServer
     {
         gameData = data;
         postsDB = new Database(new Config(gameData.PostsFolder, new JsonSerialiser()));
-        timelapseLimiter = new RateLimiter(TimeSpan.FromSeconds(gameData.TimelapseLimitPeriod));
-        postLimiter = new RateLimiter(TimeSpan.FromSeconds(gameData.PostLimitPeriod));
+        timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriod));
+        postLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.PostLimitPeriod));
         
         var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
 
@@ -204,7 +204,11 @@ public sealed class WebServer
 
     public async Task SaveCanvasBackup()
     {
-        var backupName = "place " + DateTime.Now.ToString("yyyy_MM_dd HH_mm_ss");
+        // Save the place file so that we can recover after a server restart
+        await File.WriteAllBytesAsync(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
+
+        // Save a dated backup of the canvas to timestamp the place file at this point in time
+        var backupName = "place " + DateTime.Now.ToString("yyyy.MM.dd HH.mm.ss");
         await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
         await file.WriteLineAsync(backupName);
 

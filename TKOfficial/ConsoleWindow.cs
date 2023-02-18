@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Net.Mime;
+using RplaceServer;
 using Terminal.Gui;
+using Attribute = Terminal.Gui.Attribute;
 
 namespace TKOfficial;
 
@@ -46,9 +48,9 @@ public class ConsoleWindow : Window
                 Width = 32,
                 Height = 4,
             };
-            
+
             var firstStep = new Wizard.WizardStep("Edit chat message cooldown");
-            var cooldownField = new TextField(Program.Config.ChatCooldown.ToString())
+            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
             {
                 Width = Dim.Fill(),
             };
@@ -59,6 +61,7 @@ public class ConsoleWindow : Window
             {
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
+                Application.Run(Application.Top);
             };
             
             Application.Top.Add(cooldownWizard);
@@ -96,6 +99,7 @@ public class ConsoleWindow : Window
             {
                 Application.Top.Remove(chatWizard);
                 Application.RequestStop();
+                Application.Run(Application.Top);
             };
             
             Application.Top.Add(chatWizard);
@@ -117,7 +121,7 @@ public class ConsoleWindow : Window
             };
             
             var firstStep = new Wizard.WizardStep("Edit pixel place cooldown");
-            var cooldownField = new TextField(Program.Config.Cooldown.ToString())
+            var cooldownField = new TextField(Program.Server.GameData.Cooldown.ToString())
             {
                 Width = Dim.Fill(),
             };
@@ -128,16 +132,50 @@ public class ConsoleWindow : Window
             {
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
+                Application.Run(Application.Top);
             };
             
             Application.Top.Add(cooldownWizard);
             Application.Run(Application.Top);
         };
 
+        var editPaletteButton = new Button
+        {
+            Text = "Edit colour palette",
+            Y = Pos.Top(serverActionsContainer) + 6
+        };
+        editPaletteButton.Clicked += () =>
+        {
+            var paletteWizard = new Wizard("")
+            {
+                Modal = false,
+                Width = 64,
+                Height = 4,
+            };
+            
+            var firstStep = new Wizard.WizardStep("Edit colour palette");
+            var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()))
+            {
+                Width = Dim.Fill(),
+            };
+            firstStep.Add(paletteField);
+
+            paletteWizard.AddStep(firstStep);
+            paletteWizard.Finished += _ =>
+            {
+                Application.Top.Remove(paletteWizard);
+                Application.RequestStop();
+                Application.Run(Application.Top);
+            };
+            
+            Application.Top.Add(paletteWizard);
+            Application.Run(Application.Top);
+        };
+
         var saveCanvasButton = new Button
         {
             Text = "Save canvas to disk",
-            Y = Pos.Top(serverActionsContainer) + 6
+            Y = Pos.Top(serverActionsContainer) + 7
         };
         saveCanvasButton.Clicked += async () =>
         {
@@ -147,16 +185,17 @@ public class ConsoleWindow : Window
         var stopServerButton = new Button
         {
             Text = "Gracefully stop server",
-            Y = Pos.Top(serverActionsContainer) + 7
+            Y = Pos.Top(serverActionsContainer) + 8
         };
         stopServerButton.Clicked += async () =>
         {
-            await Program.Server.StopAsync();
             Application.Shutdown();
+            await Program.Server.StopAsync();
+            Console.Clear();
         };
-
+        
         serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, changeChatCooldownButton,
-            broadcastChatButton, changeGameCooldownButton, saveCanvasButton, stopServerButton);
+            broadcastChatButton, changeGameCooldownButton, editPaletteButton, saveCanvasButton, stopServerButton);
         // End server actions stack panel container
         
         // Server actions panel, provides nice border around container
@@ -173,6 +212,74 @@ public class ConsoleWindow : Window
         };
         
         // Clients panel
+        var clientsListView = new ListView(new Rect(0, 0, 64, 16),
+            new List<string>{ "No clients are connected yet... Invite some friends!" })
+        {
+            Width = Dim.Fill(),
+        };
+        clientsListView.SelectedItemChanged += (args) =>
+        {
+            var clientWizard = new Wizard("")
+            {
+                Modal = false,
+                Width = 64,
+                Height = 8,
+            };
+
+            var selectedClientPair = Program.Server.GameData.Clients
+                .FirstOrDefault(clientPair => clientPair.Key.IpPort.Equals(args.Value));
+            
+            var firstStep = new Wizard.WizardStep("Player info");
+            var ipLabel = new Label
+            {
+                Text = "Player IP/Port: " + args.Value,
+                Y = 0
+            };
+            var vipLabel = new Label
+            {
+                Text = "Is VIP: " +
+                       (Program.Server.GameData.Vips.Contains(
+                           args.Value.ToString()![..args.Value.ToString()!.LastIndexOf(":", StringComparison.Ordinal)])
+                           ? "True"
+                           : "False"),
+                Y = 1
+            };
+            var lastChatLabel = new Label
+            {
+                Text = "Player last chat: " + selectedClientPair.Value.LastChat,
+                Y = 2
+            };
+            var kickButton = new Button
+            {
+                Text = "Kick player",
+                Y = 3
+            };
+            kickButton.Clicked += () =>
+            {
+                Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
+            };
+            var banButton = new Button
+            {
+                Text = "Ban player",
+                Y = 4
+            };
+            banButton.Clicked += () =>
+            {
+                Program.Server.SocketServer.BanPlayer(selectedClientPair.Key);
+            };
+            firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
+
+            clientWizard.AddStep(firstStep);
+            clientWizard.Finished += _ =>
+            {
+                Application.Top.Remove(clientWizard);
+                Application.RequestStop();
+                Application.Run(Application.Top);
+            };
+            
+            Application.Top.Add(clientWizard);
+            Application.Run(Application.Top);
+        };
         var clientsPanel = new PanelView
         {
             X = Pos.Right(serverActionsPanel) + 2,
@@ -184,11 +291,7 @@ public class ConsoleWindow : Window
                 Title = "Connected Clients"
             },
             ColorScheme = Colors.Base,
-        };
-        clientsPanel.Child = new ListView(new Rect(0, 0, 64, 16), // TODO: Fix this
-            new List<string>{ "No clients are connected yet... Invite some friends!" })
-        {
-            Width = Dim.Fill(),
+            Child = clientsListView
         };
         
         var statisticLogLabel = new Label
@@ -265,6 +368,11 @@ public class ConsoleWindow : Window
         // Server logs panel
         if (Program.Config.LogToConsole)
         {
+            Program.Server.Logger = message =>
+            {
+                serverLogs.Add("[ServerInstance " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
+            };
+
             Program.Server.SocketServer.Logger = message =>
             {
                 serverLogs.Add("[SocketServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
@@ -286,13 +394,13 @@ public class ConsoleWindow : Window
         // Update clients panel with a list of all currently connected clients
         Program.Server.SocketServer.PlayerConnected += (_, _) =>
         {
-            ((ListView) clientsPanel.Child).SetSource(Program.Server.GameData.Clients
+            clientsListView.SetSource(Program.Server.GameData.Clients
                 .Select(pair => pair.Key.IpPort)
                 .ToList());
         };
         Program.Server.SocketServer.PlayerDisconnected += (_, _) =>
         {
-            ((ListView) clientsPanel.Child).SetSource(Program.Server.GameData.Clients
+            clientsListView.SetSource(Program.Server.GameData.Clients
                 .Select(pair => pair.Key.IpPort)
                 .ToList());
         };

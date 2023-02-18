@@ -15,18 +15,51 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using RplaceServer;
+using RplaceServer.Exceptions;
 
 public sealed class ServerInstance
 {
     public GameData GameData;
     public SocketServer SocketServer { get; set; }
     public WebServer WebServer { get; set; }
+    public Action<string>? Logger;
 
     public ServerInstance(GameData gameData, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
         GameData = gameData;
         SocketServer = new SocketServer(gameData, certPath, keyPath, origin, ssl, socketPort);
         WebServer = new WebServer(gameData, certPath, keyPath, origin, ssl, webPort);
+        
+        try
+        {
+            var boardBytes = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
+            if (boardBytes.Length == 0)
+            {
+                throw new NoCanvasFileFoundException(
+                    "Could not read canvas file at", Path.Join(gameData.CanvasFolder, "place"));
+            }
+            
+            gameData.Board = boardBytes;
+        }
+        catch (Exception exception)
+        {
+            Logger?.Invoke(exception.Message);
+            gameData.Board = new byte[gameData.BoardWidth * gameData.BoardHeight];
+
+            if (!Directory.Exists(gameData.CanvasFolder))
+            {
+                Directory.CreateDirectory(gameData.CanvasFolder);
+                Logger?.Invoke("Created new canvas folder.");
+            }
+            
+            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
+        }
+        
+        // Make a canvas save file just before the program exits.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
+        };
     }
 
     public async Task StartAsync()

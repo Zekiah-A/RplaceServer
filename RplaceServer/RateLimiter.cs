@@ -18,7 +18,7 @@ public class RateLimiter
         if (!registeredIPs.ContainsKey(address) || !registeredIPs.TryGetValue(address, out var startDate))
         {
             registeredIPs.Add(address, DateTime.Now);
-            return false;
+            return true;
         }
 
         if (DateTime.Now - startDate < limitPeriod)
@@ -31,7 +31,7 @@ public class RateLimiter
             return false;
         }
 
-        registeredIPs.Remove(address);
+        registeredIPs[address] = DateTime.Now;
         return true;
     }
 }

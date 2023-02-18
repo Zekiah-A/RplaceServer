@@ -40,41 +40,10 @@ public sealed class SocketServer
         PixelPlacementReceived = DistributePixelPlacement;
         PlayerConnected = (_, _) => { };
         PlayerDisconnected = (_, _) => { };
-
-        try
-        {
-            var boardFile = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
-            if (boardFile.Length == 0)
-            {
-                throw new NoCanvasFileFoundException("Could not read canvas file at", 
-                    Path.Join(gameData.CanvasFolder, "place"));
-            }
-            
-            gameData.Board = boardFile;
-        }
-        catch (Exception exception)
-        {
-            Logger?.Invoke(exception.Message);
-            gameData.Board = new byte[gameData.BoardWidth * gameData.BoardHeight];
-
-            if (!Directory.Exists(gameData.CanvasFolder))
-            {
-                Directory.CreateDirectory(gameData.CanvasFolder);
-                Logger?.Invoke("Created new canvas folder.");
-            }
-            
-            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
-        }
         
         gameData.PlayerCount = 0;
         gameData.PendingCaptchas = new Dictionary<string, string>();
         gameData.Clients = new Dictionary<ClientMetadata, ClientData>();
-        
-        // Make a canvas save file just before the program exits.
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-        {
-            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
-        };
     }
 
     public async Task StartAsync()
