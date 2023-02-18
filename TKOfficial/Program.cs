@@ -59,17 +59,14 @@ public static class Program
         // This task block current process, so all following code can be used for deinitialisation
         try
         {
-            await Task.WhenAll(Server.StartAsync(), Task.Run(() => Application.Run<ConsoleWindow>()));
+            var _ = Task.Run(async () => await Server.StartAsync());
+            Application.Run<ConsoleWindow>();
         }
         catch (Exception exception)
         {
+            Console.WriteLine("Unexpected server exception: " + exception);
             Application.Shutdown();
             await Server.StopAsync();
-
-            Console.WriteLine("Unexpected server exception: " + exception);
         }
-        
-        await Server.StopAsync();
-        Application.Shutdown();
     }
 }

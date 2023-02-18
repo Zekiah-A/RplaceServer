@@ -36,8 +36,8 @@ public sealed class SocketServer
         gameData = data;
         this.origin = origin;
         
-        ChatMessageReceived = DistributeChatMessage;
-        PixelPlacementReceived = DistributePixelPlacement;
+        ChatMessageReceived += DistributeChatMessage;
+        PixelPlacementReceived += DistributePixelPlacement;
         PlayerConnected = (_, _) => { };
         PlayerDisconnected = (_, _) => { };
         
