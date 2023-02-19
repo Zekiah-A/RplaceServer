@@ -19,7 +19,7 @@ StandardInput=tty-force
 TTYVHangup=yes
 TTYPath=/dev/tty20
 TTYReset=yes
-Environment=DOTNET_CLI_HOME=/tmp/
+Environment=DOTNET_CLI_HOME=/tmp
 WorkingDirectory=$1
 ExecStart=
 ExecStart=$dotnet_dir run
