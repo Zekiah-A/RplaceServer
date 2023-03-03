@@ -8,6 +8,8 @@ namespace TKOfficial;
 
 public class ConsoleWindow : Window
 {
+    public Action<string>? Logger;
+
     public ConsoleWindow()
     {
         Initialise();
@@ -28,19 +30,7 @@ public class ConsoleWindow : Window
             Text = "Expand canvas",
             Y = Pos.Top(serverActionsContainer) + 1
         };
-        
-        var fillCanvasButton = new Button
-        {
-            Text = "Fill canvas area",
-            Y = Pos.Top(serverActionsContainer) + 2
-        };
-        
-        var changeChatCooldownButton = new Button
-        {
-            Text = "Edit chat cooldown",
-            Y = Pos.Top(serverActionsContainer) + 3
-        };
-        changeChatCooldownButton.Clicked += () =>
+        expandCanvasButton.Clicked += () =>
         {
             var cooldownWizard = new Wizard("")
             {
@@ -59,6 +49,87 @@ public class ConsoleWindow : Window
             cooldownWizard.AddStep(firstStep);
             cooldownWizard.Finished += _ =>
             {
+                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                {
+                    Program.Server.GameData.ChatCooldown = cooldown;
+                }
+                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
+                Application.Top.Remove(cooldownWizard);
+                Application.RequestStop();
+                Application.Run(Application.Top);
+            };
+            
+            Application.Top.Add(cooldownWizard);
+            Application.Run(Application.Top);
+        };
+
+        var fillCanvasButton = new Button
+        {
+            Text = "Fill canvas area",
+            Y = Pos.Top(serverActionsContainer) + 2
+        };
+        fillCanvasButton.Clicked += () =>
+        {
+            var cooldownWizard = new Wizard("")
+            {
+                Modal = false,
+                Width = 32,
+                Height = 8,
+            };
+
+            var firstStep = new Wizard.WizardStep("Fill canvas area");
+            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
+            {
+                Width = Dim.Fill(),
+            };
+            firstStep.Add(cooldownField);
+
+            cooldownWizard.AddStep(firstStep);
+            cooldownWizard.Finished += _ =>
+            {
+                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                {
+                    Program.Server.GameData.ChatCooldown = cooldown;
+                }
+                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
+                Application.Top.Remove(cooldownWizard);
+                Application.RequestStop();
+                Application.Run(Application.Top);
+            };
+            
+            Application.Top.Add(cooldownWizard);
+            Application.Run(Application.Top);
+        };
+
+        var chatCooldownButton = new Button
+        {
+            Text = "Edit chat cooldown",
+            Y = Pos.Top(serverActionsContainer) + 3
+        };
+        chatCooldownButton.Clicked += () =>
+        {
+            var cooldownWizard = new Wizard("")
+            {
+                Modal = false,
+                Width = 32,
+                Height = 4,
+            };
+
+            var firstStep = new Wizard.WizardStep("Edit chat message cooldown");
+            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
+            {
+                Width = Dim.Fill(),
+            };
+            firstStep.Add(cooldownField);
+
+            cooldownWizard.AddStep(firstStep);
+            cooldownWizard.Finished += _ =>
+            {
+                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                {
+                    Program.Server.GameData.ChatCooldown = cooldown;
+                }
+                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -79,24 +150,26 @@ public class ConsoleWindow : Window
             {
                 Modal = false,
                 Width = 32,
-                Height = 6,
+                Height = 9,
             };
             
             var firstStep = new Wizard.WizardStep("Broadcast chat message");
             var textInput = new TextField("Message from the server")
             {
                 Width = Dim.Fill(),
+                Y = 1
             };
             var channelInput = new TextField("en")
             {
                 Width = Dim.Fill(),
-                Y = 1
+                Y = 3
             };
-            firstStep.Add(textInput, channelInput);
+            firstStep.Add(new Label { Text = "Message:" }, textInput, new Label { Text = "Channel:", Y = 2 }, channelInput);
 
             chatWizard.AddStep(firstStep);
             chatWizard.Finished += _ =>
             {
+                Logger?.Invoke("Sent chat message " + "(null)" + " in channel " + "(null)");
                 Application.Top.Remove(chatWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -130,6 +203,12 @@ public class ConsoleWindow : Window
             cooldownWizard.AddStep(firstStep);
             cooldownWizard.Finished += _ =>
             {
+                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                {
+                    Program.Server.GameData.Cooldown = cooldown;
+                }
+
+                Logger?.Invoke($"Updated game pixel place cooldown to {Program.Server.GameData.Cooldown} ms");
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -163,6 +242,7 @@ public class ConsoleWindow : Window
             paletteWizard.AddStep(firstStep);
             paletteWizard.Finished += _ =>
             {
+                Logger.Invoke("Updated colour palette to: " + string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()));
                 Application.Top.Remove(paletteWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -179,6 +259,7 @@ public class ConsoleWindow : Window
         };
         saveCanvasButton.Clicked += async () =>
         {
+            Logger?.Invoke("Canvas saved to disk");
             await Program.Server.WebServer.SaveCanvasBackup();
         };
         
@@ -189,12 +270,13 @@ public class ConsoleWindow : Window
         };
         stopServerButton.Clicked += async () =>
         {
+            Logger?.Invoke("Server shutdown request received");
             Application.Shutdown();
             await Program.Server.StopAsync();
             Console.Clear();
         };
         
-        serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, changeChatCooldownButton,
+        serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, chatCooldownButton,
             broadcastChatButton, changeGameCooldownButton, editPaletteButton, saveCanvasButton, stopServerButton);
         // End server actions stack panel container
         
@@ -237,11 +319,10 @@ public class ConsoleWindow : Window
             };
             var vipLabel = new Label
             {
-                Text = "Is VIP: " +
-                       (Program.Server.GameData.Vips.Contains(
-                           args.Value.ToString()![..args.Value.ToString()!.LastIndexOf(":", StringComparison.Ordinal)])
-                           ? "True"
-                           : "False"),
+                Text = Program.Server.GameData.Vips.Contains
+                    (args.Value.ToString()![..args.Value.ToString()!.LastIndexOf(":", StringComparison.Ordinal)])
+                       ? "This player is not a VIP"
+                       : "This player is a VIP",
                 Y = 1
             };
             var lastChatLabel = new Label
@@ -256,6 +337,7 @@ public class ConsoleWindow : Window
             };
             kickButton.Clicked += () =>
             {
+                Logger?.Invoke($"Disconnected player {selectedClientPair.Key.IpPort}");
                 Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
             };
             var banButton = new Button
@@ -265,6 +347,7 @@ public class ConsoleWindow : Window
             };
             banButton.Clicked += () =>
             {
+                Logger?.Invoke($"Banned player {selectedClientPair.Key.IpPort}");
                 Program.Server.SocketServer.BanPlayer(selectedClientPair.Key);
             };
             firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
@@ -368,6 +451,11 @@ public class ConsoleWindow : Window
         // Server logs panel
         if (Program.Config.LogToConsole)
         {
+            Logger = message =>
+            {
+                serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
+            };
+            
             Program.Server.Logger = message =>
             {
                 serverLogs.Add("[ServerInstance " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
@@ -382,8 +470,6 @@ public class ConsoleWindow : Window
             {
                 serverLogs.Add("[WebServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
             };
-            
-            serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]: " + "Server software started");
         }
         else
         {
@@ -404,5 +490,7 @@ public class ConsoleWindow : Window
                 .Select(pair => pair.Key.IpPort)
                 .ToList());
         };
+        
+        Logger?.Invoke("Server software started");
     }
 }

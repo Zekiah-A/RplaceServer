@@ -369,14 +369,14 @@ public sealed class SocketServer
 
     public void BanPlayer(ClientMetadata client)
     {
+        // TODO: Make these persistent
         var address = client.IpPort.Split(":")[0];
         gameData.Bans.Add(address);
-        // TODO: Save to file
+        app.DisconnectClient(client);
     }
 
     public void KickPlayer(ClientMetadata client)
     {
-        Logger?.Invoke($"Disconnected player {client.IpPort}");
         app.DisconnectClient(client);
     }
 
