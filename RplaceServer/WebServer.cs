@@ -201,7 +201,7 @@ public sealed class WebServer
             await SaveCanvasBackup();
         };
     }
-
+    
     public async Task SaveCanvasBackup()
     {
         // Save the place file so that we can recover after a server restart

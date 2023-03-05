@@ -51,4 +51,42 @@ public static class BoardPacker
 
         return new UnpackedBoard(board, (int) boardWidth, palette);
     }
+
+    public static byte[] RunLengthCompressBoard(byte[] board, uint[] palette)
+    {
+        // Our optimisations will be so negligible, there will be no point compressing
+        if (palette.Length <= 254)
+        {
+            return board;
+        }
+
+        var newBoard = (Span<byte>) stackalloc byte[board.Length];
+        var newBoardI = 0;
+        var i = 0;
+        
+        while (i < board.Length)
+        {
+            var repeatedAfter = 0;
+            
+            for (var j = 0; j < 256 - palette.Length; i++)
+            {
+                if (board[i] == board[j])
+                {
+                    repeatedAfter++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            newBoard[newBoardI] = board[i];
+            newBoard[newBoardI + 1] = (byte) (palette.Length + repeatedAfter);
+            newBoardI += 2;
+            i += repeatedAfter;
+        }
+
+        // We make sure to slice it down so that it ends up *actually* smaller than input board
+        return newBoard.Length < board.Length ? newBoard[..newBoardI].ToArray() : board;
+    }
 }

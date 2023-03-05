@@ -287,7 +287,7 @@ public class ConsoleWindow : Window
             {
                 BorderBrush = Color.White,
                 BorderStyle = BorderStyle.Rounded,
-                Title = "Server actions"
+                Title = "Server actions",
             },
             ColorScheme = Colors.Base,
             Child = serverActionsContainer
@@ -306,6 +306,7 @@ public class ConsoleWindow : Window
                 Modal = false,
                 Width = 64,
                 Height = 8,
+                Border = new Border { Background = Color.White }
             };
 
             var selectedClientPair = Program.Server.GameData.Clients

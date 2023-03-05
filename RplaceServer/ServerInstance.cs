@@ -61,7 +61,7 @@ public sealed class ServerInstance
             File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
         };
     }
-
+    
     public async Task StartAsync()
     {
         await Task.WhenAll(SocketServer.StartAsync(), WebServer.StartAsync());
