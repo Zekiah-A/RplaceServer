@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,7 +64,11 @@ public sealed class WebServer
     public async Task StartAsync()
     {
         //Serve absolute latest board from memory.
-        app.MapGet("/place", () => Results.Bytes(gameData.Board));
+        app.MapGet("/place", () =>
+        {
+            var board = BoardPacker.RunLengthCompressBoard(gameData.Board);
+            return Results.Bytes(board);
+        });
         
         // To download a specific backup.
         app.MapGet("/backups/{placeFile}", (string placeFile) =>

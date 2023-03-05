@@ -128,7 +128,8 @@ public sealed class SocketServer
         // Send player cooldown + other data
         var canvasInfo = (Span<byte>) stackalloc byte[17];
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1); //TODO: Previous cooldown that they may have had before disconnect
+        // TODO: Previous cooldown that they may have had before disconnect
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], (uint) gameData.Cooldown);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], (uint) gameData.BoardWidth);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
@@ -158,7 +159,7 @@ public sealed class SocketServer
                 var colour = args.Data[5];
 
                 // Reject
-                if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 31))
+                if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 32))
                 {
                     Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for exceeding canvas size or palette ({index}, {colour})");
                     return;
@@ -358,7 +359,7 @@ public sealed class SocketServer
     /// <param name="startY"></param>
     /// <param name="endX"></param>
     /// <param name="endY"></param>
-    /// <param name="colour"></param>
+    /// <param name="colour">The integer colour code that we want to set</param>
     public void Fill(int startX, int startY, int endX, int endY, byte colour = 27)
     {
         while (startY < endY && startX < endX)
@@ -366,10 +367,9 @@ public sealed class SocketServer
             gameData.Board[startX++ + startY++ * gameData.BoardWidth] = colour;
         }
     }
-
+    
     public void BanPlayer(ClientMetadata client)
     {
-        // TODO: Make these persistent
         var address = client.IpPort.Split(":")[0];
         gameData.Bans.Add(address);
         app.DisconnectClient(client);

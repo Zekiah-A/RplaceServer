@@ -52,26 +52,20 @@ public static class BoardPacker
         return new UnpackedBoard(board, (int) boardWidth, palette);
     }
 
-    public static byte[] RunLengthCompressBoard(byte[] board, uint[] palette)
+    public static byte[] RunLengthCompressBoard(byte[] board)
     {
-        // Our optimisations will be so negligible, there will be no point compressing
-        if (palette.Length >= 254)
-        {
-            return board;
-        }
-
-        var newBoard = (Span<byte>) stackalloc byte[board.Length];
+        var newBoard = new byte[board.Length];
         var newBoardI = 0;
-        
-        for (var i = 0; i < board.Length; i++)
+
+        var i = 0;
+        while (i < board.Length)
         {
-            var repeatedAfter = 0;
-            
-            for (var j = 0; j < 256 - palette.Length; j++)
+            var repeated = 0;
+            for (var j = 0; j < Math.Abs(Math.Min(256, board.Length - i)); j++)
             {
-                if (board[i] == board[j])
+                if (board[i] == board[i + j])
                 {
-                    repeatedAfter++;
+                    repeated++;    
                 }
                 else
                 {
@@ -80,12 +74,13 @@ public static class BoardPacker
             }
 
             newBoard[newBoardI] = board[i];
-            newBoard[newBoardI + 1] = (byte) (palette.Length + repeatedAfter);
+            // Byte can only hold max 255, so we subtract one from repeated (256), and treat it as though it is +1
+            newBoard[newBoardI + 1] = (byte) (repeated - 1);
+            
             newBoardI += 2;
-            i += repeatedAfter;
+            i += repeated;
         }
 
-        // We make sure to slice it down so that it ends up *actually* smaller than input board
-        return newBoard.Length < board.Length ? newBoard[..newBoardI].ToArray() : board;
+        return newBoardI < board.Length ? newBoard[..newBoardI] : board;
     }
 }
