@@ -68,7 +68,7 @@ public static class BoardPacker
         {
             var repeatedAfter = 0;
             
-            for (var j = 0; j < 256 - palette.Length; i++)
+            for (var j = 0; j < 256 - palette.Length; j++)
             {
                 if (board[i] == board[j])
                 {
