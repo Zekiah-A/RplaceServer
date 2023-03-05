@@ -62,9 +62,8 @@ public static class BoardPacker
 
         var newBoard = (Span<byte>) stackalloc byte[board.Length];
         var newBoardI = 0;
-        var i = 0;
         
-        while (i < board.Length)
+        for (var i = 0; i < board.Length; i++)
         {
             var repeatedAfter = 0;
             
