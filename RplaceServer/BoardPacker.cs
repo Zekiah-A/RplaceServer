@@ -55,7 +55,7 @@ public static class BoardPacker
     public static byte[] RunLengthCompressBoard(byte[] board, uint[] palette)
     {
         // Our optimisations will be so negligible, there will be no point compressing
-        if (palette.Length <= 254)
+        if (palette.Length >= 254)
         {
             return board;
         }
