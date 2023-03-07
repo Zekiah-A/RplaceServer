@@ -1,13 +1,11 @@
 using System.Buffers.Binary;
 using System.Net.Http.Json;
-using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using RplaceServer.CaptchaGeneration;
 using RplaceServer.Enums;
 using RplaceServer.Events;
-using RplaceServer.Exceptions;
 using RplaceServer.Types;
 using WatsonWebsocket;
 
@@ -312,7 +310,9 @@ public sealed class SocketServer
     /// </summary>
     /// <param name="widthIncrease">The increase in pixels on the X axis.</param>
     /// <param name="heightIncrease">The increase in pixels on the Y axis.</param>
-    public void ExpandCanvas(int widthIncrease, int heightIncrease)
+    /// <param name="expandColour">The colour which the new expanded area of the board will be filled with.</param>
+    /// <returns>The new width and new height of the board after it has been increased.</returns>
+    public (int NewWidth, int NewHeight) ExpandCanvas(int widthIncrease, int heightIncrease, int expandColour)
     {
         var newHeight = gameData.BoardHeight + heightIncrease;
         var newWidth = gameData.BoardWidth + widthIncrease;
@@ -326,6 +326,8 @@ public sealed class SocketServer
         gameData.Board = newBoard;
         gameData.BoardHeight = newHeight;
         gameData.BoardWidth = newWidth;
+
+        return (newWidth, newHeight);
     }
 
     /// <summary>
@@ -333,7 +335,7 @@ public sealed class SocketServer
     /// </summary>
     /// <param name="message">The message being sent.</param>
     /// <param name="channel">The channel that the message will be broadcast to.</param>
-    /// <param name="client">The player that this chat message will be sent to, if no client provided, then it is sent to all</param>
+    /// <param name="client">The player that this chat message will be sent to, if no client provided, then it is sent to all.</param>
     public void BroadcastChatMessage(string message, string channel, ClientMetadata? client = null)
     {
         var messageBytes = Encoding.UTF8.GetBytes($"\x0f{message}\nserver\n{channel}");
@@ -355,19 +357,27 @@ public sealed class SocketServer
     /// <summary>
     /// Sets an area of the canvas to a specific colour.
     /// </summary>
-    /// <param name="startX"></param>
-    /// <param name="startY"></param>
-    /// <param name="endX"></param>
-    /// <param name="endY"></param>
-    /// <param name="colour">The integer colour code that we want to set</param>
-    public void Fill(int startX, int startY, int endX, int endY, byte colour = 27)
+    /// <param name="startX">Starting X coordinate of pixel fill.</param>
+    /// <param name="startY">Starting Y coordinate of pixel fill.</param>
+    /// <param name="endX">Ending X coordinate of pixel fill.</param>
+    /// <param name="endY">Ending Y coordinate of pixel fill.</param>
+    /// <param name="colour">The integer colour code that we want to set.</param>
+    /// <returns>Area in pixels filled by this method.</returns>
+    public int Fill(int startX, int startY, int endX, int endY, byte colour = 27)
     {
         while (startY < endY && startX < endX)
         {
             gameData.Board[startX++ + startY++ * gameData.BoardWidth] = colour;
         }
+
+        return (endX - startX) * (endY - startY);
     }
     
+    /// <summary>
+    /// Bans a player from the current server instance, kicking them and preventing them from reconnecting for the duration
+    /// of this instance running (is not persistent between server restarts unless implemented by a server software).
+    /// </summary>
+    /// <param name="client">The client who is to be banned from reconnecting to the game</param>
     public void BanPlayer(ClientMetadata client)
     {
         var address = client.IpPort.Split(":")[0];

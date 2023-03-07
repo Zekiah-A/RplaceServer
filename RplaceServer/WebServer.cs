@@ -13,15 +13,12 @@ namespace RplaceServer;
 
 public sealed class WebServer
 {
-    private readonly ServerInstance instance;
     private readonly WebApplication app;
-    private readonly WebApplicationBuilder builder;
     private readonly GameData gameData;
     private readonly Database postsDB;
     private readonly RateLimiter timelapseLimiter;
     private readonly RateLimiter postLimiter;
     public Action<string>? Logger;
-    
     
     public event EventHandler<CanvasBackupCreatedEventArgs> CanvasBackupCreated = (_, _) => { };
 
@@ -34,7 +31,7 @@ public sealed class WebServer
         
         var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
 
-        builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             WebRootPath = pagesRoot
         });
@@ -207,6 +204,10 @@ public sealed class WebServer
         };
     }
     
+    /// <summary>
+    /// Writes a canvas backup to the disk, putting a new entry into the backuplist.txt log file, and saving the current
+    /// canvas state with palette and width metadata so that the canvas state can be easily recovered.
+    /// </summary>
     public async Task SaveCanvasBackup()
     {
         // Save the place file so that we can recover after a server restart

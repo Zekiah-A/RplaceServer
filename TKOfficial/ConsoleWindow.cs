@@ -32,34 +32,72 @@ public class ConsoleWindow : Window
         };
         expandCanvasButton.Clicked += () =>
         {
-            var cooldownWizard = new Wizard("")
+            var expandCanvasWizard = new Wizard("")
             {
                 Modal = false,
                 Width = 32,
-                Height = 4,
+                Height = 9
             };
 
             var firstStep = new Wizard.WizardStep("Edit chat message cooldown");
-            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
+            var expandXField = new TextField("0")
             {
                 Width = Dim.Fill(),
+                Y = 1
             };
-            firstStep.Add(cooldownField);
-
-            cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += _ =>
+            var expandYField = new TextField("0")
             {
-                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                Width = Dim.Fill(),
+                Y = 3
+            };
+            var colourIndexField = new TextField("0")
+            {
+                Width = Dim.Fill(),
+                Y = 5
+            };
+
+            firstStep.Add(new Label { Text = "Expand X (Width)" }, expandXField,
+                new Label { Y = 2, Text = "Expand Y (Height)" }, expandYField,
+                new Label { Y = 4, Text = "Expand colour index" }, colourIndexField);
+
+            expandCanvasWizard.AddStep(firstStep);
+            expandCanvasWizard.Finished += _ =>
+            {
+                if (!int.TryParse(expandXField.Text.ToString(), out var expandWidth))
                 {
-                    Program.Server.GameData.ChatCooldown = cooldown;
+                    Logger.Invoke("Failed to fill, invalid Expand X Parameter");
+                    goto closeWizard;
                 }
-                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
-                Application.Top.Remove(cooldownWizard);
+                if (!int.TryParse(expandYField.Text.ToString(), out var expandHeight))
+                {
+                    Logger.Invoke("Failed to fill, invalid Expand Y Parameter");
+                    goto closeWizard;
+                }
+                if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
+                    colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
+                {
+                    Logger.Invoke("Failed to fill, invalid Colour Index Parameter");
+                    goto closeWizard;
+                }
+                
+                var formattedColour = colourIndex.ToString();
+                if (Program.Server.GameData.Palette?.ElementAtOrDefault(colourIndex) is not null)
+                {
+                    formattedColour = RgbFormatColour(Program.Server.GameData.Palette[colourIndex]);
+                }
+                
+                var originalDimensions = (Program.Server.GameData.BoardWidth, Program.Server.GameData.BoardHeight);
+                var newDimensions = Program.Server.SocketServer.ExpandCanvas(expandWidth, expandHeight, colourIndex);
+                var difference = newDimensions.NewWidth * newDimensions.NewHeight - originalDimensions.BoardWidth * originalDimensions.BoardHeight;
+
+                Logger?.Invoke($"Expanded canvas size to ({newDimensions.NewWidth}, {newDimensions.NewHeight}), with colour {formattedColour}, ({difference} pixels)");
+closeWizard:
+                Application.Top.Remove(expandCanvasWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
             };
             
-            Application.Top.Add(cooldownWizard);
+            Application.Top.Add(expandCanvasWizard);
             Application.Run(Application.Top);
         };
 
@@ -70,34 +108,90 @@ public class ConsoleWindow : Window
         };
         fillCanvasButton.Clicked += () =>
         {
-            var cooldownWizard = new Wizard("")
+            var fillCanvasWizard = new Wizard("")
             {
                 Modal = false,
                 Width = 32,
-                Height = 8,
+                Height = 13,
             };
 
             var firstStep = new Wizard.WizardStep("Fill canvas area");
-            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
+            var xStartField = new TextField("0")
             {
                 Width = Dim.Fill(),
+                Y = 1
             };
-            firstStep.Add(cooldownField);
-
-            cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += _ =>
+            var yStartField = new TextField("0")
             {
-                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                Width = Dim.Fill(),
+                Y = 3
+            };
+            var xEndField = new TextField("0")
+            {
+                Width = Dim.Fill(),
+                Y = 5
+            };
+            var yEndField = new TextField("0")
+            {
+                Width = Dim.Fill(),
+                Y = 7
+            };
+            var colourIndexField = new TextField("0")
+            {
+                Width = Dim.Fill(),
+                Y = 9
+            };
+            firstStep.Add(xStartField, new Label { Text = "Pixel X start" }, yStartField,
+                new Label { Y = 2, Text = "Pixel Y start" }, xEndField, new Label { Y = 4, Text = "Pixel X end" },
+                yEndField, new Label { Y = 6, Text = "Pixel Y end" },
+                new Label { Y = 8, Text = $"Palette colour index (0 - {Program.Server.GameData.Palette?.Count ?? 31})" },
+                colourIndexField);
+
+            fillCanvasWizard.AddStep(firstStep);
+            fillCanvasWizard.Finished += _ =>
+            {
+                if (!int.TryParse(xStartField.Text.ToString(), out var startX))
                 {
-                    Program.Server.GameData.ChatCooldown = cooldown;
+                    Logger.Invoke("Failed to fill, invalid Start X Parameter");
+                    goto closeWizard;
                 }
-                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
-                Application.Top.Remove(cooldownWizard);
+                if (!int.TryParse(yStartField.Text.ToString(), out var startY))
+                {
+                    Logger.Invoke("Failed to fill, invalid Start Y Parameter");
+                    goto closeWizard;
+                }
+                if (!int.TryParse(xEndField.Text.ToString(), out var endX))
+                {
+                    Logger.Invoke("Failed to fill, invalid End X Parameter");
+                    goto closeWizard;
+                }
+                if (!int.TryParse(yEndField.Text.ToString(), out var endY))
+                {
+                    Logger.Invoke("Failed to fill, invalid End Y Parameter");
+                    goto closeWizard;
+                }
+                if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
+                    colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
+                {
+                    Logger.Invoke("Failed to fill, invalid Colour Index Parameter");
+                    goto closeWizard;
+                }
+                
+                var formattedColour = colourIndex.ToString();
+                if (Program.Server.GameData.Palette?.ElementAtOrDefault(colourIndex) is not null)
+                {
+                    formattedColour = RgbFormatColour(Program.Server.GameData.Palette[colourIndex]);
+                }
+                var areaFilled = Program.Server.SocketServer.Fill(startX, startY, endX, endY, (byte) colourIndex);
+                
+                Logger?.Invoke($"Filled canvas area ({startX}, {startY}) to ({endX}, {endY}) with colour {formattedColour} ({areaFilled} pixels filled)");
+closeWizard:
+                Application.Top.Remove(fillCanvasWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
             };
             
-            Application.Top.Add(cooldownWizard);
+            Application.Top.Add(fillCanvasWizard);
             Application.Run(Application.Top);
         };
 
@@ -129,6 +223,7 @@ public class ConsoleWindow : Window
                 {
                     Program.Server.GameData.ChatCooldown = cooldown;
                 }
+                
                 Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
@@ -141,7 +236,7 @@ public class ConsoleWindow : Window
 
         var broadcastChatButton = new Button
         {
-            Text = "Send chat message",
+            Text = "Broadcast chat message",
             Y = Pos.Top(serverActionsContainer) + 4
         };
         broadcastChatButton.Clicked += () =>
@@ -150,7 +245,7 @@ public class ConsoleWindow : Window
             {
                 Modal = false,
                 Width = 32,
-                Height = 9,
+                Height = 7,
             };
             
             var firstStep = new Wizard.WizardStep("Broadcast chat message");
@@ -169,7 +264,8 @@ public class ConsoleWindow : Window
             chatWizard.AddStep(firstStep);
             chatWizard.Finished += _ =>
             {
-                Logger?.Invoke("Sent chat message " + "(null)" + " in channel " + "(null)");
+                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text.ToString(), channelInput.Text.ToString(), null);
+                Logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
                 Application.Top.Remove(chatWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -242,7 +338,44 @@ public class ConsoleWindow : Window
             paletteWizard.AddStep(firstStep);
             paletteWizard.Finished += _ =>
             {
-                Logger.Invoke("Updated colour palette to: " + string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()));
+                var newPalette = new List<uint>();
+                var split = paletteField.Text.ToString().Split(',');
+
+                if (split.Length == 0)
+                {
+                    if (newPalette.Count == 0)
+                    {
+                        Program.Server.GameData.Palette = null;
+                        Logger.Invoke("Cleared colour palette, server will use default game palette");
+                    }
+                }
+                
+                for (var index = 0; index < split.Length; index++)
+                {
+                    if (uint.TryParse(split[index].Trim(), out var uintValue))
+                    {
+                        newPalette.Add(uintValue);
+                        continue;
+                    }
+                    
+                    Logger.Invoke($"Could not add beyond the {GetOrdinalSuffix(index + 1)} element due to it not being a correctly formatted number.");
+                    break;
+                }
+
+                if (newPalette.Count == 0)
+                {
+                    Program.Server.GameData.Palette = null;
+                    Logger.Invoke("Cleared colour palette, server will use default game palette");
+                }
+                else
+                {
+                    Program.Server.GameData.Palette = newPalette;
+                
+                    Logger.Invoke("Updated colour palette to: " +
+                                  string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
+                                  " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
+                }
+
                 Application.Top.Remove(paletteWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -493,5 +626,26 @@ public class ConsoleWindow : Window
         };
         
         Logger?.Invoke("Server software started");
+    }
+    
+    string RgbFormatColour(uint colourValue)
+    {
+        var red = (byte) ((colourValue >> 16) & 0xFF);
+        var green = (byte) ((colourValue >> 8) & 0xFF);
+        var blue = (byte) (colourValue & 0xFF);
+
+        return $"rgb({red}, {green}, {blue})";
+    }
+    
+    private static string GetOrdinalSuffix(int number)
+    {
+        var stringNumber = number.ToString();
+        if (stringNumber.EndsWith("11")) return "th";
+        if (stringNumber.EndsWith("12")) return "th";
+        if (stringNumber.EndsWith("13")) return "th";
+        if (stringNumber.EndsWith("1")) return "st";
+        if (stringNumber.EndsWith("2")) return "nd";
+        if (stringNumber.EndsWith("3")) return "rd";
+        return "th";
     }
 }
