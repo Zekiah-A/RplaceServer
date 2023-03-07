@@ -1,8 +1,4 @@
-using System.Collections;
-using System.Net.Mime;
-using RplaceServer;
 using Terminal.Gui;
-using Attribute = Terminal.Gui.Attribute;
 
 namespace TKOfficial;
 
@@ -264,7 +260,7 @@ closeWizard:
             chatWizard.AddStep(firstStep);
             chatWizard.Finished += _ =>
             {
-                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text.ToString(), channelInput.Text.ToString(), null);
+                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text.ToString(), channelInput.Text.ToString());
                 Logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
                 Application.Top.Remove(chatWizard);
                 Application.RequestStop();
@@ -325,15 +321,16 @@ closeWizard:
             {
                 Modal = false,
                 Width = 64,
-                Height = 4,
+                Height = 5,
             };
             
-            var firstStep = new Wizard.WizardStep("Edit colour palette");
+            var firstStep = new Wizard.WizardStep("Edit colour palette"); 
             var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()))
             {
                 Width = Dim.Fill(),
+                Y = 1
             };
-            firstStep.Add(paletteField);
+            firstStep.Add(new Label { Text = "Comma separated integer palette colours" }, paletteField);
 
             paletteWizard.AddStep(firstStep);
             paletteWizard.Finished += _ =>
@@ -343,11 +340,9 @@ closeWizard:
 
                 if (split.Length == 0)
                 {
-                    if (newPalette.Count == 0)
-                    {
-                        Program.Server.GameData.Palette = null;
-                        Logger.Invoke("Cleared colour palette, server will use default game palette");
-                    }
+                    Program.Server.GameData.Palette = null;
+                    Logger.Invoke("Cleared colour palette, server will use default game palette");
+                    goto closeWizard;
                 }
                 
                 for (var index = 0; index < split.Length; index++)
@@ -362,20 +357,12 @@ closeWizard:
                     break;
                 }
 
-                if (newPalette.Count == 0)
-                {
-                    Program.Server.GameData.Palette = null;
-                    Logger.Invoke("Cleared colour palette, server will use default game palette");
-                }
-                else
-                {
-                    Program.Server.GameData.Palette = newPalette;
+                Program.Server.GameData.Palette = newPalette;
+                Logger.Invoke("Updated colour palette to: " +
+                              string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
+                              " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
                 
-                    Logger.Invoke("Updated colour palette to: " +
-                                  string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
-                                  " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
-                }
-
+closeWizard:
                 Application.Top.Remove(paletteWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
