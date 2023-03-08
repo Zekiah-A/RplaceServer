@@ -415,7 +415,7 @@ closeWizard:
         
         // Clients panel
         var clientsListView = new ListView(new Rect(0, 0, 64, 16),
-            new List<string>{ "No clients are connected yet... Invite some friends!" })
+            new List<string> { "No clients are connected yet... Invite some friends!" })
         {
             Width = Dim.Fill(),
         };

@@ -365,12 +365,20 @@ public sealed class SocketServer
     /// <returns>Area in pixels filled by this method.</returns>
     public int Fill(int startX, int startY, int endX, int endY, byte colour = 27)
     {
-        while (startY < endY && startX < endX)
-        {
-            gameData.Board[startX++ + startY++ * gameData.BoardWidth] = colour;
-        }
+        var width = endX - startX;
+        var height = endY - startY; 
+       
+        for(;startY < endY; startY++)
+        { 
+            for(;startX < endX; startX++)
+            {
+                gameData.Board[startX + startY * gameData.BoardWidth] = colour;
+            }
 
-        return (endX - startX) * (endY - startY);
+            startX = endX - width;
+        } 
+        
+        return width * height;
     }
     
     /// <summary>
