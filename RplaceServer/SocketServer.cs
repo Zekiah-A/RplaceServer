@@ -368,13 +368,14 @@ public sealed class SocketServer
         var width = endX - startX;
         var height = endY - startY; 
        
-        for(;startY < endY; startY++)
+        while(startY < endY)
         { 
-            for(;startX < endX; startX++)
+            while (startX < endX)
             {
-                gameData.Board[startX + startY * gameData.BoardWidth] = colour;
+                gameData.Board[startX++ + startY * gameData.BoardWidth] = colour;
             }
 
+            startY++;
             startX = endX - width;
         } 
         
@@ -393,6 +394,11 @@ public sealed class SocketServer
         app.DisconnectClient(client);
     }
 
+    /// <summary>
+    /// Kicks a player from the current server instance, disconnecting them from the game immediately. For a more
+    /// permanent solution, see BanPlayer(ClientMetadata client).
+    /// </summary>
+    /// <param name="client">The client who is to be kicked (disconnected) from the socket server.</param>
     public void KickPlayer(ClientMetadata client)
     {
         app.DisconnectClient(client);

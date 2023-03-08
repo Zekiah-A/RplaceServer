@@ -1,4 +1,6 @@
+using RplaceServer;
 using Terminal.Gui;
+using WatsonWebsocket;
 
 namespace TKOfficial;
 
@@ -431,6 +433,11 @@ closeWizard:
 
             var selectedClientPair = Program.Server.GameData.Clients
                 .FirstOrDefault(clientPair => clientPair.Key.IpPort.Equals(args.Value));
+
+            if (selectedClientPair.Equals(default(KeyValuePair<ClientMetadata, ClientData>)))
+            {
+                return;
+            }
             
             var firstStep = new Wizard.WizardStep("Player info");
             var ipLabel = new Label
@@ -562,7 +569,6 @@ closeWizard:
         };
         uptimeTimer.Elapsed += (_, _) =>
         {
-            // TODO: Timer refuses for elapse for some unknown reason when I use the datetime. Use timespan seconds for now.
             serverUptimeLabel.Text = "Server uptime: " + TimeSpan.FromSeconds(elapsedSeconds);
             serverUptimeLabel.SetNeedsDisplay(serverUptimeLabel.Bounds);
             elapsedSeconds++;
@@ -614,8 +620,8 @@ closeWizard:
         
         Logger?.Invoke("Server software started");
     }
-    
-    string RgbFormatColour(uint colourValue)
+
+    private static string RgbFormatColour(uint colourValue)
     {
         var red = (byte) ((colourValue >> 16) & 0xFF);
         var green = (byte) ((colourValue >> 8) & 0xFF);
@@ -626,13 +632,12 @@ closeWizard:
     
     private static string GetOrdinalSuffix(int number)
     {
-        var stringNumber = number.ToString();
-        if (stringNumber.EndsWith("11")) return "th";
-        if (stringNumber.EndsWith("12")) return "th";
-        if (stringNumber.EndsWith("13")) return "th";
-        if (stringNumber.EndsWith("1")) return "st";
-        if (stringNumber.EndsWith("2")) return "nd";
-        if (stringNumber.EndsWith("3")) return "rd";
-        return "th";
+        return (number % 100 is 11 or 12 or 13 ? 9 : number % 10) switch
+        {
+            1 => "st",
+            2 => "nd",
+            3 => "rd",
+            _ => "th"
+        };
     }
 }
