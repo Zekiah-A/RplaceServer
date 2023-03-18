@@ -77,3 +77,6 @@ Canvas:
 
 Chat:
  - There are two types of chat packets, live chat and place chat.
+
+## Notes:
+ - **[Known bug]** If you are facing issues with enabling TLS/SSL on the socket server, you can use a TlS/SSL proxy, such as https://caddyserver.com/ to easily enable HTTPS functionality on the non-https server. For example, `caddy reverse-proxy --from example.com --to localhost:8083`.
