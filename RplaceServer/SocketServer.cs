@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -152,6 +151,12 @@ public sealed class SocketServer
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], (uint) gameData.BoardWidth);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
+        
+        // Send player all chat message history until they joined
+        foreach (var messagePacket in gameData.ChatHistory)
+        {
+            app.SendAsync(args.Client, messagePacket);
+        }
 
         DistributePlayerCount();
         PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(args.Client));
@@ -227,10 +232,11 @@ public sealed class SocketServer
 
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
-                var rawText = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1).Split("\n");
-                var message = rawText.ElementAtOrDefault(0);
-                var name = rawText.ElementAtOrDefault(1);
-                var channel = rawText.ElementAtOrDefault(2);
+                var rawText = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1);
+                var splitText = rawText.Split("\n");
+                var message = splitText.ElementAtOrDefault(0);
+                var name = splitText.ElementAtOrDefault(1);
+                var channel = splitText.ElementAtOrDefault(2);
                 
                 // Reject
                 if (message is null || name is null || channel is null)
@@ -242,28 +248,37 @@ public sealed class SocketServer
                 name = gameData.CensorChatMessages ? CensorText(name) : name;
                 name = new Regex(@"\W+").Replace(name, "").ToLowerInvariant();
                 
-                var type = rawText.ElementAtOrDefault(3) switch
+                var type = splitText.ElementAtOrDefault(3) switch
                 {
                     "live" => ChatMessageType.LiveChat,
                     "place" => ChatMessageType.PlaceChat,
                     _ => ChatMessageType.LiveChat
                 };
 
-                var x = rawText.ElementAtOrDefault(4);
-                var y = rawText.ElementAtOrDefault(5);
- 
+                var x = splitText.ElementAtOrDefault(4);
+                var y = splitText.ElementAtOrDefault(5);
+                
                 // Accept
                 var builder = new StringBuilder();
                 builder.AppendLine(message);
                 builder.AppendLine(name);
                 builder.AppendLine(channel);
-                builder.AppendLine(rawText.ElementAtOrDefault(3) ?? "live");
+                builder.AppendLine(splitText.ElementAtOrDefault(3));
                 builder.AppendLine(x ?? "0");
                 builder.AppendLine(y ?? "0");
                 var messageData = Encoding.UTF8.GetBytes(builder.ToString());
                 var packet = new byte[messageData.Length + 1];
                 packet[0] = (byte) ServerPacket.ChatMessage;
                 messageData.CopyTo(packet, 1);
+                
+                if (gameData.ChatHistory.Count > gameData.ChatHistoryLength)
+                {
+                    gameData.ChatHistory.RemoveAt(0);
+                }
+                if (gameData.ChatHistoryLength != 0)
+                {
+                    gameData.ChatHistory.Add(packet);
+                }
 
                 foreach (var client in app.Clients)
                 {

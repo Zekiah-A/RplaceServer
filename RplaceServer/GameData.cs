@@ -1,3 +1,4 @@
+using RplaceServer.Types;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -22,6 +23,7 @@ public record GameData
     int PostLimitPeriod, // Milliseconds
     int TimelapseLimitPeriod, // Milliseconds
     bool CensorChatMessages,
+    int ChatHistoryLength,
     string? WebhookUrl = null,
     List<uint>? Palette = null
 )
@@ -32,6 +34,7 @@ public record GameData
     public int PlayerCount = 0;
     public Dictionary<ClientMetadata, ClientData> Clients = new();
     public Dictionary<string, string> PendingCaptchas = new();
+    public List<byte[]> ChatHistory = new();
 
     // These are persistent & saved in configs + can be changed at runtime
     public int Cooldown { get; set; } = Cooldown; // Milliseconds
@@ -44,6 +47,7 @@ public record GameData
     public int BackupFrequency { get; set; } = BackupFrequency; // Milliseconds
     public bool UseCloudflare { get; set; } = UseCloudflare;
     public bool CensorChatMessages { get; set; } = CensorChatMessages;
+    public int ChatHistoryLength { get; set; } = ChatHistoryLength;
 
     // These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;

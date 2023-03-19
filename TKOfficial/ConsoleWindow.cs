@@ -63,18 +63,18 @@ public class ConsoleWindow : Window
             {
                 if (!int.TryParse(expandXField.Text.ToString(), out var expandWidth))
                 {
-                    Logger?.Invoke("Failed to fill, invalid Expand X Parameter");
+                    Logger?.Invoke("Failed to expand, invalid Expand X Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(expandYField.Text.ToString(), out var expandHeight))
                 {
-                    Logger?.Invoke("Failed to fill, invalid Expand Y Parameter");
+                    Logger?.Invoke("Failed to expand, invalid Expand Y Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
                     colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
                 {
-                    Logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
+                    Logger?.Invoke("Failed to expand, invalid Colour Index Parameter");
                     goto closeWizard;
                 }
                 
@@ -148,22 +148,22 @@ closeWizard:
             fillCanvasWizard.AddStep(firstStep);
             fillCanvasWizard.Finished += _ =>
             {
-                if (!int.TryParse(xStartField.Text.ToString(), out var startX))
+                if (!int.TryParse(xStartField.Text.ToString(), out var startX) || startX < 0)
                 {
                     Logger?.Invoke("Failed to fill, invalid Start X Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(yStartField.Text.ToString(), out var startY))
+                if (!int.TryParse(yStartField.Text.ToString(), out var startY) || startY < 0)
                 {
                     Logger?.Invoke("Failed to fill, invalid Start Y Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(xEndField.Text.ToString(), out var endX))
+                if (!int.TryParse(xEndField.Text.ToString(), out var endX) || endX > Program.Server.GameData.BoardWidth)
                 {
                     Logger?.Invoke("Failed to fill, invalid End X Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(yEndField.Text.ToString(), out var endY))
+                if (!int.TryParse(yEndField.Text.ToString(), out var endY) || endX > Program.Server.GameData.BoardHeight)
                 {
                     Logger?.Invoke("Failed to fill, invalid End Y Parameter");
                     goto closeWizard;
