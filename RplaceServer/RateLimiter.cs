@@ -20,6 +20,19 @@ public class RateLimiter
             registeredIPs.Add(address, DateTime.Now);
             return true;
         }
+        
+        foreach (var pair in registeredIPs)
+        {
+            if (pair.Key.Equals(address))
+            {
+                continue;
+            }
+            
+            if (DateTime.Now - pair.Value > limitPeriod)
+            {
+                registeredIPs.Remove(pair.Key);
+            }
+        }
 
         if (DateTime.Now - startDate < limitPeriod)
         {

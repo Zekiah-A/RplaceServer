@@ -18,6 +18,7 @@ public record Config
     string PostsFolder,
     int PostLimitPeriod,
     int TimelapseLimitPeriod,
+    bool CensorChatMessages,
     
     bool LogToConsole,
     string CertPath,
@@ -30,4 +31,4 @@ public record Config
     string? WebhookUrl = null,
     List<uint>? Palette = null
 ) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
-    CanvasFolder, PostsFolder, PostLimitPeriod, TimelapseLimitPeriod, WebhookUrl, Palette);
+    CanvasFolder, PostsFolder, PostLimitPeriod, TimelapseLimitPeriod, CensorChatMessages, WebhookUrl, Palette);

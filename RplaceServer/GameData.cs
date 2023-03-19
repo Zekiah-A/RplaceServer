@@ -21,6 +21,7 @@ public record GameData
     string PostsFolder,
     int PostLimitPeriod, // Milliseconds
     int TimelapseLimitPeriod, // Milliseconds
+    bool CensorChatMessages,
     string? WebhookUrl = null,
     List<uint>? Palette = null
 )
@@ -42,6 +43,7 @@ public record GameData
     public int BoardHeight { get; set; } = BoardHeight; // Pixels
     public int BackupFrequency { get; set; } = BackupFrequency; // Milliseconds
     public bool UseCloudflare { get; set; } = UseCloudflare;
+    public bool CensorChatMessages { get; set; } = CensorChatMessages;
 
     // These are config-settable, and live changeable, but not necessary (nullable)
     public string? WebhookUrl { get; set; } = WebhookUrl;
