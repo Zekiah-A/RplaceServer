@@ -35,9 +35,9 @@ public static class Program
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
             var defaultConfig = new Config(5000, 2500, true, true, new List<string>(),
-            new List<string>(), 1000, 1000, 600,  false, 
+            new List<string>(), 1000, 1000, 600000,  false, 
         "Canvases", "Posts", 60, 300, true, "", "",
-            "https://rplace.tk", 443, 80, false);
+            "", 8080, 8081, false);
             
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
