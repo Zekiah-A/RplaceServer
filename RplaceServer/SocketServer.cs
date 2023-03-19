@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -56,12 +57,23 @@ public sealed class SocketServer
     
     private void ClientConnected(object? sender, ClientConnectedEventArgs args)
     {
-        var address = args.Client.IpPort.Split(":")[0];
-
+        // We make changes to the IP in case there is a reverse proxy acting and blocking us from accessing the true IP
+        // of the client. This is only done for proxies running on localhost, as any other may be untrustworthy, and be
+        // faking the information that they send to us.
+        var idIpPort = args.Client.IpPort;
+        var address = idIpPort.Split(":").FirstOrDefault() ?? idIpPort;
+        
+        if ((args.Client.IpPort.StartsWith("::1") || args.Client.IpPort.StartsWith("localhost") ||
+             args.Client.IpPort.StartsWith("127.0.0.1")) && args.HttpRequest.Headers.ContainsKey("X-Forwarded-For"))
+        {
+            var addresses = args.HttpRequest.Headers["X-Forwarded-For"].ToString().Split(",", StringSplitOptions.RemoveEmptyEntries);
+            idIpPort = addresses.FirstOrDefault() ?? args.Client.IpPort;
+        }
+        
         // Reject
         if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin) || gameData.Bans.Contains(address))
         {
-            Logger?.Invoke($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
+            Logger?.Invoke($"Client {idIpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
             return;
         }
@@ -75,7 +87,7 @@ public sealed class SocketServer
 
             if (clearance is null)
             {
-                Logger?.Invoke($"Client {args.Client.IpPort} disconnected for null cloudflare clearance cookie");
+                Logger?.Invoke($"Client {idIpPort} disconnected for null cloudflare clearance cookie");
                 app.DisconnectClient(args.Client);
                 return;
             }
@@ -83,25 +95,12 @@ public sealed class SocketServer
             foreach (var metadata in gameData.Clients.Keys
                 .Where(metadata => metadata.HttpContext.Request.Cookies["cf_clearance"] == clearance))
             {
-                Logger?.Invoke($"Client {args.Client.IpPort} disconnected for new connection from the same clearance cookie");
+                Logger?.Invoke($"Client {idIpPort} disconnected for new connection from the same clearance cookie");
                 app.DisconnectClient(metadata);
             }
         }
         
-        // Accept
-        // Create player client instance, we make changes to the IP in case there is a reverse proxy acting and blocking
-        // us from accessing the true IP of the client. This is only done for proxies running on localhost, as any other
-        // may be untrustworthy, and be faking the information that they send to us.
-        var idIpPort = args.Client.IpPort;
-        
-        if ((args.Client.IpPort.StartsWith("::1") || args.Client.IpPort.StartsWith("localhost") ||
-             args.Client.IpPort.StartsWith("127.0.0.1")) && args.HttpRequest.Headers.ContainsKey("X-Forwarded-For"))
-        {
-            var addresses = args.HttpRequest.Headers["X-Forwarded-For"].ToString().Split(",", StringSplitOptions.RemoveEmptyEntries);
-            idIpPort = addresses.FirstOrDefault() ?? args.Client.IpPort;
-        }
-
-
+        // Accept - Create a player instance
         var playerSocketClient = new ClientData(idIpPort, DateTimeOffset.Now);
         gameData.Clients.Add(args.Client, playerSocketClient);
         gameData.PlayerCount++;
@@ -154,7 +153,7 @@ public sealed class SocketServer
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
     {
-        var address = args.Client.IpPort.Split(":")[0];
+        var address = GetRealIp(args.Client).Split(":")[0];
         var data = new Span<byte>(args.Data.ToArray());
         
         switch ((ClientPacket) args.Data[0])
@@ -164,7 +163,7 @@ public sealed class SocketServer
                 //Reject
                 if (data.Length < 6)
                 {
-                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for invalid packet length ({data.Length})");
+                    Logger?.Invoke($"Pixel from client {GetRealIp(args.Client)} rejected for invalid packet length ({data.Length})");
                     return;
                 }
 
@@ -174,7 +173,7 @@ public sealed class SocketServer
                 // Reject
                 if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 32))
                 {
-                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for exceeding canvas size or palette ({index}, {colour})");
+                    Logger?.Invoke($"Pixel from client {GetRealIp(args.Client)} rejected for exceeding canvas size or palette ({index}, {colour})");
                     return;
                 }
                 var clientCooldown = gameData.Clients[args.Client].Cooldown;
@@ -182,7 +181,7 @@ public sealed class SocketServer
                 if (clientCooldown > DateTimeOffset.Now)
                 {
                     // Reject
-                    Logger?.Invoke($"Pixel from client {args.Client.IpPort} rejected for breaching cooldown ({clientCooldown})");
+                    Logger?.Invoke($"Pixel from client {GetRealIp(args.Client)} rejected for breaching cooldown ({clientCooldown})");
                     var buffer = (Span<byte>) stackalloc byte[10];
                     buffer[0] = (byte) ServerPacket.RejectPixel;
                     BinaryPrimitives.WriteInt32BigEndian(buffer[1..], (int) clientCooldown.ToUnixTimeMilliseconds());
@@ -207,7 +206,7 @@ public sealed class SocketServer
                 // Reject
                 if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldown) > DateTimeOffset.Now || args.Data.Count > 400)
                 {
-                    Logger?.Invoke($"Chat from client {args.Client.IpPort} rejected for breaching length/cooldown rules");
+                    Logger?.Invoke($"Chat from client {GetRealIp(args.Client)} rejected for breaching length/cooldown rules");
                     return;
                 }
 
@@ -249,7 +248,7 @@ public sealed class SocketServer
                 
                 if (gameData.PendingCaptchas.TryGetValue(address, out var answer) || !response.Equals(answer))
                 {
-                    Logger?.Invoke($"Client {args.Client.IpPort} disconnected for invalid captcha response");
+                    Logger?.Invoke($"Client {GetRealIp(args.Client)} disconnected for invalid captcha response");
                     app.DisconnectClient(args.Client);
                     return;
                 }
@@ -427,5 +426,11 @@ public sealed class SocketServer
         }
         
         await app.StopAsync();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public string GetRealIp(ClientMetadata client)
+    {
+        return gameData.Clients.GetValueOrDefault(client)?.IdIpPort ?? client.IpPort;
     }
 }

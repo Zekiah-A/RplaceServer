@@ -432,7 +432,7 @@ closeWizard:
             };
 
             var selectedClientPair = Program.Server.GameData.Clients
-                .FirstOrDefault(clientPair => clientPair.Key.IpPort.Equals(args.Value));
+                .FirstOrDefault(clientPair => clientPair.Value.IdIpPort.Equals(args.Value));
 
             if (selectedClientPair.Equals(default(KeyValuePair<ClientMetadata, ClientData>)))
             {
@@ -465,7 +465,7 @@ closeWizard:
             };
             kickButton.Clicked += () =>
             {
-                Logger?.Invoke($"Disconnected player {selectedClientPair.Key.IpPort}");
+                Logger?.Invoke($"Disconnected player {selectedClientPair.Value.IdIpPort}");
                 Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
             };
             var banButton = new Button
@@ -475,7 +475,7 @@ closeWizard:
             };
             banButton.Clicked += () =>
             {
-                Logger?.Invoke($"Banned player {selectedClientPair.Key.IpPort}");
+                Logger?.Invoke($"Banned player {selectedClientPair.Value.IdIpPort}");
                 Program.Server.SocketServer.BanPlayer(selectedClientPair.Key);
             };
             firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
@@ -608,13 +608,13 @@ closeWizard:
         Program.Server.SocketServer.PlayerConnected += (_, _) =>
         {
             clientsListView.SetSource(Program.Server.GameData.Clients
-                .Select(pair => pair.Key.IpPort)
+                .Select(pair => pair.Value.IdIpPort)
                 .ToList());
         };
         Program.Server.SocketServer.PlayerDisconnected += (_, _) =>
         {
             clientsListView.SetSource(Program.Server.GameData.Clients
-                .Select(pair => pair.Key.IpPort)
+                .Select(pair => pair.Value.IdIpPort)
                 .ToList());
         };
         
