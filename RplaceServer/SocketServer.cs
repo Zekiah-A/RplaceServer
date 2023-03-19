@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -58,7 +59,7 @@ public sealed class SocketServer
         var address = args.Client.IpPort.Split(":")[0];
 
         // Reject
-        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Cookies["origin" ] != origin) || gameData.Bans.Contains(address))
+        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin) || gameData.Bans.Contains(address))
         {
             Logger?.Invoke($"Client {args.Client.IpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
@@ -88,8 +89,20 @@ public sealed class SocketServer
         }
         
         // Accept
-        // Create player client instance
-        var playerSocketClient = new ClientData(args.Client.IpPort, DateTimeOffset.Now);
+        // Create player client instance, we make changes to the IP in case there is a reverse proxy acting and blocking
+        // us from accessing the true IP of the client. This is only done for proxies running on localhost, as any other
+        // may be untrustworthy, and be faking the information that they send to us.
+        var idIpPort = args.Client.IpPort;
+        
+        if ((args.Client.IpPort.StartsWith("::1") || args.Client.IpPort.StartsWith("localhost") ||
+             args.Client.IpPort.StartsWith("127.0.0.1")) && args.HttpRequest.Headers.ContainsKey("X-Forwarded-For"))
+        {
+            var addresses = args.HttpRequest.Headers["X-Forwarded-For"].ToString().Split(",", StringSplitOptions.RemoveEmptyEntries);
+            idIpPort = addresses.FirstOrDefault() ?? args.Client.IpPort;
+        }
+
+
+        var playerSocketClient = new ClientData(idIpPort, DateTimeOffset.Now);
         gameData.Clients.Add(args.Client, playerSocketClient);
         gameData.PlayerCount++;
         
@@ -105,11 +118,13 @@ public sealed class SocketServer
                 gameData.PendingCaptchas.Add(address, result.Answer);
             }
 
-            var captchaBuffer = new byte[2 + result.ImageData.Length];
+            var dummiesSize = Encoding.UTF8.GetByteCount(result.Dummies);
+            var captchaBuffer = new byte[3 + dummiesSize + result.ImageData.Length];
             captchaBuffer[0] = (byte) ServerPacket.Captcha;
             captchaBuffer[1] = (byte) CaptchaType.Emoji;
-            Encoding.UTF8.GetBytes(result.Dummies!).CopyTo(captchaBuffer, 2); // Length = 10
-            result.ImageData.CopyTo(captchaBuffer, 13);
+            captchaBuffer[2] = (byte) dummiesSize;
+            Encoding.UTF8.GetBytes(result.Dummies).CopyTo(captchaBuffer, 3);
+            result.ImageData.CopyTo(captchaBuffer, 3 + dummiesSize);
             app.SendAsync(args.Client, captchaBuffer);
         }
 

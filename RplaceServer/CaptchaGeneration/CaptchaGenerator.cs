@@ -32,27 +32,28 @@ internal static class CaptchaGenerator
         switch (type)
         {
             case CaptchaType.Emoji:
-                var position = random.Next(0, Emojis.Length - 40);
+                var position = random.Next(0, Emojis.Length - 10);
                 dummies = Emojis[position..(position + 10)];
                 answer = dummies[random.Next(0, 10)];
                 break;
             case CaptchaType.String:
-                Buffer.BlockCopy(Strings, random.Next(0, Emojis.Length - 40), dummies, 0, 40);
-                answer = dummies[random.Next(0, 10)];
+                for (var i = 0; i < 10; i++)
+                {
+                    dummies[i] = Strings[random.Next(0, Strings.Length - 1)];
+                }
+                answer = dummies[random.Next(0, 9)];
                 break;
             case CaptchaType.Number:
                 break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(type), type, null);
         }
 
         var bitmap = new SKBitmap(64, 64);
         var canvas = new SKCanvas(bitmap);
         var background = new SKPaint { Color = new SKColor((byte) random.Next(), (byte) random.Next(), (byte) random.Next()) };
-        var text = SKTextBlob.Create(answer, new SKFont(SKTypeface.Default, 32, 32));
+        var font = new SKPaint { Typeface = SKTypeface.FromFile("CaptchaGeneration/NotoColorEmoji-Regular.ttf"), TextSize = 32 };
         
         canvas.DrawRect(0, 0, 64, 64, background);
-        canvas.DrawText(text, 0, 0, new SKPaint { Color = SKColors.Black });
+        canvas.DrawText(answer, 32, 32, font);
 
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Webp, 80);
@@ -60,6 +61,6 @@ internal static class CaptchaGenerator
         data.SaveTo(stream);
         stream.Flush();
 
-        return (answer, string.Join('\n', dummies), stream.ToArray());
+        return (answer, string.Join("", dummies), stream.ToArray());
     }
 }

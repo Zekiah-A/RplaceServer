@@ -20,12 +20,23 @@
         <Content Include="Pages\*">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
+        <None Remove="CaptchaGeneration\NotoColorEmoji-Regular.ttf" />
+        <Content Include="CaptchaGeneration\NotoColorEmoji-Regular.ttf">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <None Remove="CaptchaGeneration\OFL.txt" />
+        <Content Include="CaptchaGeneration\OFL.txt">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 
     <ItemGroup>
       <PackageReference Include="FFMpegCore" Version="4.8.0" />
       <PackageReference Include="OneOf" Version="3.0.223" />
       <PackageReference Include="SkiaSharp" Version="2.88.3" />
+      <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.3" />
+      <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="2.88.3" />
+      <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="2.88.3" />
       <PackageReference Include="YamlDotNet" Version="12.3.1" />
     </ItemGroup>
 </Project>
