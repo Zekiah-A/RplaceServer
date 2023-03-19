@@ -330,7 +330,7 @@ public sealed class SocketServer
         var messageData = Encoding.UTF8.GetBytes(builder.ToString());
         var packet = new byte[messageData.Length + 1];
         packet[0] = (byte) ServerPacket.ChatMessage;
-        messageData.CopyTo(messageData, 1);
+        messageData.CopyTo(packet, 1);
 
         foreach (var client in app.Clients)
         {
