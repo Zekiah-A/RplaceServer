@@ -327,8 +327,11 @@ public sealed class SocketServer
         builder.AppendLine(args.Channel);
         builder.AppendLine(args.X.ToString() ?? "0");
         builder.AppendLine(args.Y.ToString() ?? "0");
-        var packet = builder.ToString();
-        
+        var messageData = Encoding.UTF8.GetBytes(builder.ToString());
+        var packet = new byte[messageData.Length + 1];
+        packet[0] = (byte) ServerPacket.ChatMessage;
+        messageData.CopyTo(messageData, 1);
+
         foreach (var client in app.Clients)
         {
             app.SendAsync(client, packet);
