@@ -445,12 +445,12 @@ closeWizard:
                 Text = "Player IP/Port: " + args.Value,
                 Y = 0
             };
+
+            var address = args.Value.ToString()!.Split(":").FirstOrDefault() ?? args.Value;
+            var isVip = Program.Server.GameData.Vips.Contains(address);
             var vipLabel = new Label
             {
-                Text = Program.Server.GameData.Vips.Contains
-                    (args.Value.ToString()![..args.Value.ToString()!.LastIndexOf(":", StringComparison.Ordinal)])
-                       ? "This player is not a VIP"
-                       : "This player is a VIP",
+                Text = isVip ? "Player is a VIP" : "Player is not a VIP",
                 Y = 1
             };
             var lastChatLabel = new Label
