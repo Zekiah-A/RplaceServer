@@ -56,17 +56,24 @@ public static class Program
             await Server.StopAsync();
         };
         
-        // This task block current process, so all following code can be used for deinitialisation
+        AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
+        {
+            Application.Shutdown();
+            await Server.StopAsync();
+            Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
+        };
+        
         try
         {
-            var _ = Task.Run(async () => await Server.StartAsync());
+            var serverTask = Task.Run(async () => await Server.StartAsync());
             Application.Run<ConsoleWindow>();
+            await serverTask;
         }
         catch (Exception exception)
         {
-            Console.WriteLine("Unexpected server exception: " + exception);
             Application.Shutdown();
             await Server.StopAsync();
+            Console.WriteLine("Unexpected server exception: " + exception);
         }
     }
 }

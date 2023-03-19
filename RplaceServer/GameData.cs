@@ -27,10 +27,10 @@ public record GameData
 {
     // These will be accessed & changed frequently, but are not saved in configs, 
     // and are instead managed by the server instance itself.
-    public byte[] Board;
-    public int PlayerCount;
-    public Dictionary<ClientMetadata, ClientData> Clients;
-    public Dictionary<string, string> PendingCaptchas;
+    public byte[] Board = { };
+    public int PlayerCount = 0;
+    public Dictionary<ClientMetadata, ClientData> Clients = new();
+    public Dictionary<string, string> PendingCaptchas = new();
 
     // These are persistent & saved in configs + can be changed at runtime
     public int Cooldown { get; set; } = Cooldown; // Milliseconds

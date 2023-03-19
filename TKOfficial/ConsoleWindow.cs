@@ -63,18 +63,18 @@ public class ConsoleWindow : Window
             {
                 if (!int.TryParse(expandXField.Text.ToString(), out var expandWidth))
                 {
-                    Logger.Invoke("Failed to fill, invalid Expand X Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Expand X Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(expandYField.Text.ToString(), out var expandHeight))
                 {
-                    Logger.Invoke("Failed to fill, invalid Expand Y Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Expand Y Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
                     colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
                 {
-                    Logger.Invoke("Failed to fill, invalid Colour Index Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
                     goto closeWizard;
                 }
                 
@@ -150,28 +150,28 @@ closeWizard:
             {
                 if (!int.TryParse(xStartField.Text.ToString(), out var startX))
                 {
-                    Logger.Invoke("Failed to fill, invalid Start X Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Start X Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(yStartField.Text.ToString(), out var startY))
                 {
-                    Logger.Invoke("Failed to fill, invalid Start Y Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Start Y Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(xEndField.Text.ToString(), out var endX))
                 {
-                    Logger.Invoke("Failed to fill, invalid End X Parameter");
+                    Logger?.Invoke("Failed to fill, invalid End X Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(yEndField.Text.ToString(), out var endY))
                 {
-                    Logger.Invoke("Failed to fill, invalid End Y Parameter");
+                    Logger?.Invoke("Failed to fill, invalid End Y Parameter");
                     goto closeWizard;
                 }
                 if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
                     colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
                 {
-                    Logger.Invoke("Failed to fill, invalid Colour Index Parameter");
+                    Logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
                     goto closeWizard;
                 }
                 
@@ -343,7 +343,7 @@ closeWizard:
                 if (split.Length == 0)
                 {
                     Program.Server.GameData.Palette = null;
-                    Logger.Invoke("Cleared colour palette, server will use default game palette");
+                    Logger?.Invoke("Cleared colour palette, server will use default game palette");
                     goto closeWizard;
                 }
                 
@@ -355,12 +355,12 @@ closeWizard:
                         continue;
                     }
                     
-                    Logger.Invoke($"Could not add beyond the {GetOrdinalSuffix(index + 1)} element due to it not being a correctly formatted number.");
+                    Logger?.Invoke($"Could not add beyond the {GetOrdinalSuffix(index + 1)} element due to it not being a correctly formatted number.");
                     break;
                 }
 
                 Program.Server.GameData.Palette = newPalette;
-                Logger.Invoke("Updated colour palette to: " +
+                Logger?.Invoke("Updated colour palette to: " +
                               string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
                               " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
                 

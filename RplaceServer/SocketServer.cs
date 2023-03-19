@@ -30,20 +30,16 @@ public sealed class SocketServer
     public event EventHandler<PlayerConnectedEventArgs> PlayerConnected;
     public event EventHandler<PlayerDisconnectedEventArgs> PlayerDisconnected;
 
-    public SocketServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
+    public SocketServer(GameData data, string certPath, string keyPath, string originHeader, bool ssl, int port)
     {
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         gameData = data;
-        this.origin = origin;
+        origin = originHeader;
         
         ChatMessageReceived += DistributeChatMessage;
         PixelPlacementReceived += DistributePixelPlacement;
         PlayerConnected = (_, _) => { };
         PlayerDisconnected = (_, _) => { };
-        
-        gameData.PlayerCount = 0;
-        gameData.PendingCaptchas = new Dictionary<string, string>();
-        gameData.Clients = new Dictionary<ClientMetadata, ClientData>();
     }
 
     public async Task StartAsync()
