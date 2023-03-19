@@ -37,10 +37,10 @@ public sealed class SocketServer
     };
 
     public Action<string>? Logger;
-    public event EventHandler<ChatMessageEventArgs> ChatMessageReceived;
-    public event EventHandler<PixelPlacementEventArgs> PixelPlacementReceived;
-    public event EventHandler<PlayerConnectedEventArgs> PlayerConnected;
-    public event EventHandler<PlayerDisconnectedEventArgs> PlayerDisconnected;
+    public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
+    public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
+    public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
+    public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
 
     public SocketServer(GameData data, string certPath, string keyPath, string originHeader, bool ssl, int port)
     {
@@ -48,8 +48,6 @@ public sealed class SocketServer
         gameData = data;
         origin = originHeader;
         
-        ChatMessageReceived += DistributeChatMessage;
-        PixelPlacementReceived += DistributePixelPlacement;
         PlayerConnected = (_, _) => { };
         PlayerDisconnected = (_, _) => { };
     }
@@ -156,7 +154,7 @@ public sealed class SocketServer
         app.SendAsync(args.Client, canvasInfo.ToArray());
 
         DistributePlayerCount();
-        PlayerConnected.Invoke(this, new PlayerConnectedEventArgs(args.Client));
+        PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(args.Client));
     }
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
@@ -176,7 +174,7 @@ public sealed class SocketServer
                 }
 
                 var index = BinaryPrimitives.ReadUInt32BigEndian(data[1..]);
-                var colour = args.Data[5];
+                var colour = data[5];
 
                 // Reject
                 if (index >= gameData.Board.Length || colour >= (gameData.Palette?.Count ?? 32))
@@ -198,9 +196,18 @@ public sealed class SocketServer
                     app.SendAsync(args.Client, buffer.ToArray());
                     return;
                 }
-
+                
                 // Accept
-                PixelPlacementReceived.Invoke
+                gameData.Board[index] = colour;
+                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
+                var serverPixel = data[..6];
+                serverPixel[0] = (byte) ServerPacket.PixelPlace;
+                foreach (var client in app.Clients)
+                {
+                    app.SendAsync(client, serverPixel.ToArray());
+                }
+
+                PixelPlacementReceived?.Invoke
                 (
                     this,
                     new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth),
@@ -212,7 +219,7 @@ public sealed class SocketServer
             case ClientPacket.ChatMessage:
             {
                 // Reject
-                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldown) > DateTimeOffset.Now || args.Data.Count > 400)
+                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldown) > DateTimeOffset.Now || data.Length > 400)
                 {
                     Logger?.Invoke($"Chat from client {GetRealIp(args.Client)} rejected for breaching length/cooldown rules");
                     return;
@@ -220,36 +227,59 @@ public sealed class SocketServer
 
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
-                var rawMessage = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1);
-                var text = rawMessage.Split("\n").ElementAtOrDefault(0);
-                var name = rawMessage.Split("\n").ElementAtOrDefault(1);
-                var msgChannel = rawMessage.Split("\n").ElementAtOrDefault(2);
+                var rawText = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1).Split("\n");
+                var message = rawText.ElementAtOrDefault(0);
+                var name = rawText.ElementAtOrDefault(1);
+                var channel = rawText.ElementAtOrDefault(2);
                 
                 // Reject
-                if (text is null || name is null || msgChannel is null)
+                if (message is null || name is null || channel is null)
                 {
                     return;
                 }
 
-                text = gameData.CensorChatMessages ? text : CensorText(text);
+                message = gameData.CensorChatMessages ? message : CensorText(message);
                 name = gameData.CensorChatMessages ? CensorText(name) : name;
                 name = new Regex(@"\W+").Replace(name, "").ToLowerInvariant();
                 
-                var type = rawMessage.Split("\n").ElementAtOrDefault(3) switch
+                var type = rawText.ElementAtOrDefault(3) switch
                 {
                     "live" => ChatMessageType.LiveChat,
                     "place" => ChatMessageType.PlaceChat,
                     _ => ChatMessageType.LiveChat
                 };
 
-                var x = rawMessage.Split("\n").ElementAtOrDefault(4);
-                var y = rawMessage.Split("\n").ElementAtOrDefault(5);
+                var x = rawText.ElementAtOrDefault(4);
+                var y = rawText.ElementAtOrDefault(5);
  
                 // Accept
-                ChatMessageReceived.Invoke
+                var builder = new StringBuilder();
+                builder.AppendLine(message);
+                builder.AppendLine(name);
+                builder.AppendLine(channel);
+                builder.AppendLine(rawText.ElementAtOrDefault(3) ?? "live");
+                builder.AppendLine(x ?? "0");
+                builder.AppendLine(y ?? "0");
+                var messageData = Encoding.UTF8.GetBytes(builder.ToString());
+                var packet = new byte[messageData.Length + 1];
+                packet[0] = (byte) ServerPacket.ChatMessage;
+                messageData.CopyTo(packet, 1);
+
+                foreach (var client in app.Clients)
+                {
+                    app.SendAsync(client, packet);
+                }
+
+                if (!string.IsNullOrEmpty(gameData.WebhookUrl))
+                {
+                    var hookBody = new WebhookBody($"[{channel}] {name}@rplace.tk", message);
+                    httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
+                }
+                
+                ChatMessageReceived?.Invoke
                 (
                     this, 
-                    new ChatMessageEventArgs(args.Client,text, msgChannel, name, type, 
+                    new ChatMessageEventArgs(args.Client, message, channel, name, type, 
                     data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
                 );
                 break;
@@ -281,7 +311,7 @@ public sealed class SocketServer
         gameData.PlayerCount--;
 
         DistributePlayerCount();
-        PlayerDisconnected.Invoke(this, new PlayerDisconnectedEventArgs(args.Client));
+        PlayerDisconnected?.Invoke(this, new PlayerDisconnectedEventArgs(args.Client));
     }
 
     /// <summary>
@@ -296,51 +326,6 @@ public sealed class SocketServer
         foreach (var client in app.Clients)
         {
             app.SendAsync(client, gameInfo.ToArray());
-        }
-    }
-    
-    /// <summary>
-    /// Internal event handler to distribute a pixel placement to all other clients, that can be inhibited
-    /// </summary>
-    private void DistributePixelPlacement(object? sender, PixelPlacementEventArgs args)
-    {
-        gameData.Board[args.Index] = (byte) args.Colour;
-        gameData.Clients[args.Player].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
-
-        var serverPixel = args.Packet;
-        serverPixel[0] = (byte) ServerPacket.PixelPlace;
-
-        foreach (var client in app.Clients)
-        {
-            app.SendAsync(client, serverPixel);
-        }
-    }
-
-    /// <summary>
-    /// Internal event handler to distribute a chat message to all other clients, that can be inhibited
-    /// </summary>
-    private void DistributeChatMessage(object? sender, ChatMessageEventArgs args)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine(args.Message);
-        builder.AppendLine(args.Name);
-        builder.AppendLine(args.Channel);
-        builder.AppendLine(args.X.ToString() ?? "0");
-        builder.AppendLine(args.Y.ToString() ?? "0");
-        var messageData = Encoding.UTF8.GetBytes(builder.ToString());
-        var packet = new byte[messageData.Length + 1];
-        packet[0] = (byte) ServerPacket.ChatMessage;
-        messageData.CopyTo(packet, 1);
-
-        foreach (var client in app.Clients)
-        {
-            app.SendAsync(client, packet);
-        }
-
-        if (!string.IsNullOrEmpty(gameData.WebhookUrl))
-        {
-            var hookBody = new WebhookBody($"[{args.Channel}] {args.Name}@rplace.tk", args.Message);
-            httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
         }
     }
     
