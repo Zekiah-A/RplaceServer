@@ -52,12 +52,14 @@ public static class Program
         
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
         {
+            await Server.WebServer.SaveCanvasBackup();
             Application.Shutdown();
             await Server.StopAsync();
         };
         
         AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
         {
+            await Server.WebServer.SaveCanvasBackup();
             Application.Shutdown();
             await Server.StopAsync();
             Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);

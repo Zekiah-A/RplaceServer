@@ -24,7 +24,7 @@ public sealed class SocketServer
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
     private static readonly Regex CensoredWordsRegex =
-        new(@"\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\b|ing\b|ed\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|hoe|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit|whore)\b",
+        new(@"\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\b|ing\b|ed\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex BlockedDomainsRegex =
         new(@"(https?://)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*/?",

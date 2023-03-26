@@ -40,10 +40,10 @@ public static class BoardPacker
 
         var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[boardLength..(boardLength + 4)]);
 
-        var palette = new List<int>();
+        var palette = new List<uint>();
         for (var i = boardLength + 4; i < packedBoard.Length - 2; i++)
         {
-            palette.Add((int) BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i+4)]));
+            palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
         }
 
         var board = new byte[boardLength];

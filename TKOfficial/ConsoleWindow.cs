@@ -1,4 +1,5 @@
 using RplaceServer;
+using RplaceServer.Types;
 using Terminal.Gui;
 using WatsonWebsocket;
 
@@ -373,33 +374,79 @@ closeWizard:
             Application.Top.Add(paletteWizard);
             Application.Run(Application.Top);
         };
+        
+        var restoreBackupButton = new Button
+        {
+            Text = "Restore canvas from backup",
+            Y = Pos.Top(serverActionsContainer) + 7
+        };
+        restoreBackupButton.Clicked += () =>
+        {
+            var restoreWizard = new Wizard("")
+            {
+                Modal = false,
+                Width = 64,
+                Height = 5,
+            };
+            
+            var firstStep = new Wizard.WizardStep("Restore canvas from backup"); 
+            var restoreField = new TextField(Program.Server.GameData.CanvasFolder)
+            {
+                Width = Dim.Fill(),
+                Y = 1
+            };
+            firstStep.Add(new Label { Text = "Enter the path to the canvas backup to restore from" }, restoreField);
+
+            restoreWizard.AddStep(firstStep);
+            restoreWizard.Finished += _ =>
+            {
+                if (RestoreFromBackup(restoreField.Text.ToString()) is { } unpackedInfo)
+                {
+                    Logger?.Invoke($"Successfully restored canvas from provided backup. Restored canvas length: : " +
+                        $"{unpackedInfo.Board.Length}, restored palette length: {string.Join(", ", unpackedInfo.Palette)}, " +
+                        $"restored canvas dimensions {unpackedInfo.Width}x{unpackedInfo.Board.Length/unpackedInfo.Width}");
+                }
+                else
+                {
+                    Logger?.Invoke("Could not restore canvas from provided backup. Make sure the path is pointing to a valid canvas backup.");
+                }
+
+                Application.Top.Remove(restoreWizard);
+                Application.RequestStop();
+                Application.Run(Application.Top);
+            };
+            
+            Application.Top.Add(restoreWizard);
+            Application.Run(Application.Top);
+        };
 
         var saveCanvasButton = new Button
         {
             Text = "Save canvas to disk",
-            Y = Pos.Top(serverActionsContainer) + 7
+            Y = Pos.Top(serverActionsContainer) + 8
         };
         saveCanvasButton.Clicked += async () =>
         {
             Logger?.Invoke("Canvas saved to disk");
             await Program.Server.WebServer.SaveCanvasBackup();
         };
-        
+
         var stopServerButton = new Button
         {
             Text = "Gracefully stop server",
-            Y = Pos.Top(serverActionsContainer) + 8
+            Y = Pos.Top(serverActionsContainer) + 9
         };
         stopServerButton.Clicked += async () =>
         {
             Logger?.Invoke("Server shutdown request received");
+            await Program.Server.WebServer.SaveCanvasBackup();
             Application.Shutdown();
             await Program.Server.StopAsync();
             Console.Clear();
         };
         
         serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, chatCooldownButton,
-            broadcastChatButton, changeGameCooldownButton, editPaletteButton, saveCanvasButton, stopServerButton);
+            broadcastChatButton, changeGameCooldownButton, editPaletteButton, restoreBackupButton, saveCanvasButton, stopServerButton);
         // End server actions stack panel container
         
         // Server actions panel, provides nice border around container
@@ -621,6 +668,29 @@ closeWizard:
         Logger?.Invoke("Server software started");
     }
 
+    private UnpackedBoard? RestoreFromBackup(string path)
+    {
+        try
+        {
+            var rawData = File.ReadAllBytes(path);
+            if (rawData.Length == 0)
+            {
+                return null;
+            }
+
+            var boardInfo = BoardPacker.UnpackBoard(rawData);
+            Program.Server.GameData.Board = boardInfo.Board;
+            Program.Server.GameData.Palette = boardInfo.Palette.Count == 0 ? null : boardInfo.Palette;
+            Program.Server.GameData.BoardWidth = boardInfo.Width;
+            Program.Server.GameData.BoardHeight = boardInfo.Board.Length / boardInfo.Width;
+            return boardInfo;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+    
     private static string RgbFormatColour(uint colourValue)
     {
         var red = (byte) ((colourValue >> 16) & 0xFF);
