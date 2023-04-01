@@ -1,15 +1,27 @@
 # RplaceServer
 A modular, moddable and scalable server software designed to host rplace.tk canvases. Can be used standalone, GUI, or embedded inside of a client in order to allow for easy, no code self hosted game. Modular server library allows for setting up servers, and modifying game mechanics easily.
 
+### Running from binary:
+TKOfficial has been created as a terminal-based rplace server software implementation intended for user use.
+
+If TKOfficial binaries have been provided on the [releases](https://github.com/Zekiah-A/RplaceServer/releases) page, download the appropriate one for your system.
+
+Then, open a terminal, (use Powershell on windows), enter the rplace server directory with `cd Path/To/TKOfficial`
+
+Then run the binary with `./EXECUTABLE NAME`
+
+The first time you run the server, it should create a configuration, edit this in a text editor, and run the server again to apply and start the rplace game server.
+
 ### Running from source:
 _To run from source, you need the latest dotnet version and git installed on your system._
 
 Clone the repository with `git clone --recursive https://github.com/Zekiah-A/RplaceServer/` to include all submodules.
 
-Enter the TKOfficial directory, for example `cd RplaceServer/TKOfficial`.
+Once cloned, enter the root RplaceServer directory, with `cd RplaceServer` and ensure all submodules are updated with `git submodule update --remote`
 
-Run `dotnet run` to start the server. When running with SSL/on an admin restricted port, you may need to run this command with admininstrator privelages.
+Enter the TKOfficial directory, for example, with `cd TKOfficial`.
 
+Run `dotnet run` to start the server. When running with SSL/on an admin restricted port, you may need to run this command with administrator privileges.
 
 ### Project Aims:
  - Open, contributable and easy to use
