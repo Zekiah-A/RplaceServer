@@ -1,0 +1,24 @@
+{
+  "Port": 8080,
+  "UseHttps": false,
+  "CertPath": "",
+  "KeyPath": "",
+  "SmtpHost": "smtp.gmail.com",
+  "EmailUsername": "myUsername@email.com",
+  "EmailPassword": "myEmailPassword",
+  "InstanceRanges": [
+    {
+      "InstanceIp": "192.128.1.253",
+      "Range": {
+        "Start": {
+          "Value": 0,
+          "IsFromEnd": false
+        },
+        "End": {
+          "Value": 100,
+          "IsFromEnd": false
+        }
+      }
+    }
+  ]
+}
