@@ -72,21 +72,6 @@ builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = config.KeyPath;
 var app = builder.Build();
 app.Urls.Add($"{(config.UseHttps ? "https" : "http")}://*:{config.Port}");
 
-// Wake up and add all existing instances
-foreach (var id in workerData.Ids.ToList())
-{
-    var serverPath = Path.Join(dataPath, id.ToString());
-    if (!File.Exists(serverPath))
-    {
-        Console.WriteLine($"Could not find server with id {id}, deleting from worker data.");
-        workerData.Ids.Remove(id);
-        continue;
-    }
-    
-
-    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
-}
-
 async Task<int> NextId()
 {
     var next = config.IdRange.Start;
@@ -144,11 +129,38 @@ async Task<int> NextWebPort()
     return next;
 }
 
-app.MapGet("/CreateInstance", async Task<IResult>(context) =>
+// TODO: TEMP: We clear the WorkerData used web and socket ports as a temporary fix for port leakage.
+workerData.SocketPorts = new List<int>();
+workerData.WebPorts = new List<int>();
+
+// Wake up and add all existing instances
+foreach (var id in workerData.Ids.ToList())
+{
+    var serverPath = Path.Join(dataPath, id.ToString());
+    if (!File.Exists(serverPath))
+    {
+        Console.WriteLine($"Could not find server with id {id}, deleting from worker data.");
+        workerData.Ids.Remove(id);
+        continue;
+    }
+
+    var gameData = await JsonSerializer.DeserializeAsync<GameData>(File.OpenRead(Path.Join(serverPath, "game_data.json")));
+    if (gameData is null)
+    {
+        Console.WriteLine("Could not find gamedata for server with if {id}, will attempt to use deafult");
+        gameData = defaultGameData;
+    }
+    
+    instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", await NextSocketPort(), await NextWebPort(), config.UseHttps));
+    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
+}
+
+app.MapGet("/CreateInstance", async (context) =>
 {
     if (!context.Request.Headers.TryGetValue("Authentication-Key", out var authKey) || authKey != config.InstanceKey)
     {
-        return Results.Unauthorized();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
     }
 
     var id = await NextId();
@@ -156,7 +168,8 @@ app.MapGet("/CreateInstance", async Task<IResult>(context) =>
     var webPort = await NextWebPort();
     if (id == -1 || socketPort == -1 || webPort == -1)
     {
-        return Results.Problem();
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        return;
     }
     
     // Set up directory that will be used by the new instance server software + it's configuration
@@ -171,7 +184,8 @@ app.MapGet("/CreateInstance", async Task<IResult>(context) =>
     // Start the new instance
     instances.Add(id, instance);
     _ = Task.Run(instance.StartAsync);
-    return Results.Ok(id);
+    await context.Response.WriteAsync(id.ToString());
+    context.Response.StatusCode = StatusCodes.Status200OK;
 });
 
 app.MapGet("/DeleteInstance/{instanceId:int}", async (int instanceId, HttpContext context) =>
