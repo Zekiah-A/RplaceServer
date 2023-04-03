@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnbloatDB", "UnbloatDB\Unbl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HTTPOfficial", "HTTPOfficial\HTTPOfficial.csproj", "{218FF6C4-4F61-4BF9-8585-0E8FA2536F8D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkerOfficial", "WorkerOfficial\WorkerOfficial.csproj", "{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +38,9 @@ Global
 		{218FF6C4-4F61-4BF9-8585-0E8FA2536F8D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{218FF6C4-4F61-4BF9-8585-0E8FA2536F8D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{218FF6C4-4F61-4BF9-8585-0E8FA2536F8D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

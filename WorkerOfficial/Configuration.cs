@@ -1,12 +1,11 @@
-namespace HTTPOfficial;
+namespace WorkerOfficial;
 
 public record struct Configuration(
     int Port,
     bool UseHttps,
     string CertPath,
     string KeyPath,
-    string SmtpHost,
-    string EmailUsername,
-    string EmailPassword,
-    InstanceRange[] InstanceRanges,
+    IntRange IdRange,
+    IntRange SocketPortRange,
+    IntRange WebPortRange,
     string InstanceKey);

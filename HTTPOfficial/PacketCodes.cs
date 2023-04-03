@@ -1,15 +1,24 @@
 namespace HTTPOfficial;
 
-public enum PacketCodes
+public enum ClientPackets
 {
     DeleteAccount,
     UpdateAccount,
     CreateAccount,
     AuthenticateCreate,
-    Authenticate,
+    AccountInfo,
     CreateInstance,
     DeleteInstance,
     RestartInstance,
-    InstanceInfo,
-    Fail
+}
+
+public enum ServerPackets
+{
+    Fail,
+    AccountInfo
+}
+
+public enum WorkerPackets
+{
+    InstanceInfo
 }

@@ -1,5 +1,6 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessable fully through a web interface
 
+using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Mail;
@@ -15,7 +16,7 @@ const string dataPath = "ServerData";
 async Task CreateConfig()
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not game config file, at " + configPath);
+    Console.Write("[Warning]: Could not find game config file, at " + configPath);
 
     await using var configFile = File.OpenWrite(configPath);
     var defaultConfiguration =
@@ -29,7 +30,8 @@ async Task CreateConfig()
             new[]
             {
                 new InstanceRange("192.128.1.253", new IntRange(0, 100))
-            });
+            },
+            "secretInstanceControlKeyGoesHere");
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions {WriteIndented = true });
     await configFile.FlushAsync();
     
@@ -51,6 +53,55 @@ static string HashSha256String(string rawData)
     
     return builder.ToString();
 }
+
+if (!File.Exists(configPath))
+{
+    await CreateConfig();
+}
+
+if (!Directory.Exists(dataPath))
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.Write("[Warning]: Could not find data path, at " + dataPath);
+    Directory.CreateDirectory(dataPath);
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"\n[INFO]: Data path recreated successfully, program will continue to run.");
+    Console.ResetColor();
+}
+
+
+var configNullable = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
+var config = configNullable!;
+var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
+var emailAttributes = new EmailAddressAttribute();
+
+var toAuthenticate = new Dictionary<ClientMetadata, string>();
+var pendingData = new Dictionary<ClientMetadata, AccountData>();
+var random = new Random();
+var emojis = new[]
+{
+    "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "😍", "😘", "😗", "😙", "😚", "☺️", "🙂",
+    "🤗", "🤔", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
+    "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨",
+    "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴", "😷", "🤕", "🤒", "🤮", "🤢", "🥳", "🥺", "👋",
+    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎",
+    "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠",
+    "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸", "👶", "🧒", "👦", "👧", "🧑", "👱‍️", "👱", "👩", "🧑‍",
+    "👨‍", "👩‍🦰", "👨‍🦰", "👱‍♂️", "👩‍🦳", "👨‍🦳", "👩‍🦲", "👨‍🦲", "🧔", "👵", "🧓", "👴", "👲", "👳", "👳",
+    "🧕", "👮"
+};
+var smtpClient = new SmtpClient(config.SmtpHost) 
+{
+    Port = 587,
+    Credentials = new NetworkCredential(config.EmailUsername, config.EmailPassword),
+    EnableSsl = true,
+};
+
+var httpClient = new HttpClient();
+httpClient.DefaultRequestHeaders.Add("Authentication-Key", config.InstanceKey);
+var workerSocketClients = config.InstanceRanges
+    .Select(instance => new WatsonWsClient(new Uri("ws://" + instance.InstanceIp + ":27277")))
+    .ToList();
 
 // Will consume first 42 bytes of data
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
@@ -85,54 +136,20 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     accountData = account;
     return true;
 }
-
-
-if (!File.Exists(configPath))
+bool ResolveInstanceIp(int instanceId, out string instanceIp)
 {
-    await CreateConfig();
+    foreach (var range in config!.InstanceRanges)
+    {
+        if (range.Range.Start > instanceId || range.Range.End <= instanceId)
+        {
+            instanceIp = range.InstanceIp;
+            return true;
+        }
+    }
+
+    instanceIp = "";
+    return false;
 }
-
-if (!File.Exists(dataPath))
-{
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not find data path, at " + dataPath);
-    Directory.CreateDirectory(dataPath);
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"\n[INFO]: Data path recreated successfully, program will continue to run.");
-    Console.ResetColor();
-}
-
-var configNullable = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
-if (configNullable is null)
-{
-    await CreateConfig();
-}
-
-var config = configNullable!;
-var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
-var emailAttributes = new EmailAddressAttribute();
-
-var toAuthenticate = new Dictionary<ClientMetadata, string>();
-var pendingDatas = new Dictionary<ClientMetadata, AccountData>();
-var random = new Random();
-var emojis = new[]
-{
-    "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "😍", "😘", "😗", "😙", "😚", "☺️", "🙂",
-    "🤗", "🤔", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
-    "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨",
-    "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴", "😷", "🤕", "🤒", "🤮", "🤢", "🥳", "🥺", "👋",
-    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎",
-    "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠",
-    "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸", "👶", "🧒", "👦", "👧", "🧑", "👱‍️", "👱", "👩", "🧑‍",
-    "👨‍", "👩‍🦰", "👨‍🦰", "👱‍♂️", "👩‍🦳", "👨‍🦳", "👩‍🦲", "👨‍🦲", "🧔", "👵", "🧓", "👴", "👲", "👳", "👳",
-    "🧕", "👮"
-};
-var smtpClient = new SmtpClient(config.SmtpHost) 
-{
-    Port = 587,
-    Credentials = new NetworkCredential(config.EmailUsername, config.EmailPassword),
-    EnableSsl = true,
-};
 
 server.MessageReceived += (sender, args) =>
 {
@@ -140,7 +157,7 @@ server.MessageReceived += (sender, args) =>
 
     switch (args.Data.ToArray()[0])
     {
-        case (byte) PacketCodes.CreateAccount:
+        case (byte) ClientPackets.CreateAccount:
         {
             var stringData = Encoding.UTF8.GetString(data);
             var username = stringData[..10].TrimEnd();
@@ -148,7 +165,9 @@ server.MessageReceived += (sender, args) =>
             var email = stringData[42..362].TrimEnd();
             if (username.Length > 4 || password.Length > 6 || emailAttributes.IsValid(email))
             {
-                server.SendAsync(args.Client, new[] {(byte) PacketCodes.Fail});
+                var response = Encoding.UTF8.GetBytes("XCould not create account. Invalid information provided!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
                 return;
             }
 
@@ -157,10 +176,10 @@ server.MessageReceived += (sender, args) =>
             {
                 code[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
-            var accountData = new AccountData(username, HashSha256String(password), email, 0, new int[] { });
+            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>());
             
             toAuthenticate.Add(args.Client, string.Join("", code));
-            pendingDatas.Add(args.Client, accountData);
+            pendingData.Add(args.Client, accountData);
             
             var mailMessage = new MailMessage
             {
@@ -179,32 +198,39 @@ server.MessageReceived += (sender, args) =>
             Console.WriteLine("Client requested to create an account");
             break;
         }
-        case (byte) PacketCodes.AuthenticateCreate:
+        case (byte) ClientPackets.AuthenticateCreate:
         {
             if (!toAuthenticate.TryGetValue(args.Client, out var realCode))
             {
-                server.SendAsync(args.Client, new[] {(byte) PacketCodes.Fail});
+                var response = Encoding.UTF8.GetBytes("XCould not create account. No pending account found!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
                 return;
             }
 
             var code = Encoding.UTF8.GetString(data[..10]);
             if (!realCode.Equals(code))
             {
-                server.SendAsync(args.Client, new[] {(byte) PacketCodes.Fail});
+                var response = Encoding.UTF8.GetBytes("XCould not create account. Code was invalid!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                
+                toAuthenticate.Remove(args.Client);
+                pendingData.Remove(args.Client);
                 return;
             }
 
-            var accountData = pendingDatas[args.Client];
+            var accountData = pendingData[args.Client];
             File.WriteAllText(Path.Join(dataPath,
                 HashSha256String(accountData.Username + accountData.Password)),
                 JsonSerializer.Serialize(accountData));
             
             toAuthenticate.Remove(args.Client);
-            pendingDatas.Remove(args.Client);
+            pendingData.Remove(args.Client);
             Console.WriteLine("Client created account successfully");
             break;
         }
-        case (byte) PacketCodes.DeleteAccount:
+        case (byte) ClientPackets.DeleteAccount:
         {
             if (Authenticate(ref data, out var accountData))
             {
@@ -213,8 +239,151 @@ server.MessageReceived += (sender, args) =>
             }
             break;
         }
-        case (byte) PacketCodes.CreateInstance:
+        case (byte) ClientPackets.CreateInstance:
         {
+            if (!Authenticate(ref data, out var accountData))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            if (accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not create instance! You have already registered too many!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            async Task RequestCreationAsync()
+            {
+                var instanceId = -1;
+                foreach (var instance in config.InstanceRanges)
+                {
+                    using var response = await httpClient.GetAsync("http://" + instance.InstanceIp + "/CreateInstance");
+                    if (response.StatusCode == HttpStatusCode.OK)
+                    {
+                        instanceId = int.Parse(await response.Content.ReadAsStringAsync());
+                        accountData.Instances.Add(instanceId);
+                    }
+                }
+
+                if (instanceId == -1)
+                {
+                    await server.SendAsync(args.Client, new [] { (byte) ServerPackets.Fail });
+                }
+
+                await File.WriteAllTextAsync(Path.Join(dataPath,
+                    HashSha256String(accountData.Username + accountData.Password)),
+                    JsonSerializer.Serialize(accountData));
+            }
+
+            Task.Run(RequestCreationAsync);
+            break;
+        }
+        case (byte) ClientPackets.DeleteInstance:
+        {
+            if (!Authenticate(ref data, out var accountData))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data);
+
+            if (!accountData.Instances.Contains((int) instanceId))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not delete instance. You do not own it.");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            if (!ResolveInstanceIp((int) instanceId, out string instanceIp))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not delete instance. Instance with specified ID could not be found.");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+            
+            async Task RequestDeletionAsync()
+            {
+                using var response = await httpClient.GetAsync("http://" + instanceIp + "/DeleteInstance/" + instanceId);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    accountData.Instances.Remove((int) instanceId);
+                }
+                else
+                {
+                    var failure = Encoding.UTF8.GetBytes("XCould not delete instance. Instance with specified ID could not be found.");
+                    failure[0] = (byte) ServerPackets.Fail;
+                    await server.SendAsync(args.Client, failure);
+                }
+
+                accountData.Instances.Remove((int) instanceId);
+                await File.WriteAllTextAsync(Path.Join(dataPath,
+                    HashSha256String(accountData.Username + accountData.Password)),
+                    JsonSerializer.Serialize(accountData));
+            }
+
+            Task.Run(RequestDeletionAsync);
+            break;
+        }
+        case (byte) ClientPackets.RestartInstance:
+        {
+            if (!Authenticate(ref data, out var accountData))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data);
+
+            if (!accountData.Instances.Contains((int) instanceId))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not delete instance. You do not own it.");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+
+            if (!ResolveInstanceIp((int) instanceId, out var instanceIp))
+            {
+                var response = Encoding.UTF8.GetBytes("XCould not restart instance. Instance with specified ID could not be found.");
+                response[0] = (byte) ServerPackets.Fail;
+                server.SendAsync(args.Client, response);
+                return;
+            }
+            
+            async Task RequestRestartAsync()
+            {
+                using var response = await httpClient.GetAsync("http://" + instanceIp + "/RestartInstance/" + instanceId);
+                if (response.StatusCode != HttpStatusCode.OK)
+                {
+                    var failure = Encoding.UTF8.GetBytes("XCould not restart instance. Instance with specified ID could not be found.");
+                    failure[0] = (byte) ServerPackets.Fail;
+                    await server.SendAsync(args.Client, failure);
+                }
+            }
+
+            Task.Run(RequestRestartAsync);
+            break;
+        }
+        case (byte) ClientPackets.AccountInfo:
+        {
+            if (Authenticate(ref data, out var accountData))
+            {
+                var dataBlob = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize(accountData));
+                dataBlob[0] = (byte) ServerPackets.AccountInfo;
+                server.SendAsync(args.Client, dataBlob);
+            }
             break;
         }
     }
