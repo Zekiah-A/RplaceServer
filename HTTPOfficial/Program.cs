@@ -3,6 +3,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Mail;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using HTTPOfficial;
@@ -38,6 +39,54 @@ async Task CreateConfig()
     Environment.Exit(0);
 }
 
+static string HashSha256String(string rawData)
+{
+    using var sha256Hash = SHA256.Create();
+    var bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(rawData));
+    var builder = new StringBuilder();  
+    foreach (var @byte in bytes)
+    {
+        builder.Append(@byte.ToString("x2"));
+    }
+    
+    return builder.ToString();
+}
+
+// Will consume first 42 bytes of data
+bool Authenticate(ref Span<byte> data, out AccountData accountData)
+{
+    if (data.Length < 42)
+    {
+        accountData = null!;
+        return false;
+    }
+    
+    var stringData = Encoding.UTF8.GetString(data);
+    var username = stringData[..10].TrimEnd();
+    var password = stringData[10..42].TrimEnd();
+    var accountPath = HashSha256String(Path.Join(dataPath, username + password));
+    
+    if (!File.Exists((accountPath)))
+    {
+        data = data[42..];
+        accountData = null!;
+        return false;
+    }
+
+    var account = JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath));
+    if (account is null)
+    {
+        data = data[42..];
+        accountData = null!;
+        return false;
+    }
+
+    data = data[42..];
+    accountData = account;
+    return true;
+}
+
+
 if (!File.Exists(configPath))
 {
     await CreateConfig();
@@ -64,6 +113,7 @@ var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, c
 var emailAttributes = new EmailAddressAttribute();
 
 var toAuthenticate = new Dictionary<ClientMetadata, string>();
+var pendingDatas = new Dictionary<ClientMetadata, AccountData>();
 var random = new Random();
 var emojis = new[]
 {
@@ -92,7 +142,6 @@ server.MessageReceived += (sender, args) =>
     {
         case (byte) PacketCodes.CreateAccount:
         {
-            Console.WriteLine("Client requested to create an account");
             var stringData = Encoding.UTF8.GetString(data);
             var username = stringData[..10].TrimEnd();
             var password = stringData[10..42].TrimEnd();
@@ -108,7 +157,10 @@ server.MessageReceived += (sender, args) =>
             {
                 code[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
+            var accountData = new AccountData(username, HashSha256String(password), email, 0, new int[] { });
+            
             toAuthenticate.Add(args.Client, string.Join("", code));
+            pendingDatas.Add(args.Client, accountData);
             
             var mailMessage = new MailMessage
             {
@@ -124,6 +176,7 @@ server.MessageReceived += (sender, args) =>
             };
             mailMessage.To.Add(email);
             smtpClient.Send(mailMessage);
+            Console.WriteLine("Client requested to create an account");
             break;
         }
         case (byte) PacketCodes.AuthenticateCreate:
@@ -140,7 +193,28 @@ server.MessageReceived += (sender, args) =>
                 server.SendAsync(args.Client, new[] {(byte) PacketCodes.Fail});
                 return;
             }
+
+            var accountData = pendingDatas[args.Client];
+            File.WriteAllText(Path.Join(dataPath,
+                HashSha256String(accountData.Username + accountData.Password)),
+                JsonSerializer.Serialize(accountData));
+            
+            toAuthenticate.Remove(args.Client);
+            pendingDatas.Remove(args.Client);
             Console.WriteLine("Client created account successfully");
+            break;
+        }
+        case (byte) PacketCodes.DeleteAccount:
+        {
+            if (Authenticate(ref data, out var accountData))
+            {
+                File.Delete(Path.Join(dataPath, HashSha256String(accountData.Username + accountData.Email)));
+                // TODO: Tell worker servers to delete all their instances
+            }
+            break;
+        }
+        case (byte) PacketCodes.CreateInstance:
+        {
             break;
         }
     }
