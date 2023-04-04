@@ -6,6 +6,7 @@ public record struct Configuration(
     string CertPath,
     string KeyPath,
     string SmtpHost,
+    int SmtpPort,
     string EmailUsername,
     string EmailPassword,
     InstanceRange[] InstanceRanges,

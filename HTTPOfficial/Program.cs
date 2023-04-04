@@ -1,5 +1,4 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessable fully through a web interface
-
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
@@ -25,6 +24,7 @@ async Task CreateConfig()
             "",
             "",
             "smtp.gmail.com",
+            465,
             "myUsername@email.com",
             "myEmailPassword",
             new[]
@@ -32,7 +32,7 @@ async Task CreateConfig()
                 new InstanceRange("192.128.1.253", new IntRange(0, 100))
             },
             "secretInstanceControlKeyGoesHere");
-    await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions {WriteIndented = true });
+    await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
     await configFile.FlushAsync();
     
     Console.ForegroundColor = ConsoleColor.Green;
@@ -70,8 +70,7 @@ if (!Directory.Exists(dataPath))
 }
 
 
-var configNullable = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
-var config = configNullable!;
+var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 var emailAttributes = new EmailAddressAttribute();
 
@@ -90,13 +89,16 @@ var emojis = new[]
     "👨‍", "👩‍🦰", "👨‍🦰", "👱‍♂️", "👩‍🦳", "👨‍🦳", "👩‍🦲", "👨‍🦲", "🧔", "👵", "🧓", "👴", "👲", "👳", "👳",
     "🧕", "👮"
 };
-var smtpClient = new SmtpClient(config.SmtpHost) 
+var smtpClient = new SmtpClient
 {
-    Port = 587,
+    Port = config.SmtpPort,
     Credentials = new NetworkCredential(config.EmailUsername, config.EmailPassword),
-    EnableSsl = true
+    EnableSsl = true,
+    DeliveryMethod = SmtpDeliveryMethod.Network,
+    DeliveryFormat = SmtpDeliveryFormat.International,
+    Timeout = 60000,
+    Host = config.SmtpHost
 };
-
 var httpClient = new HttpClient();
 httpClient.DefaultRequestHeaders.Add("Authentication-Key", config.InstanceKey);
 var workerSocketClients = config.InstanceRanges
@@ -171,31 +173,47 @@ server.MessageReceived += (sender, args) =>
                 return;
             }
 
-            var code = new string[10];
+            var codeChars = new string[10];
             for (var i = 0; i < 10; i++)
             {
-                code[i] = emojis[random.Next(0, emojis.Length - 1)];
+                codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
+            var code = string.Join("", codeChars);
             var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>());
             
-            toAuthenticate.Add(args.Client, string.Join("", code));
-            pendingData.Add(args.Client, accountData);
-            
-            var mailMessage = new MailMessage
+            toAuthenticate.TryAdd(args.Client, code);
+            pendingData.TryAdd(args.Client, accountData);
+
+            async Task SendCodeEmailAsync()
             {
-                From = new MailAddress(config.EmailUsername),
-                Subject = "Rplace.tk instance manager account code",
-                Body = 
-                    "<h1>Hello</h1>" +
-                    "<p>Someone used your email to register a new rplace instance manager account.</p>" +
-                    "<p>If that's you, then cool, your code is:</p>" +
-                    "<h1>" + code + "</h1>" +
-                    "<p>Otherwise, you can ignore this email, who cares anyway??</p>",
-                IsBodyHtml = true,
-            };
-            mailMessage.To.Add(email);
-            smtpClient.Send(mailMessage);
-            Console.WriteLine("Client requested to create an account");
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(config.EmailUsername),
+                    Subject = "Rplace.tk instance manager account code",
+                    Body = 
+                        "<h1>Hello</h1>" +
+                        "<p>Someone used your email to register a new rplace instance manager account.</p>" +
+                        "<p>If that's you, then cool, your code is:</p>" +
+                        "<h1>" + code + "</h1>" +
+                        "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
+                        "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">",
+                    IsBodyHtml = true
+                };
+                mailMessage.To.Add(email);
+                
+                try
+                {
+                    smtpClient.SendAsync(mailMessage, null);
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine("Could not send code authentication mail " + exception);
+                    var response = Encoding.UTF8.GetBytes("XCould not send authentication email. Try again!");
+                    response[0] = (byte) ServerPackets.Fail;
+                    await server.SendAsync(args.Client, response);
+                }
+            }
+            Task.Run(SendCodeEmailAsync);
             break;
         }
         case (byte) ClientPackets.AuthenticateCreate:
