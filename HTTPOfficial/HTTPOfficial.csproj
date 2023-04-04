@@ -14,4 +14,8 @@
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="MailKit" Version="3.6.0" />
+    </ItemGroup>
 </Project>

@@ -2,11 +2,14 @@
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Net;
-using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using HTTPOfficial;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
+using RplaceServer.Types;
 using WatsonWebsocket;
 
 const string configPath = "server_config.json";
@@ -24,7 +27,7 @@ async Task CreateConfig()
             "",
             "",
             "smtp.gmail.com",
-            465,
+            587,
             "myUsername@email.com",
             "myEmailPassword",
             new[]
@@ -89,6 +92,7 @@ var emojis = new[]
     "👨‍", "👩‍🦰", "👨‍🦰", "👱‍♂️", "👩‍🦳", "👨‍🦳", "👩‍🦲", "👨‍🦲", "🧔", "👵", "🧓", "👴", "👲", "👳", "👳",
     "🧕", "👮"
 };
+/*
 var smtpClient = new SmtpClient
 {
     Port = config.SmtpPort,
@@ -99,6 +103,8 @@ var smtpClient = new SmtpClient
     Timeout = 60000,
     Host = config.SmtpHost
 };
+*/
+
 var httpClient = new HttpClient();
 httpClient.DefaultRequestHeaders.Add("Authentication-Key", config.InstanceKey);
 var workerSocketClients = config.InstanceRanges
@@ -186,33 +192,35 @@ server.MessageReceived += (sender, args) =>
 
             async Task SendCodeEmailAsync()
             {
-                var mailMessage = new MailMessage
+                var message = new MimeMessage();
+                message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
+                message.To.Add(new MailboxAddress(email, email));
+                message.Subject = "Rplace.Tk Instance Manager Account Code";
+                message.Body = new TextPart("html")
                 {
-                    From = new MailAddress(config.EmailUsername),
-                    Subject = "Rplace.tk instance manager account code",
-                    Body = 
-                        "<h1>Hello</h1>" +
-                        "<p>Someone used your email to register a new rplace instance manager account.</p>" +
-                        "<p>If that's you, then cool, your code is:</p>" +
-                        "<h1>" + code + "</h1>" +
-                        "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
-                        "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">",
-                    IsBodyHtml = true
+                    Text = "<h1>Hello</h1>" +
+                           "<p>Someone used your email to register a new rplace instance manager account.</p>" +
+                           "<p>If that's you, then cool, your code is:</p>" +
+                           "<h1>" + code + "</h1>" +
+                           "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
+                           "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
+                           "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply | https://rplace.tk</p>"
                 };
-                mailMessage.To.Add(email);
                 
                 try
                 {
-                    smtpClient.SendAsync(mailMessage, null);
+                    using var smtpClient = new SmtpClient();
+                    await smtpClient.ConnectAsync(config.SmtpHost, config.SmtpPort, SecureSocketOptions.StartTlsWhenAvailable);
+                    await smtpClient.AuthenticateAsync(config.EmailUsername, config.EmailPassword);
+                    await smtpClient.SendAsync(message);
+                    await smtpClient.DisconnectAsync(true);
                 }
                 catch (Exception exception)
                 {
-                    Console.WriteLine("Could not send code authentication mail " + exception);
-                    var response = Encoding.UTF8.GetBytes("XCould not send authentication email. Try again!");
-                    response[0] = (byte) ServerPackets.Fail;
-                    await server.SendAsync(args.Client, response);
+                    Console.WriteLine("Could not send error message" + exception);
                 }
             }
+            
             Task.Run(SendCodeEmailAsync);
             break;
         }
@@ -420,7 +428,6 @@ AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
 AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
 {
     Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
-    Environment.Exit(0);
 };
 
 Console.WriteLine("Server listening on port " + config.Port);
