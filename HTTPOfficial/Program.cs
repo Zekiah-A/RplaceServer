@@ -94,7 +94,7 @@ var smtpClient = new SmtpClient(config.SmtpHost)
 {
     Port = 587,
     Credentials = new NetworkCredential(config.EmailUsername, config.EmailPassword),
-    EnableSsl = true,
+    EnableSsl = true
 };
 
 var httpClient = new HttpClient();
@@ -163,7 +163,7 @@ server.MessageReceived += (sender, args) =>
             var username = stringData[..10].TrimEnd();
             var password = stringData[10..42].TrimEnd();
             var email = stringData[42..362].TrimEnd();
-            if (username.Length > 4 || password.Length > 6 || emailAttributes.IsValid(email))
+            if (username.Length <= 4 || password.Length <= 6 || !emailAttributes.IsValid(email))
             {
                 var response = Encoding.UTF8.GetBytes("XCould not create account. Invalid information provided!");
                 response[0] = (byte) ServerPackets.Fail;
@@ -389,4 +389,23 @@ server.MessageReceived += (sender, args) =>
     }
 };
 
+Console.CancelKeyPress += async (_, _) =>
+{
+    await server.StopAsync();
+    Environment.Exit(0);
+};
+AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
+{
+    await server.StopAsync();
+    Environment.Exit(0);
+};
+AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
+{
+    Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
+    Environment.Exit(0);
+};
+
+Console.WriteLine("Server listening on port " + config.Port);
+server.Logger = Console.WriteLine;
 await server.StartAsync();
+await Task.Delay(-1);
