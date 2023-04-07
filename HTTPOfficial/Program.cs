@@ -98,6 +98,7 @@ async Task UpdateConfigAsync()
     await configFile.FlushAsync();
 }
 
+// This method will GOBBLE the first 42 bytes of the input array, be warned
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
 {
     if (data.Length < 42)
@@ -267,14 +268,14 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) WorkerPackets.AuthenticateCreate:
         {
-            if (!workerClients.Contains(args.Client))
+            if (!workerClients.Contains(args.Client) || data.Length != 50)
             {
                 return;
             }
             
             var responseBuffer = new byte[6];
             responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
+            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
             
             if (!Authenticate(ref data, out var accountData)
                 || accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
@@ -284,36 +285,36 @@ server.MessageReceived += (_, args) =>
                 return;
             }
 
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[47..]);
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
             
             // Accept -  We add this instance to their account data, save the account data and send back the response
             accountData.Instances.Add(instanceId);
             responseBuffer[5] = 1; // Successfully authenticated
             server.SendAsync(args.Client, responseBuffer);
             File.WriteAllText(Path.Join(dataPath,
-                    HashSha256String(accountData.Username + accountData.Password)),
+                HashSha256String(accountData.Username + accountData.Password)),
                 JsonSerializer.Serialize(accountData));
             break;
         }
         case (byte) WorkerPackets.AuthenticateDelete:
         {
-            if (!workerClients.Contains(args.Client))
+            if (!workerClients.Contains(args.Client) || data.Length != 50)
             {
                 return;
             }
             
             var responseBuffer = new byte[6];
             responseBuffer[0] = (byte) ServerPackets.AuthorisedDeleteInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
+            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
 
-            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            if (!Authenticate(ref data, out var accountData))
             {
                 responseBuffer[5] = 0; // Failed to authenticate
                 server.SendAsync(args.Client, responseBuffer);
                 return;
             }
 
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[47..]);
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
 
             if (!accountData.Instances.Contains(instanceId))
             {
@@ -332,24 +333,24 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) WorkerPackets.AuthenticateManage:
         {
-            if (!workerClients.Contains(args.Client))
+            if (!workerClients.Contains(args.Client) || data.Length != 50)
             {
                 return;
             }
             
             var responseBuffer = new byte[6];
             responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
+            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
 
-            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            if (!Authenticate(ref data, out var accountData))
             {
                 responseBuffer[5] = 0; // Failed to authenticate
                 server.SendAsync(args.Client, responseBuffer);
                 return;
             }
 
-            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data[47..]);
-            if (!accountData.Instances.Contains((int) instanceId))
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
+            if (!accountData.Instances.Contains(instanceId))
             {
                 responseBuffer[5] = 0; // Failed to authenticate
                 server.SendAsync(args.Client, responseBuffer);

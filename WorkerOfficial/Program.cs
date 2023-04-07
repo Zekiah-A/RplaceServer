@@ -174,14 +174,16 @@ client.ServerConnected += async (_, _) =>
 // Comes from auth server
 client.MessageReceived += (_, args) =>
 {
+    Console.WriteLine("Incoming response from auth server");
+    
     var data = args.Data.ToArray()[1..];
     if (data.Length != 5)
     {
         return;
     }
     
-    var id = BinaryPrimitives.ReadInt32BigEndian(data);
-    var result = data[5] == 1;
+    var id = BinaryPrimitives.ReadInt32BigEndian(data); // 0, 1, 2, 3
+    var result = data[4] == 1; // 4
     
     if (args.Data.ToArray()[0] == (byte) ServerPackets.AuthorisedCreateInstance && createAuthQueue.TryGetValue(id, out var createSource))
     {
