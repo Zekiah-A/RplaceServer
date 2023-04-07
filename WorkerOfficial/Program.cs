@@ -74,8 +74,11 @@ var createAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var deleteAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var modifyAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var requestId = 0;
+
+client.Logger = Console.WriteLine;
+server.Logger = Console.WriteLine;
     
-async Task<int> NextId()
+int NextId()
 {
     var next = config.IdRange.Start;
     
@@ -90,11 +93,11 @@ async Task<int> NextId()
     }
     
     workerData.Ids.Add(next);
-    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath!), workerData);
+    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
-async Task<int> NextSocketPort()
+int NextSocketPort()
 {
     var next = config.SocketPortRange.Start;
     
@@ -109,11 +112,11 @@ async Task<int> NextSocketPort()
     }
     
     workerData.SocketPorts.Add(next);
-    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
+    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
-async Task<int> NextWebPort()
+int NextWebPort()
 {
     var next = config.WebPortRange.Start;
     
@@ -128,7 +131,7 @@ async Task<int> NextWebPort()
     }
     
     workerData.WebPorts.Add(next);
-    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
+    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
@@ -154,7 +157,7 @@ foreach (var id in workerData.Ids.ToList())
         gameData = defaultGameData;
     }
     
-    instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", await NextSocketPort(), await NextWebPort(), config.UseHttps));
+    instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", NextSocketPort(), NextWebPort(), config.UseHttps));
     await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
 }
 
@@ -164,7 +167,7 @@ client.ServerConnected += async (_, _) =>
     var instanceKeyBytes = Encoding.UTF8.GetBytes(config.InstanceKey);
     var announceBuffer = new byte[1 + instanceKeyBytes.Length];
     announceBuffer[0] = (byte) WorkerPackets.AnnounceExistence;
-    instanceKeyBytes.CopyTo(instanceKeyBytes.AsSpan()[1..]);
+    instanceKeyBytes.CopyTo(announceBuffer.AsSpan()[1..]);
     await client.SendAsync(announceBuffer);
 };
 
@@ -197,6 +200,11 @@ client.MessageReceived += (_, args) =>
 // Comes from clients
 server.MessageReceived += async (_, args) =>
 {
+    if (args.Data.ToArray().Length == 0)
+    {
+        return;
+    }
+    
     var data = args.Data.ToArray()[1..];
 
     switch (args.Data.ToArray()[0])
@@ -207,11 +215,13 @@ server.MessageReceived += async (_, args) =>
             {
                 return;
             }
-            
+
+            Console.WriteLine("Client created server instance successfully");
+                
             // Accept - start making new server instance
-            var id = await NextId();
-            var socketPort = await NextSocketPort();
-            var webPort = await NextWebPort();
+            var id = NextId();
+            var socketPort = NextSocketPort();
+            var webPort = NextWebPort();
             if (id == -1 || socketPort == -1 || webPort == -1)
             {
                 return;
@@ -296,6 +306,16 @@ server.MessageReceived += async (_, args) =>
             break;
         }
     }
+};
+
+Console.CancelKeyPress += (_, _) =>
+{
+    server.StopAsync();
+    Environment.Exit(0);
+};
+AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
+{
+    Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
 };
 
 Console.WriteLine("Server started, connecting websockets.");

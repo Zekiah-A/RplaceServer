@@ -18,7 +18,7 @@ public enum ServerPackets
 
 public enum ClientPackets
 {
-    CreateInstance,
-    DeleteInstance,
-    RestartInstance,
+    CreateInstance = 6,
+    DeleteInstance = 7,
+    RestartInstance = 8
 }

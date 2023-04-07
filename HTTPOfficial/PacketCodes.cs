@@ -7,6 +7,7 @@ public enum ClientPackets
     CreateAccount,
     AccountCode,
     AccountInfo,
+    Authenticate
 }
 
 public enum ServerPackets

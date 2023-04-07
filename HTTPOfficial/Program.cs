@@ -91,8 +91,13 @@ var emojis = new[]
     "🌱", "🏀", "🛠", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
 };
 
+async Task UpdateConfigAsync()
+{
+    await using var configFile = File.OpenWrite(configPath);
+    await JsonSerializer.SerializeAsync(configFile, config, new JsonSerializerOptions { WriteIndented = true });
+    await configFile.FlushAsync();
+}
 
-// Will consume 42 bytes of data
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
 {
     if (data.Length < 42)
@@ -104,11 +109,11 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     var stringData = Encoding.UTF8.GetString(data);
     var username = stringData[..10].TrimEnd();
     var password = stringData[10..42].TrimEnd();
-    var accountPath = HashSha256String(Path.Join(dataPath, username + password));
-    
+    var accountPath = Path.Join(dataPath, HashSha256String(username + HashSha256String(password)));
+    data = data[42..];
+
     if (!File.Exists((accountPath)))
     {
-        data = data[42..];
         accountData = null!;
         return false;
     }
@@ -116,21 +121,12 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     var account = JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath));
     if (account is null)
     {
-        data = data[42..];
         accountData = null!;
         return false;
     }
-
-    data = data[42..];
+    
     accountData = account;
     return true;
-}
-
-async Task UpdateConfigAsync()
-{
-    await using var configFile = File.OpenWrite(configPath);
-    await JsonSerializer.SerializeAsync(configFile, config, new JsonSerializerOptions { WriteIndented = true });
-    await configFile.FlushAsync();
 }
 
 server.MessageReceived += (_, args) =>
@@ -232,7 +228,7 @@ server.MessageReceived += (_, args) =>
         {
             if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
-                File.Delete(Path.Join(dataPath, HashSha256String(accountData.Username + accountData.Email)));
+                File.Delete(Path.Join(dataPath, HashSha256String(accountData.Username + accountData.Password)));
                 // TODO: Tell worker servers to delete all their instances
             }
             break;
@@ -247,6 +243,15 @@ server.MessageReceived += (_, args) =>
             }
             break;
         }
+        case (byte) ClientPackets.Authenticate:
+        {
+            if (Authenticate(ref data, out var accountData))
+            {
+                clientAccountDatas.TryAdd(args.Client, accountData);
+            }
+            break;
+        }
+        
         
         case (byte) WorkerPackets.AnnounceExistence:
         {
@@ -269,9 +274,9 @@ server.MessageReceived += (_, args) =>
             
             var responseBuffer = new byte[6];
             responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
             
-            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData)
+            if (!Authenticate(ref data, out var accountData)
                 || accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
             {
                 responseBuffer[5] = 0; // Failed to auth
@@ -298,8 +303,8 @@ server.MessageReceived += (_, args) =>
             }
             
             var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+            responseBuffer[0] = (byte) ServerPackets.AuthorisedDeleteInstance; // Sign the packet with the correct auth
+            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
 
             if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
@@ -333,8 +338,8 @@ server.MessageReceived += (_, args) =>
             }
             
             var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+            responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
+            Buffer.BlockCopy(data.ToArray(), 43, responseBuffer, 43, 4); // Copy over the request ID
 
             if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
@@ -363,14 +368,9 @@ server.ClientDisconnected += (_, args) =>
     clientAccountDatas.Remove(args.Client);
 };
 
-Console.CancelKeyPress += async (_, _) =>
+Console.CancelKeyPress += (_, _) =>
 {
-    await server.StopAsync();
-    Environment.Exit(0);
-};
-AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
-{
-    await server.StopAsync();
+    server.StopAsync();
     Environment.Exit(0);
 };
 AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
