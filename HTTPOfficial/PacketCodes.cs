@@ -5,20 +5,24 @@ public enum ClientPackets
     DeleteAccount,
     UpdateAccount,
     CreateAccount,
-    AuthenticateCreate,
+    AccountCode,
     AccountInfo,
-    CreateInstance,
-    DeleteInstance,
-    RestartInstance,
 }
 
 public enum ServerPackets
 {
     Fail,
-    AccountInfo
+    AccountInfo,
+    
+    AuthorisedCreateInstance = 128,
+    AuthorisedDeleteInstance = 129,
+    Authorised = 130
 }
 
 public enum WorkerPackets
 {
-    InstanceInfo
+    AuthenticateCreate = 128,
+    AuthenticateDelete = 129,
+    AuthenticateManage = 130,
+    AnnounceExistence = 131
 }

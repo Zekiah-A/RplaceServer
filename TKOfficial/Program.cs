@@ -35,7 +35,7 @@ public static class Program
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
             var defaultConfig = new Config(5000, 2500, true, true, new List<string>(),
-            new List<string>(), 1000, 1000, 600000,  false, 
+            new List<string>(), new List<string>(), 1000, 1000, 600000,  false, 
             "Canvases", "Posts", 60, 300000, true, 100, true, "", "",
             "", 8080, 8081, false);
             

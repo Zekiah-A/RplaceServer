@@ -201,7 +201,26 @@ public sealed class SocketServer
                     app.SendAsync(args.Client, buffer.ToArray());
                     return;
                 }
-                
+
+                if (gameData.Muted.Contains(GetRealIp(args.Client)))
+                {
+                    Logger?.Invoke($"Pixel from client {GetRealIp(args.Client)} rejected for being muted ({clientCooldown})");
+                    return;
+                }
+
+                var inhibitor = new EventInhibitor();
+                PixelPlacementReceived?.Invoke
+                (
+                    this,
+                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth),
+                        (int) index / gameData.BoardHeight, (int) index, args.Client, data.ToArray(), inhibitor)
+                );
+
+                if (inhibitor.Raised)
+                {
+                    return;
+                }
+
                 // Accept
                 gameData.Board[index] = colour;
                 gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
@@ -211,14 +230,6 @@ public sealed class SocketServer
                 {
                     app.SendAsync(client, serverPixel.ToArray());
                 }
-
-                PixelPlacementReceived?.Invoke
-                (
-                    this,
-                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth),
-                        (int) index / gameData.BoardHeight, (int) index, args.Client, data.ToArray())
-                );
-
                 break;
             }
             case ClientPacket.ChatMessage:
@@ -257,6 +268,19 @@ public sealed class SocketServer
 
                 var x = splitText.ElementAtOrDefault(4);
                 var y = splitText.ElementAtOrDefault(5);
+
+                var inhibitor = new EventInhibitor();
+                ChatMessageReceived?.Invoke
+                (
+                    this, 
+                    new ChatMessageEventArgs(args.Client, message, channel, name, type, 
+                        data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null, inhibitor)
+                );
+
+                if (inhibitor.Raised)
+                {
+                    return;
+                }
                 
                 // Accept
                 var builder = new StringBuilder();
@@ -290,13 +314,6 @@ public sealed class SocketServer
                     var hookBody = new WebhookBody($"[{channel}] {name}@rplace.tk", message);
                     httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
                 }
-                
-                ChatMessageReceived?.Invoke
-                (
-                    this, 
-                    new ChatMessageEventArgs(args.Client, message, channel, name, type, 
-                    data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null)
-                );
                 break;
             }
             case ClientPacket.CaptchaSubmit:

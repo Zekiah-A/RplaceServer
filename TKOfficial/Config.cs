@@ -10,6 +10,7 @@ public record Config
     bool CreateBackups,
     List<string> Vips,
     List<string> Bans,
+    List<string> Muted,
     int BoardWidth,
     int BoardHeight,
     int BackupFrequency,
@@ -31,5 +32,5 @@ public record Config
     
     string? WebhookUrl = null,
     List<uint>? Palette = null
-) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, Vips, Bans, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
+) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, Vips, Bans, Muted, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
     CanvasFolder, PostsFolder, PostLimitPeriod, TimelapseLimitPeriod, CensorChatMessages, ChatHistoryLength, WebhookUrl, Palette);

@@ -1,7 +1,6 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessable fully through a web interface
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,7 +8,6 @@ using HTTPOfficial;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
-using RplaceServer.Types;
 using WatsonWebsocket;
 
 const string configPath = "server_config.json";
@@ -30,11 +28,8 @@ async Task CreateConfig()
             587,
             "myUsername@email.com",
             "myEmailPassword",
-            new[]
-            {
-                new InstanceRange("192.128.1.253", new IntRange(0, 100))
-            },
-            "secretInstanceControlKeyGoesHere");
+            new List<string>(),
+            Guid.NewGuid().ToString());
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
     await configFile.FlushAsync();
     
@@ -77,8 +72,9 @@ var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(
 var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 var emailAttributes = new EmailAddressAttribute();
 
+var workerClients = new List<ClientMetadata>();
 var toAuthenticate = new Dictionary<ClientMetadata, string>();
-var pendingData = new Dictionary<ClientMetadata, AccountData>();
+var clientAccountDatas = new Dictionary<ClientMetadata, AccountData>();
 var random = new Random();
 var emojis = new[]
 {
@@ -86,32 +82,17 @@ var emojis = new[]
     "🤗", "🤔", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
     "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨",
     "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴", "😷", "🤕", "🤒", "🤮", "🤢", "🥳", "🥺", "👋",
-    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎",
-    "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠",
-    "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸", "👶", "🧒", "👦", "👧", "🧑", "👱‍️", "👱", "👩", "🧑‍",
-    "👨‍", "👩‍🦰", "👨‍🦰", "👱‍♂️", "👩‍🦳", "👨‍🦳", "👩‍🦲", "👨‍🦲", "🧔", "👵", "🧓", "👴", "👲", "👳", "👳",
-    "🧕", "👮"
+    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👍", "👎", "✊", "👊",
+    "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🦷", "🦴",
+    "👀", "👁️", "👅", "👄", "💋", "🩸", "😎", "🤖", "🗣", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶",
+    "🌳", "🌍", "🌈", "🎅", "👶", "👼", "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "ඞ", "📱", "🔑", "❤", "👺", "🤯", "🤬",
+    "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪", "🕋", "🎉", "📋", "🚦", "🔇", "🥶", "💼", "🎩", "🎒", "🦅", "🧊", "★", "✅",
+    "😂", "😍", "🚀", "😈", "👟", "🍷", "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "🖱", "😷",
+    "🌱", "🏀", "🛠", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
 };
-/*
-var smtpClient = new SmtpClient
-{
-    Port = config.SmtpPort,
-    Credentials = new NetworkCredential(config.EmailUsername, config.EmailPassword),
-    EnableSsl = true,
-    DeliveryMethod = SmtpDeliveryMethod.Network,
-    DeliveryFormat = SmtpDeliveryFormat.International,
-    Timeout = 60000,
-    Host = config.SmtpHost
-};
-*/
 
-var httpClient = new HttpClient();
-httpClient.DefaultRequestHeaders.Add("Authentication-Key", config.InstanceKey);
-var workerSocketClients = config.InstanceRanges
-    .Select(instance => new WatsonWsClient(new Uri("ws://" + instance.InstanceIp + ":27277")))
-    .ToList();
 
-// Will consume first 42 bytes of data
+// Will consume 42 bytes of data
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
 {
     if (data.Length < 42)
@@ -144,22 +125,15 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     accountData = account;
     return true;
 }
-bool ResolveInstanceIp(int instanceId, out string instanceIp)
-{
-    foreach (var range in config!.InstanceRanges)
-    {
-        if (range.Range.Start > instanceId || range.Range.End <= instanceId)
-        {
-            instanceIp = range.InstanceIp;
-            return true;
-        }
-    }
 
-    instanceIp = "";
-    return false;
+async Task UpdateConfigAsync()
+{
+    await using var configFile = File.OpenWrite(configPath);
+    await JsonSerializer.SerializeAsync(configFile, config, new JsonSerializerOptions { WriteIndented = true });
+    await configFile.FlushAsync();
 }
 
-server.MessageReceived += (sender, args) =>
+server.MessageReceived += (_, args) =>
 {
     var data = new Span<byte>(args.Data.ToArray()[1..]);
 
@@ -188,14 +162,14 @@ server.MessageReceived += (sender, args) =>
             var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>());
             
             toAuthenticate.TryAdd(args.Client, code);
-            pendingData.TryAdd(args.Client, accountData);
+            clientAccountDatas.TryAdd(args.Client, accountData);
 
             async Task SendCodeEmailAsync()
             {
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "Rplace.Tk Instance Manager Account Code";
+                message.Subject = "rplace.tk Instance Manager Account Code";
                 message.Body = new TextPart("html")
                 {
                     Text = "<h1>Hello</h1>" +
@@ -224,7 +198,7 @@ server.MessageReceived += (sender, args) =>
             Task.Run(SendCodeEmailAsync);
             break;
         }
-        case (byte) ClientPackets.AuthenticateCreate:
+        case (byte) ClientPackets.AccountCode:
         {
             if (!toAuthenticate.TryGetValue(args.Client, out var realCode))
             {
@@ -234,177 +208,38 @@ server.MessageReceived += (sender, args) =>
                 return;
             }
 
-            var code = Encoding.UTF8.GetString(data[..10]);
-            if (!realCode.Equals(code))
+            var code = Encoding.UTF8.GetString(data);
+            if (!realCode.Equals(code.Trim().Replace(" ", "")))
             {
                 var response = Encoding.UTF8.GetBytes("XCould not create account. Code was invalid!");
                 response[0] = (byte) ServerPackets.Fail;
                 server.SendAsync(args.Client, response);
                 
                 toAuthenticate.Remove(args.Client);
-                pendingData.Remove(args.Client);
                 return;
             }
 
-            var accountData = pendingData[args.Client];
+            var accountData = clientAccountDatas[args.Client];
             File.WriteAllText(Path.Join(dataPath,
                 HashSha256String(accountData.Username + accountData.Password)),
                 JsonSerializer.Serialize(accountData));
             
             toAuthenticate.Remove(args.Client);
-            pendingData.Remove(args.Client);
             Console.WriteLine("Client created account successfully");
             break;
         }
         case (byte) ClientPackets.DeleteAccount:
         {
-            if (Authenticate(ref data, out var accountData))
+            if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
                 File.Delete(Path.Join(dataPath, HashSha256String(accountData.Username + accountData.Email)));
                 // TODO: Tell worker servers to delete all their instances
             }
             break;
         }
-        case (byte) ClientPackets.CreateInstance:
-        {
-            if (!Authenticate(ref data, out var accountData))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            if (accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not create instance! You have already registered too many!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            async Task RequestCreationAsync()
-            {
-                var instanceId = -1;
-                foreach (var instance in config.InstanceRanges)
-                {
-                    using var response = await httpClient.GetAsync("http://" + instance.InstanceIp + "/CreateInstance");
-                    if (response.StatusCode == HttpStatusCode.OK)
-                    {
-                        instanceId = int.Parse(await response.Content.ReadAsStringAsync());
-                        accountData.Instances.Add(instanceId);
-                    }
-                }
-
-                if (instanceId == -1)
-                {
-                    await server.SendAsync(args.Client, new [] { (byte) ServerPackets.Fail });
-                }
-
-                await File.WriteAllTextAsync(Path.Join(dataPath,
-                    HashSha256String(accountData.Username + accountData.Password)),
-                    JsonSerializer.Serialize(accountData));
-            }
-
-            Task.Run(RequestCreationAsync);
-            break;
-        }
-        case (byte) ClientPackets.DeleteInstance:
-        {
-            if (!Authenticate(ref data, out var accountData))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data);
-
-            if (!accountData.Instances.Contains((int) instanceId))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not delete instance. You do not own it.");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            if (!ResolveInstanceIp((int) instanceId, out string instanceIp))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not delete instance. Instance with specified ID could not be found.");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-            
-            async Task RequestDeletionAsync()
-            {
-                using var response = await httpClient.GetAsync("http://" + instanceIp + "/DeleteInstance/" + instanceId);
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    accountData.Instances.Remove((int) instanceId);
-                }
-                else
-                {
-                    var failure = Encoding.UTF8.GetBytes("XCould not delete instance. Instance with specified ID could not be found.");
-                    failure[0] = (byte) ServerPackets.Fail;
-                    await server.SendAsync(args.Client, failure);
-                }
-
-                accountData.Instances.Remove((int) instanceId);
-                await File.WriteAllTextAsync(Path.Join(dataPath,
-                    HashSha256String(accountData.Username + accountData.Password)),
-                    JsonSerializer.Serialize(accountData));
-            }
-
-            Task.Run(RequestDeletionAsync);
-            break;
-        }
-        case (byte) ClientPackets.RestartInstance:
-        {
-            if (!Authenticate(ref data, out var accountData))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not authenticate account!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data);
-
-            if (!accountData.Instances.Contains((int) instanceId))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not delete instance. You do not own it.");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
-            if (!ResolveInstanceIp((int) instanceId, out var instanceIp))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not restart instance. Instance with specified ID could not be found.");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-            
-            async Task RequestRestartAsync()
-            {
-                using var response = await httpClient.GetAsync("http://" + instanceIp + "/RestartInstance/" + instanceId);
-                if (response.StatusCode != HttpStatusCode.OK)
-                {
-                    var failure = Encoding.UTF8.GetBytes("XCould not restart instance. Instance with specified ID could not be found.");
-                    failure[0] = (byte) ServerPackets.Fail;
-                    await server.SendAsync(args.Client, failure);
-                }
-            }
-
-            Task.Run(RequestRestartAsync);
-            break;
-        }
         case (byte) ClientPackets.AccountInfo:
         {
-            if (Authenticate(ref data, out var accountData))
+            if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
                 var dataBlob = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize(accountData));
                 dataBlob[0] = (byte) ServerPackets.AccountInfo;
@@ -412,7 +247,120 @@ server.MessageReceived += (sender, args) =>
             }
             break;
         }
+        
+        case (byte) WorkerPackets.AnnounceExistence:
+        {
+            // If it is a legitimate worker wanting to join the network, we include it so that it can be announced to clients
+            if (Encoding.UTF8.GetString(data).Equals(config.InstanceKey))
+            {
+                config.KnownWorkers.Add(args.Client.IpPort);
+                Task.Run(UpdateConfigAsync);
+                workerClients.Add(args.Client);
+            }
+
+            break;
+        }
+        case (byte) WorkerPackets.AuthenticateCreate:
+        {
+            if (!workerClients.Contains(args.Client))
+            {
+                return;
+            }
+            
+            var responseBuffer = new byte[6];
+            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
+            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+            
+            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData)
+                || accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
+            {
+                responseBuffer[5] = 0; // Failed to auth
+                server.SendAsync(args.Client, responseBuffer);
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[47..]);
+            
+            // Accept -  We add this instance to their account data, save the account data and send back the response
+            accountData.Instances.Add(instanceId);
+            responseBuffer[5] = 1; // Successfully authenticated
+            server.SendAsync(args.Client, responseBuffer);
+            File.WriteAllText(Path.Join(dataPath,
+                    HashSha256String(accountData.Username + accountData.Password)),
+                JsonSerializer.Serialize(accountData));
+            break;
+        }
+        case (byte) WorkerPackets.AuthenticateDelete:
+        {
+            if (!workerClients.Contains(args.Client))
+            {
+                return;
+            }
+            
+            var responseBuffer = new byte[6];
+            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
+            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+
+            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            {
+                responseBuffer[5] = 0; // Failed to authenticate
+                server.SendAsync(args.Client, responseBuffer);
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[47..]);
+
+            if (!accountData.Instances.Contains(instanceId))
+            {
+                responseBuffer[5] = 0; // Failed to authenticate
+                server.SendAsync(args.Client, responseBuffer);
+            }
+            
+            // Accept -  We remove this instance from their account data, save the account data and send back the response
+            accountData.Instances.Remove(instanceId);
+            responseBuffer[5] = 1; // Failed to authenticate
+            server.SendAsync(args.Client, responseBuffer);
+            File.WriteAllText(Path.Join(dataPath,
+                HashSha256String(accountData.Username + accountData.Password)),
+                JsonSerializer.Serialize(accountData));
+            break;
+        }
+        case (byte) WorkerPackets.AuthenticateManage:
+        {
+            if (!workerClients.Contains(args.Client))
+            {
+                return;
+            }
+            
+            var responseBuffer = new byte[6];
+            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
+            Buffer.BlockCopy(data.ToArray(), 1, responseBuffer, 1, 4); // Copy over the request ID
+
+            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            {
+                responseBuffer[5] = 0; // Failed to authenticate
+                server.SendAsync(args.Client, responseBuffer);
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadUInt32BigEndian(data[47..]);
+            if (!accountData.Instances.Contains((int) instanceId))
+            {
+                responseBuffer[5] = 0; // Failed to authenticate
+                server.SendAsync(args.Client, responseBuffer);
+                return;
+            }
+            
+            // Accept - this is a general manage server authentication, so we don't need to touch account data
+            responseBuffer[5] = 1; // Failed to authenticate
+            server.SendAsync(args.Client, responseBuffer);
+            break;
+        }
     }
+};
+server.ClientDisconnected += (_, args) =>
+{
+    clientAccountDatas.Remove(args.Client);
 };
 
 Console.CancelKeyPress += async (_, _) =>
@@ -425,7 +373,7 @@ AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
     await server.StopAsync();
     Environment.Exit(0);
 };
-AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
+AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
 {
     Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
 };

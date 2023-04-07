@@ -9,5 +9,5 @@ public record struct Configuration(
     int SmtpPort,
     string EmailUsername,
     string EmailPassword,
-    InstanceRange[] InstanceRanges,
+    List<string> KnownWorkers,
     string InstanceKey);

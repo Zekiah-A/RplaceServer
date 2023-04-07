@@ -1,4 +1,3 @@
-using RplaceServer.Types;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -14,6 +13,7 @@ public record GameData
     bool CreateBackups,
     List<string> Vips,
     List<string> Bans,
+    List<string> Muted,
     int BoardWidth,
     int BoardHeight,
     int BackupFrequency, // Milliseconds
@@ -42,6 +42,7 @@ public record GameData
     public bool CaptchaEnabled { get; set; } = CaptchaEnabled;
     public List<string> Vips { get; set; } = Vips;
     public List<string> Bans { get; set; } = Bans;
+    public List<string> Muted { get; set; } = Muted;
     public int BoardWidth { get; set; } = BoardWidth; // Pixels
     public int BoardHeight { get; set; } = BoardHeight; // Pixels
     public int BackupFrequency { get; set; } = BackupFrequency; // Milliseconds
