@@ -25,5 +25,7 @@ public enum WorkerPackets
     AuthenticateCreate = 128,
     AuthenticateDelete = 129,
     AuthenticateManage = 130,
-    AnnounceExistence = 131
+    AnnounceExistence = 131,
+    AuthenticateVanity = 132,
+    AnnounceVanity = 133
 }

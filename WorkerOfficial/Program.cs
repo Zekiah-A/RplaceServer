@@ -244,7 +244,7 @@ foreach (var id in workerData.Ids.ToList())
 client.ServerConnected += async (_, _) =>
 {
     var instanceKeyBytes = Encoding.UTF8.GetBytes(config.InstanceKey);
-    var announceBuffer = new byte[1 + instanceKeyBytes.Length];
+    var announceBuffer = new byte[1 + 8 + instanceKeyBytes.Length];
     announceBuffer[0] = (byte) WorkerPackets.AnnounceExistence;
     instanceKeyBytes.CopyTo(announceBuffer.AsSpan()[1..]);
     await client.SendAsync(announceBuffer);
