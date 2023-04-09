@@ -64,7 +64,7 @@ if (!File.Exists(dataFilePath))
 var defaultGameData = new GameData(
     5000, 2500, false, true, new List<string>(), new List<string>(),
     new List<string>(), 1000, 1000, 600000,  false, "Canvases",
-    "Posts", 60, 300000, true, 100, "", new List<uint>());
+    "Posts", 60, 300000, true, 100, "", null);
 var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 var workerData = await JsonSerializer.DeserializeAsync<WorkerData>(File.OpenRead(dataFilePath));
 var instances = new Dictionary<int, ServerInstance>();
@@ -73,6 +73,7 @@ var server = new WatsonWsServer(27277, config.UseHttps, config.CertPath, config.
 var createAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var deleteAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var modifyAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
+var subscriberGroups = new Dictionary<int, List<ClientMetadata>>();
 var requestId = 0;
 
 client.Logger = Console.WriteLine;
@@ -135,6 +136,83 @@ int NextWebPort()
     return next;
 }
 
+void AttachSubscribers(int instanceId)
+{
+    if (!instances.TryGetValue(instanceId, out var instance))
+    {
+        return;
+    }
+    
+    instance.SocketServer.Logger = ForwardServerLog;
+    instance.WebServer.Logger = ForwardServerLog;
+    instance.Logger = ForwardServerLog;
+    void ForwardServerLog(string message)
+    {
+        if (!subscriberGroups.TryGetValue(instanceId, out var subscribers))
+        {
+            return;
+        }
+
+        var encoded = Encoding.UTF8.GetBytes("X" + message);
+        encoded[0] = (byte) WorkerPackets.Logger;
+
+        foreach (var subscriber in subscribers)
+        {
+            server.SendAsync(subscriber, encoded);
+        }
+    }
+
+    instance.SocketServer.PlayerConnected += (_, args) =>
+    {
+        if (!subscriberGroups.TryGetValue(instanceId, out var subscribers))
+        {
+            return;
+        }
+
+        var encoded = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize(instance.GameData.Clients[args.Player]));
+        encoded[0] = (byte) WorkerPackets.PlayerConnected;
+
+        foreach (var subscriber in subscribers)
+        {
+            server.SendAsync(subscriber, encoded);
+        }
+    };
+
+    instance.SocketServer.PlayerDisconnected += (_, args) =>
+    {
+        if (!subscriberGroups.TryGetValue(instanceId, out var subscribers))
+        {
+            return;
+        }
+
+        // TODO: We need an BeforePlayerDisconnected event too, else we can't catch the real IPPort of this client
+        // TODO: (may cause) issues on reverse-proxied severs.
+        var encoded = Encoding.UTF8.GetBytes("X" + args.Player.IpPort);
+        encoded[0] = (byte) WorkerPackets.PlayerDisconnected;
+        
+        foreach (var subscriber in subscribers)
+        {
+            server.SendAsync(subscriber, encoded);
+        }
+    };
+
+    instance.WebServer.CanvasBackupCreated += (_, args) =>
+    {
+        if (!subscriberGroups.TryGetValue(instanceId, out var subscribers))
+        {
+            return;
+        }
+
+        var encoded = Encoding.UTF8.GetBytes("X" + args);
+        encoded[0] = (byte) WorkerPackets.BackupCreated;
+        
+        foreach (var subscriber in subscribers)
+        {
+            server.SendAsync(subscriber, encoded);
+        }
+    };
+}
+
 // TODO: TEMP: We clear the WorkerData used web and socket ports as a temporary fix for port leakage.
 workerData.SocketPorts = new List<int>();
 workerData.WebPorts = new List<int>();
@@ -156,8 +234,9 @@ foreach (var id in workerData.Ids.ToList())
         Console.WriteLine($"Could not find game data for server with id: {id}, will attempt to use default");
         gameData = defaultGameData;
     }
-    
+
     instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", NextSocketPort(), NextWebPort(), config.UseHttps));
+    AttachSubscribers(id);
     await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
 }
 
@@ -267,6 +346,7 @@ server.MessageReceived += async (_, args) =>
 
             // Start the new instance
             instances.Add(id, instance);
+            AttachSubscribers(id);
             _ = Task.Run(instance.StartAsync);
             break;
         }
@@ -278,11 +358,6 @@ server.MessageReceived += async (_, args) =>
             }
             
             var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
-            if (instances.TryGetValue(instanceId, out var instance))
-            {
-                await instance.StopAsync();
-                instances.Remove(instanceId);
-            }
 
             // Check with auth server that they are allowed to do this
             var authoriseDeletion = new TaskCompletionSource<bool>();
@@ -302,9 +377,47 @@ server.MessageReceived += async (_, args) =>
                 return;
             }
 
+            if (instances.TryGetValue(instanceId, out var instance))
+            {
+                await instance.StopAsync();
+                instances.Remove(instanceId);
+            }
+            
             // TODO: Find a fix for the port leakage which will occur due to ports not being released.
             workerData.Ids.Remove(instanceId);
             await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
+            break;
+        }
+        case (byte) ClientPackets.Subscribe:
+        {
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
+
+            // TODO: Make some kind of method for modify-based authentication, as the code below this will be repeated
+            // TODO: many times throught this codebase.
+            // Check with auth server that they are allowed to do this
+            var authoriseModify = new TaskCompletionSource<bool>();
+            var requestHandle = requestId++;
+            deleteAuthQueue.Add(requestHandle, authoriseModify);
+
+            var authBuffer = new byte[51];
+            authBuffer[0] = (byte) WorkerPackets.AuthenticateDelete; // 1 byte - Packet code
+            data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
+            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            await client.SendAsync(authBuffer);
+
+            if (!await authoriseModify.Task)
+            {
+                return;
+            }
+            // TODO: END
+
+            subscriberGroups.TryAdd(instanceId, new List<ClientMetadata>());
+            subscriberGroups[instanceId].Add(args.Client);
+            break;
+        }
+        case (byte) ClientPackets.QueryInstance:
+        {
             break;
         }
     }

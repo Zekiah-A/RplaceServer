@@ -172,10 +172,11 @@ server.MessageReceived += (_, args) =>
                     Text = "<h1>Hello</h1>" +
                            "<p>Someone used your email to register a new rplace instance manager account.</p>" +
                            "<p>If that's you, then cool, your code is:</p>" +
-                           "<h1>" + code + "</h1>" +
+                           "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + code + "</h1>" +
                            "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
                            "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
-                           "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply | https://rplace.tk</p>"
+                           "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
+                           "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"
                 };
                 
                 try
@@ -367,6 +368,7 @@ server.MessageReceived += (_, args) =>
 server.ClientDisconnected += (_, args) =>
 {
     clientAccountDatas.Remove(args.Client);
+    
 };
 
 Console.CancelKeyPress += (_, _) =>
