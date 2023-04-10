@@ -296,9 +296,7 @@ server.MessageReceived += async (_, args) =>
             {
                 return;
             }
-
-            Console.WriteLine("Client created server instance successfully");
-                
+            
             // Accept - start making new server instance
             var id = NextId();
             var socketPort = NextSocketPort();

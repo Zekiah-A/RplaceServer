@@ -1,4 +1,4 @@
-﻿// An rplace server software that is intended to be used completely remotely, being accessable fully through a web interface
+﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
@@ -143,9 +143,10 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
 
 server.MessageReceived += (_, args) =>
 {
+    var packetCode = args.Data.ToArray()[0];
     var data = new Span<byte>(args.Data.ToArray()[1..]);
 
-    switch (args.Data.ToArray()[0])
+    switch (packetCode)
     {
         case (byte) ClientPackets.CreateAccount:
         {
@@ -166,10 +167,10 @@ server.MessageReceived += (_, args) =>
             {
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
-            var code = string.Join("", codeChars);
+            var authCode = string.Join("", codeChars);
             var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>());
             
-            toAuthenticate.TryAdd(args.Client, code);
+            toAuthenticate.TryAdd(args.Client, authCode);
             clientAccountDatas.TryAdd(args.Client, accountData);
 
             async Task SendCodeEmailAsync()
@@ -183,7 +184,7 @@ server.MessageReceived += (_, args) =>
                     Text = "<h1>Hello</h1>" +
                            "<p>Someone used your email to register a new rplace instance manager account.</p>" +
                            "<p>If that's you, then cool, your code is:</p>" +
-                           "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + code + "</h1>" +
+                           "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
                            "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
                            "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
                            "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
@@ -278,45 +279,27 @@ server.MessageReceived += (_, args) =>
             }
             break;
         }
-        // A client has just asked the worker server to create an instance, the worker server then checks with the auth server
-        // whether they are actually allowed to delete this instance, if so, the auth server must also change the account data
-        // of the client, removing this instance ID from the client's instances list to ensure it is synchronised with the worker.
-        case (byte) WorkerPackets.AuthenticateCreate:
+        // Worker server has just started up and booted it's instances, it sees that some of it's instances have
+        // previously registered vanities, and now needs to announce them onto the auth server with whatever new
+        // URLS those instances have.
+        case (byte) WorkerPackets.AnnounceVanity:
         {
-            if (!workerClients.Contains(args.Client) || data.Length != 50)
+            if (!workerClients.Contains(args.Client))
             {
                 return;
             }
-            
-            var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.AuthorisedCreateInstance; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
-            
-            if (!Authenticate(ref data, out var accountData)
-                || accountData.AccountTier == 0 && accountData.Instances.Count >= 5)
-            {
-                responseBuffer[5] = 0; // Failed to auth
-                server.SendAsync(args.Client, responseBuffer);
-                return;
-            }
-
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
-            
-            // Accept -  We add this instance to their account data, save the account data and send back the response
-            accountData.Instances.Add(instanceId);
-            responseBuffer[5] = 1; // Successfully authenticated
-            server.SendAsync(args.Client, responseBuffer);
-            File.WriteAllText(Path.Join(dataPath,
-                HashSha256String(accountData.Username + accountData.Password)),
-                JsonSerializer.Serialize(accountData));
+                    
+            // Should be in the format "myvanityname\nserver=https://server.com:2304/place&board=wss://server.com:21314/ws"
+            var text = Encoding.UTF8.GetString(data).Split("\n");
+            registeredVanities.Add(text[0], text[1]);
             break;
         }
-        // A client has just asked the worker server to delete an instance, the worker server then checks with the auth server
-        // whether they are actually allowed to delete this instance, if so, the auth server must also change the account data
-        // of the client, removing this instance ID from the client's instances list to ensure it is synchronised with the worker.
-        case (byte) WorkerPackets.AuthenticateDelete:
+        // All of these methods have overlapping authentication methods, with little variation on auth success, so we can merge
+        // their cases until we do actually need to finally branch for the specifics of each.
+        case (byte) WorkerPackets.AuthenticateCreate or (byte) WorkerPackets.AuthenticateDelete
+            or (byte) WorkerPackets.AuthenticateManage or (byte) WorkerPackets.AuthenticateVanity:
         {
-            if (!workerClients.Contains(args.Client) || data.Length != 50)
+            if (!workerClients.Contains(args.Client) || data.Length < 46)
             {
                 return;
             }
@@ -339,109 +322,68 @@ server.MessageReceived += (_, args) =>
                 responseBuffer[5] = 0; // Failed to authenticate
                 server.SendAsync(args.Client, responseBuffer);
             }
-            
-            // Accept -  We remove this instance from their account data, save the account data and send back the response
-            accountData.Instances.Remove(instanceId);
-            responseBuffer[5] = 1; // Failed to authenticate
-            server.SendAsync(args.Client, responseBuffer);
-            File.WriteAllText(Path.Join(dataPath,
-                HashSha256String(accountData.Username + accountData.Password)),
-                JsonSerializer.Serialize(accountData));
-            break;
-        }
-        // A client has just asked the worker server to modify, subscribe to, or have some other kind of access to a
-        // private part of an instance, however, it does not involve modifying the client's data unlike AuthenticateDelete
-        // or AuthenticateCreate, the auth server only ensures that the client owns this instance that they claim they want to do something with.
-        case (byte) WorkerPackets.AuthenticateManage:
-        {
-            if (!workerClients.Contains(args.Client) || data.Length != 50)
-            {
-                return;
-            }
-            
-            var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
 
-            if (!Authenticate(ref data, out var accountData))
+            switch (packetCode)
             {
-                responseBuffer[5] = 0; // Failed to authenticate
-                server.SendAsync(args.Client, responseBuffer);
-                return;
-            }
+                // A client has just asked the worker server to create an instance, the worker server then checks with the auth server
+                // whether they are actually allowed to delete this instance, if so, the auth server must also change the account data
+                // of the client, removing this instance ID from the client's instances list to ensure it is synchronised with the worker.
+                case (byte) WorkerPackets.AuthenticateCreate:
+                {
+                    // Accept -  We add this instance to their account data, save the account data and send back the response
+                    accountData.Instances.Add(instanceId);
+                    responseBuffer[5] = 1; // Successfully authenticated
+                    server.SendAsync(args.Client, responseBuffer);
+                    File.WriteAllText(Path.Join(dataPath,
+                        HashSha256String(accountData.Username + accountData.Password)),
+                        JsonSerializer.Serialize(accountData));
+                    break;
+                }
+                // A client has just asked the worker server to delete an instance, the worker server then checks with the auth server
+                // whether they are actually allowed to delete this instance, if so, the auth server must also change the account data
+                // of the client, removing this instance ID from the client's instances list to ensure it is synchronised with the worker.
+                case (byte) WorkerPackets.AuthenticateDelete:
+                {
+                    // Accept -  We remove this instance from their account data, save the account data and send back the response
+                    accountData.Instances.Remove(instanceId);
+                    responseBuffer[5] = 1; // Failed to authenticate
+                    server.SendAsync(args.Client, responseBuffer);
+                    File.WriteAllText(Path.Join(dataPath,
+                        HashSha256String(accountData.Username + accountData.Password)),
+                        JsonSerializer.Serialize(accountData));
+                    break;
+                }
+                // A client has just asked the worker server to modify, subscribe to, or have some other kind of access to a
+                // private part of an instance, however, it does not involve modifying the client's data unlike AuthenticateDelete
+                // or AuthenticateCreate, the auth server only ensures that the client owns this instance that they claim they want to do something with.
+                case (byte) WorkerPackets.AuthenticateManage:
+                {
+                    // Accept - this is a general manage server authentication, so we don't need to touch account data
+                    responseBuffer[5] = 1; // Failed to authenticate
+                    server.SendAsync(args.Client, responseBuffer);
+                    break;
+                }
+                // A client has requested to apply a new vanity to an instance. The auth server must now prove that the client
+                // in fact owns that vanity, that this vanity name has not already been registered, and if so, we register this
+                // vanity to the URL of the instance.
+                case (byte) WorkerPackets.AuthenticateVanity:
+                {
+                    var text = Encoding.UTF8.GetString(data[4..]).Split("\n");
 
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
-            if (!accountData.Instances.Contains(instanceId))
-            {
-                responseBuffer[5] = 0; // Failed to authenticate
-                server.SendAsync(args.Client, responseBuffer);
-                return;
+                    if (text.Length != 2 || registeredVanities.TryGetValue(text[0], out var _))
+                    {
+                        responseBuffer[5] = 0; // vanity with specified name already exists
+                        server.SendAsync(args.Client, responseBuffer);
+                        return;
+                    }
+                    
+                    // Accept - Register vanity
+                    registeredVanities.Add(text[0], text[1]);
+                    responseBuffer[5] = 1; 
+                    server.SendAsync(args.Client, responseBuffer);
+                    break;
+                }
             }
-            
-            // Accept - this is a general manage server authentication, so we don't need to touch account data
-            responseBuffer[5] = 1; // Failed to authenticate
-            server.SendAsync(args.Client, responseBuffer);
-            break;
-        }
-        // Worker server has just started up and booted it's instances, it sees that some of it's instances have
-        // previously registered vanities, and now needs to announce them onto the auth server with whatever new
-        // URLS those instances have.
-        case (byte) WorkerPackets.AnnounceVanity:
-        {
-            if (!workerClients.Contains(args.Client))
-            {
-                return;
-            }
-            
-            // Should be in the format "myvanityname\nserver=https://server.com:2304/place&board=wss://server.com:21314/ws"
-            var text = Encoding.UTF8.GetString(data).Split("\n");
-            registeredVanities.Add(text[0], text[1]);
-            break;
-        }
-        // A client has requested to apply a new vanity to an instance. The auth server must now prove that the client
-        // in fact owns that vanity, that this vanity name has not already been registered, and if so, we register this
-        // vanity to the URL of the instance. These vanity registrations are not saved here as the next time the worker
-        // connects, it will be registering this vanity via AnnounceVanity anyway
-        case (byte) WorkerPackets.AuthenticateVanity:
-        {
-            if (!workerClients.Contains(args.Client) || data.Length < 46)
-            {
-                return;
-            }
-            
-            var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
-            Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
-
-            if (!Authenticate(ref data, out var accountData))
-            {
-                responseBuffer[5] = 0; // Failed to authenticate
-                server.SendAsync(args.Client, responseBuffer);
-                return;
-            }
-
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
-
-            if (!accountData.Instances.Contains(instanceId))
-            {
-                responseBuffer[5] = 0; // Failed to authenticate
-                server.SendAsync(args.Client, responseBuffer);
-                return;
-            }
-
-            var vanityName = Encoding.UTF8.GetString(data[4..]);
-
-            if (registeredVanities.TryGetValue(vanityName, out var _))
-            {
-                responseBuffer[5] = 0; // vanity with specified name already exists
-                server.SendAsync(args.Client, responseBuffer);
-                return;
-
-            }
-            
-            // Accept - Register vanity
-            responseBuffer[5] = 1; 
-            server.SendAsync(args.Client, responseBuffer);
             break;
         }
     }
@@ -449,7 +391,6 @@ server.MessageReceived += (_, args) =>
 server.ClientDisconnected += (_, args) =>
 {
     clientAccountDatas.Remove(args.Client);
-    
 };
 
 Console.CancelKeyPress += (_, _) =>
