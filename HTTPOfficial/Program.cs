@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HTTPOfficial;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -374,9 +375,8 @@ server.MessageReceived += (_, args) =>
                     {
                         responseBuffer[5] = 0; // vanity with specified name already exists
                         server.SendAsync(args.Client, responseBuffer);
-                        return;
                     }
-                    
+
                     // Accept - Register vanity
                     registeredVanities.Add(text[0], text[1]);
                     responseBuffer[5] = 1; 

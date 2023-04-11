@@ -348,7 +348,7 @@ public sealed class SocketServer
     /// </summary>
     private void DistributePlayerCount()
     {
-        var gameInfo = (Span<byte>) stackalloc byte[5];
+        var gameInfo = (Span<byte>) stackalloc byte[3];
         gameInfo[0] = (byte) ServerPacket.PlayerCount;
         BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) gameData.PlayerCount);
 
