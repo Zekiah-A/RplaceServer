@@ -199,7 +199,7 @@ public sealed class SocketServer
                     return;
                 }
 
-                if (gameData.Muted.Contains(GetRealIpPort(args.Client)))
+                if (gameData.Muted.Contains(GetRealIp(args.Client)))
                 {
                     Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for being muted ({clientCooldown})");
                     return;
@@ -215,6 +215,7 @@ public sealed class SocketServer
 
                 if (inhibitor.Raised)
                 {
+                    Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} inhibited by event handler");
                     return;
                 }
 
@@ -276,6 +277,7 @@ public sealed class SocketServer
 
                 if (inhibitor.Raised)
                 {
+                    Logger?.Invoke($"Chat message from client {GetRealIpPort(args.Client)} inhibited by event handler");
                     return;
                 }
                 

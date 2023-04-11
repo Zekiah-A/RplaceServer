@@ -7,16 +7,16 @@ public enum ClientPackets
     CreateAccount,
     AccountCode,
     AccountInfo,
-    Authenticate
+    Authenticate,
+    LocateVanity
 }
 
 public enum ServerPackets
 {
     Fail,
     AccountInfo,
+    VanityUrl,
     
-    AuthorisedCreateInstance = 128,
-    AuthorisedDeleteInstance = 129,
     Authorised = 130
 }
 
@@ -25,7 +25,7 @@ public enum WorkerPackets
     AuthenticateCreate = 128,
     AuthenticateDelete = 129,
     AuthenticateManage = 130,
+    AuthenticateVanity = 132, // TODO: Fix the mixup between the value of this and the next packet code
     AnnounceExistence = 131,
-    AuthenticateVanity = 132,
     AnnounceVanity = 133
 }

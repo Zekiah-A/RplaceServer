@@ -25,7 +25,8 @@ async Task CreateConfig()
             new IntRange(3000, 4000),
             new IntRange(4000, 5000),
             "ws://localhost:1234",
-            "Auth server GUID instance key");
+            "Auth server GUID instance key",
+            "server.poemanthology.org");
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
     await configFile.FlushAsync();
     
@@ -70,9 +71,7 @@ var workerData = await JsonSerializer.DeserializeAsync<WorkerData>(File.OpenRead
 var instances = new Dictionary<int, ServerInstance>();
 var client = new WatsonWsClient(new Uri(config.AuthServerUri));
 var server = new WatsonWsServer(27277, config.UseHttps, config.CertPath, config.KeyPath);
-var createAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
-var deleteAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
-var modifyAuthQueue = new Dictionary<int, TaskCompletionSource<bool>>();
+var authQueue = new Dictionary<int, TaskCompletionSource<bool>>();
 var subscriberGroups = new Dictionary<int, List<ClientMetadata>>();
 var requestId = 0;
 
@@ -213,7 +212,6 @@ void AttachSubscribers(int instanceId)
     };
 }
 
-// TODO: TEMP: We clear the WorkerData used web and socket ports as a temporary fix for port leakage.
 workerData.SocketPorts = new List<int>();
 workerData.WebPorts = new List<int>();
 
@@ -228,14 +226,32 @@ foreach (var id in workerData.Ids.ToList())
         continue;
     }
 
-    var gameData = await JsonSerializer.DeserializeAsync<GameData>(File.OpenRead(Path.Join(serverPath, "game_data.json")));
+    await using var gameDataStream = File.OpenRead(Path.Join(serverPath, "game_data.json"));
+    var gameData = await JsonSerializer.DeserializeAsync<GameData>(gameDataStream);
     if (gameData is null)
     {
         Console.WriteLine($"Could not find game data for server with id: {id}, will attempt to use default");
         gameData = defaultGameData;
     }
 
-    instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", NextSocketPort(), NextWebPort(), config.UseHttps));
+    await using var serverDataStream = File.OpenRead(Path.Join(serverPath, "server_data.json"));
+    var serverData = await JsonSerializer.DeserializeAsync<ServerData>(serverDataStream);
+    if (serverData is null)
+    {
+        Console.WriteLine($"Could not find server data for server with id: {id}, will attempt to generate new. Vanity name will be lost.");
+        serverData = new ServerData(id, null, NextSocketPort(), NextWebPort());
+    }
+
+    if (serverData.VanityName != null)
+    {
+        var vanityBuffer = Encoding.UTF8.GetBytes("X" + serverData.VanityName
+            + $"\nserver={(config.UseHttps ? "wss" : "ws")}://{config.PublicHostname}:{serverData.SocketPort}"
+            + $"&board={(config.UseHttps ? "https" : "http")}://{config.PublicHostname}:{serverData.WebPort}/place");
+        vanityBuffer[0] = (byte) WorkerPackets.AnnounceVanity;
+        await client.SendAsync(vanityBuffer);
+    }
+
+    instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", serverData.SocketPort, serverData.WebPort, config.UseHttps));
     AttachSubscribers(id);
     await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
 }
@@ -253,28 +269,16 @@ client.ServerConnected += async (_, _) =>
 // Comes from auth server
 client.MessageReceived += (_, args) =>
 {
-    Console.WriteLine("Incoming response from auth server");
-    
     var data = args.Data.ToArray()[1..];
     if (data.Length != 5)
     {
         return;
     }
     
-    var id = BinaryPrimitives.ReadInt32BigEndian(data); // 0, 1, 2, 3
-    var result = data[4] == 1; // 4
-    
-    if (args.Data.ToArray()[0] == (byte) ServerPackets.AuthorisedCreateInstance && createAuthQueue.TryGetValue(id, out var createSource))
+    var requestHandle = BinaryPrimitives.ReadInt32BigEndian(data);
+    if (args.Data.ToArray()[0] == (byte) ServerPackets.Authorised && authQueue.TryGetValue(requestHandle, out var completionSource))
     {
-        createSource.SetResult(result);
-    }
-    else if (args.Data.ToArray()[0] == (byte) ServerPackets.AuthorisedDeleteInstance && deleteAuthQueue.TryGetValue(id, out var deleteSource))
-    {
-        deleteSource.SetResult(result);
-    }
-    else if (args.Data.ToArray()[0] == (byte) ServerPackets.Authorised && modifyAuthQueue.TryGetValue(id, out var source))
-    {
-        source.SetResult(result);
+        completionSource.SetResult(data[4] == 1);
     }
 };
 
@@ -309,7 +313,7 @@ server.MessageReceived += async (_, args) =>
             // Check with auth server that they are allowed to do this
             var authoriseCompletion = new TaskCompletionSource<bool>();
             var requestHandle = requestId++;
-            createAuthQueue.Add(requestHandle, authoriseCompletion);
+            authQueue.Add(requestHandle, authoriseCompletion);
 
             var authBuffer = new byte[51];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateCreate; // 1 byte - Packet code
@@ -326,21 +330,24 @@ server.MessageReceived += async (_, args) =>
                 await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
                 
                 // Remove from the queue now that we are done with it
-                createAuthQueue.Remove(requestHandle);
+                authQueue.Remove(requestHandle);
                 return;
             }
             
             // Remove from the queue now that we are done with it
-            createAuthQueue.Remove(requestHandle);
+            authQueue.Remove(requestHandle);
 
             // Set up directory that will be used by the new instance server software + it's configuration
             var instanceDirectory = Path.Join(dataPath, id.ToString());
             Directory.CreateDirectory(instanceDirectory);
 
-            // Set up the new instance server software
+            // Set up the new instance server software data files
             var gameData = defaultGameData with { CanvasFolder = Path.Join(instanceDirectory, "Canvases"), PostsFolder = Path.Join(instanceDirectory, "Posts") };
             var instance = new ServerInstance(gameData, config.CertPath, config.KeyPath, "", socketPort, webPort, config.UseHttps);
-            await JsonSerializer.SerializeAsync(File.OpenWrite(Path.Join(instanceDirectory, "gamedata.json")), gameData);
+            await using var gameDataStream = File.Create(Path.Join(instanceDirectory, "game_data.json"));
+            await JsonSerializer.SerializeAsync(gameDataStream, gameData);
+            await using var serverDataStream = File.Create(Path.Join(instanceDirectory, "server_data.json"));
+            await JsonSerializer.SerializeAsync(serverDataStream, new ServerData(id, null, socketPort, webPort));
 
             // Start the new instance
             instances.Add(id, instance);
@@ -360,7 +367,7 @@ server.MessageReceived += async (_, args) =>
             // Check with auth server that they are allowed to do this
             var authoriseDeletion = new TaskCompletionSource<bool>();
             var requestHandle = requestId++;
-            deleteAuthQueue.Add(requestHandle, authoriseDeletion);
+            authQueue.Add(requestHandle, authoriseDeletion);
 
             var authBuffer = new byte[51];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateDelete; // 1 byte - Packet code
@@ -371,7 +378,7 @@ server.MessageReceived += async (_, args) =>
 
             if (!await authoriseDeletion.Task)
             {
-                deleteAuthQueue.Remove(requestHandle);
+                authQueue.Remove(requestHandle);
                 return;
             }
 
@@ -395,10 +402,10 @@ server.MessageReceived += async (_, args) =>
             // Check with auth server that they are allowed to do this
             var authoriseModify = new TaskCompletionSource<bool>();
             var requestHandle = requestId++;
-            deleteAuthQueue.Add(requestHandle, authoriseModify);
+            authQueue.Add(requestHandle, authoriseModify);
 
             var authBuffer = new byte[51];
-            authBuffer[0] = (byte) WorkerPackets.AuthenticateDelete; // 1 byte - Packet code
+            authBuffer[0] = (byte) WorkerPackets.AuthenticateManage; // 1 byte - Packet code
             data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
             BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
             BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
@@ -416,6 +423,44 @@ server.MessageReceived += async (_, args) =>
         }
         case (byte) ClientPackets.QueryInstance:
         {
+            break;
+        }
+        case (byte) ClientPackets.CreateVanity:
+        {
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
+
+            // Check with auth server that they are allowed to do this
+            var authoriseVanity = new TaskCompletionSource<bool>();
+            var requestHandle = requestId++;
+            authQueue.Add(requestHandle, authoriseVanity);
+
+            await using var dataStream = File.Open(Path.Join(dataPath, instanceId.ToString(), "server_data.json"), FileMode.Open);
+            var instanceData = await JsonSerializer.DeserializeAsync<ServerData>(dataStream);
+            if (instanceData is null)
+            {
+                return;
+            }
+            
+            var vanityLinkBuffer = Encoding.UTF8.GetBytes(
+                $"\nserver={(config.UseHttps ? "wss" : "ws")}://{config.PublicHostname}:{instanceData.SocketPort}" 
+                + $"&board={(config.UseHttps ? "https" : "http")}://{config.PublicHostname}:{instanceData.WebPort}/place");
+            var authBuffer = new byte[51 + data[46..].Length + vanityLinkBuffer.Length];
+            authBuffer[0] = (byte) WorkerPackets.AuthenticateVanity; // 1 byte - Packet code
+            data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
+            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            data[46..].CopyTo(authBuffer, 51); // Copy over vanity name (variable length)
+            vanityLinkBuffer.CopyTo(authBuffer, 51 + data[46..].Length); // Append real canvas link (variable length)
+            await client.SendAsync(authBuffer);
+
+            if (!await authoriseVanity.Task)
+            {
+                return;
+            }
+
+            // Accept - Apply vanity to instance's data so that it can be retained on worker restart
+            instanceData.VanityName = Encoding.UTF8.GetString(data[46..]);
+            await JsonSerializer.SerializeAsync(dataStream, instanceData);
             break;
         }
     }

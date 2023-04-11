@@ -9,4 +9,5 @@ public record struct Configuration(
     IntRange SocketPortRange,
     IntRange WebPortRange,
     string AuthServerUri,
-    string InstanceKey);
+    string InstanceKey,
+    string PublicHostname);

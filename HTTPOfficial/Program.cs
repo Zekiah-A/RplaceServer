@@ -266,6 +266,17 @@ server.MessageReceived += (_, args) =>
             }
             break;
         }
+        case (byte) ClientPackets.LocateVanity:
+        {
+            var vanity = Encoding.UTF8.GetString(data[1..]);
+            if (registeredVanities.TryGetValue(vanity, out var urlResult))
+            {
+                var buffer = Encoding.UTF8.GetBytes("X" + urlResult);
+                buffer[0] = (byte) ServerPackets.VanityUrl;
+                server.SendAsync(args.Client, urlResult);
+            }
+            break;
+        }
         
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
@@ -306,7 +317,7 @@ server.MessageReceived += (_, args) =>
             }
             
             var responseBuffer = new byte[6];
-            responseBuffer[0] = (byte) ServerPackets.AuthorisedDeleteInstance; // Sign the packet with the correct auth
+            responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
             Buffer.BlockCopy(data.ToArray(), 42, responseBuffer, 1, 4); // Copy over the request ID
 
             if (!Authenticate(ref data, out var accountData))

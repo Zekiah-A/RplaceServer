@@ -12,13 +12,13 @@ public enum WorkerPackets
     AuthenticateCreate = 128,
     AuthenticateDelete = 129,
     AuthenticateManage = 130,
-    AnnounceExistence = 131
+    AnnounceExistence = 131,
+    AuthenticateVanity = 132,
+    AnnounceVanity = 133
 }
 
 public enum ServerPackets
 {
-    AuthorisedCreateInstance = 128,
-    AuthorisedDeleteInstance = 129,
     Authorised = 130
 }
 
@@ -28,5 +28,6 @@ public enum ClientPackets
     DeleteInstance = 7,
     RestartInstance = 8,
     Subscribe = 9,
-    QueryInstance = 10
+    QueryInstance = 10,
+    CreateVanity = 11
 }
