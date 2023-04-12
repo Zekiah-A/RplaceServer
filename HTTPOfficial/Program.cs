@@ -4,7 +4,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using HTTPOfficial;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -68,23 +67,13 @@ if (!Directory.Exists(dataPath))
     Console.ResetColor();
 }
 
-if (!File.Exists(Path.Join(dataPath, "vanities.txt")))
-{
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not find server vanities file, at " + configPath);
-    await File.WriteAllTextAsync(Path.Join(dataPath, "vanities.txt"), ""); 
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"\n[INFO]: Data file recreated successfully, program will continue to run.");
-    Console.ResetColor();
-}
-
 var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 var emailAttributes = new EmailAddressAttribute();
 
 // Vanity -> URL of  actual socket server & board, done by worker clients on startup
 var registeredVanities = new Dictionary<string, string>();
-var workerClients = new List<ClientMetadata>();
+var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
 var toAuthenticate = new Dictionary<ClientMetadata, string>();
 var clientAccountDatas = new Dictionary<ClientMetadata, AccountData>();
 var random = new Random();
@@ -272,9 +261,26 @@ server.MessageReceived += (_, args) =>
             if (registeredVanities.TryGetValue(vanity, out var urlResult))
             {
                 var buffer = Encoding.UTF8.GetBytes("X" + urlResult);
-                buffer[0] = (byte) ServerPackets.VanityUrl;
+                buffer[0] = (byte) ServerPackets.VanityLocation;
                 server.SendAsync(args.Client, urlResult);
             }
+            break;
+        }
+        case (byte) ClientPackets.LocateWorkers:
+        {
+            var encoded = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize(workerClients.Values));
+            encoded[0] = (byte) ServerPackets.WorkerLocations;
+            server.SendAsync(args.Client, encoded);
+            break;
+        }
+        case (byte) ClientPackets.VanityAvailable:
+        {
+            var buffer = new[]
+            {
+                (byte) ServerPackets.AvailableVanity,
+                (byte) (registeredVanities.ContainsKey(Encoding.UTF8.GetString(data)) ? 0 : 1)
+            };
+            server.SendAsync(args.Client, buffer);
             break;
         }
         
@@ -282,12 +288,20 @@ server.MessageReceived += (_, args) =>
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
         case (byte) WorkerPackets.AnnounceExistence:
         {
+            var idRangeStart = BinaryPrimitives.ReadInt32BigEndian(data);
+            var idRangeEnd = BinaryPrimitives.ReadInt32BigEndian(data[4..]);
+            var instanceKeyAddress = Encoding.UTF8.GetString(data[8..]).Split("\n");
+            if (instanceKeyAddress.Length != 2) // 0 - Instance key, 1 - public address of worker socket
+            {
+                return;
+            }
+            
             // If it is a legitimate worker wanting to join the network, we include it so that it can be announced to clients
-            if (Encoding.UTF8.GetString(data).Equals(config.InstanceKey))
+            if (instanceKeyAddress[0].Equals(config.InstanceKey))
             {
                 config.KnownWorkers.Add(args.Client.IpPort);
                 Task.Run(UpdateConfigAsync);
-                workerClients.Add(args.Client);
+                workerClients.Add(args.Client, new WorkerInfo(new IntRange(idRangeStart, idRangeEnd), instanceKeyAddress[1]));
             }
             break;
         }
@@ -296,7 +310,7 @@ server.MessageReceived += (_, args) =>
         // URLS those instances have.
         case (byte) WorkerPackets.AnnounceVanity:
         {
-            if (!workerClients.Contains(args.Client))
+            if (!workerClients.ContainsKey(args.Client))
             {
                 return;
             }
@@ -311,7 +325,7 @@ server.MessageReceived += (_, args) =>
         case (byte) WorkerPackets.AuthenticateCreate or (byte) WorkerPackets.AuthenticateDelete
             or (byte) WorkerPackets.AuthenticateManage or (byte) WorkerPackets.AuthenticateVanity:
         {
-            if (!workerClients.Contains(args.Client) || data.Length < 46)
+            if (!workerClients.ContainsKey(args.Client) || data.Length < 46)
             {
                 return;
             }

@@ -259,10 +259,13 @@ foreach (var id in workerData.Ids.ToList())
 // We announce ourselves to the auth server so that we can be advertised to clients
 client.ServerConnected += async (_, _) =>
 {
-    var instanceKeyBytes = Encoding.UTF8.GetBytes(config.InstanceKey);
-    var announceBuffer = new byte[1 + 8 + instanceKeyBytes.Length];
+    var instanceKeyHostnameBytes = Encoding.UTF8.GetBytes(
+        config.InstanceKey + "\n" + ((config.UseHttps ? "wss://" : "ws://") + config.PublicHostname + ":" + config.Port));
+    var announceBuffer = new byte[9 + instanceKeyHostnameBytes.Length];
     announceBuffer[0] = (byte) WorkerPackets.AnnounceExistence;
-    instanceKeyBytes.CopyTo(announceBuffer.AsSpan()[1..]);
+    BinaryPrimitives.WriteInt32BigEndian(announceBuffer.AsSpan()[1..], config.IdRange.Start);
+    BinaryPrimitives.WriteInt32BigEndian(announceBuffer.AsSpan()[5..], config.IdRange.End);
+    instanceKeyHostnameBytes.CopyTo(announceBuffer.AsSpan()[9..]);
     await client.SendAsync(announceBuffer);
 };
 
@@ -318,8 +321,8 @@ server.MessageReceived += async (_, args) =>
             var authBuffer = new byte[51];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateCreate; // 1 byte - Packet code
             data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], id); // 4 bytes - instance ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], id); // 4 bytes - instance ID
             await client.SendAsync(authBuffer);
             
             if (!await authoriseCompletion.Task)
@@ -362,7 +365,7 @@ server.MessageReceived += async (_, args) =>
                 return;
             }
             
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[42..]);
 
             // Check with auth server that they are allowed to do this
             var authoriseDeletion = new TaskCompletionSource<bool>();
@@ -372,8 +375,8 @@ server.MessageReceived += async (_, args) =>
             var authBuffer = new byte[51];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateDelete; // 1 byte - Packet code
             data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
             await client.SendAsync(authBuffer);
 
             if (!await authoriseDeletion.Task)
@@ -395,7 +398,12 @@ server.MessageReceived += async (_, args) =>
         }
         case (byte) ClientPackets.Subscribe:
         {
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
+            if (data.Length != 51)
+            {
+                return;
+            }
+
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[42..]);
 
             // TODO: Make some kind of method for modify-based authentication, as the code below this will be repeated
             // TODO: many times throught this codebase.
@@ -407,8 +415,8 @@ server.MessageReceived += async (_, args) =>
             var authBuffer = new byte[51];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateManage; // 1 byte - Packet code
             data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
             await client.SendAsync(authBuffer);
 
             if (!await authoriseModify.Task)
@@ -423,11 +431,34 @@ server.MessageReceived += async (_, args) =>
         }
         case (byte) ClientPackets.QueryInstance:
         {
+            if (data.Length != 4)
+            {
+                return;
+            }
+            
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
+            
+            await using var dataStream = File.Open(Path.Join(dataPath, instanceId.ToString(), "server_data.json"), FileMode.Open);
+            var instanceData = await JsonSerializer.DeserializeAsync<ServerData>(dataStream);
+            if (instanceData is null)
+            {
+                return;
+            }
+
+            var info = JsonSerializer.Serialize(new InstanceInfo(
+                instances.ContainsKey(instanceId),
+                $"\nserver={(config.UseHttps ? "wss" : "ws")}://{config.PublicHostname}:{instanceData.SocketPort}" 
+                + $"&board={(config.UseHttps ? "https" : "http")}://{config.PublicHostname}:{instanceData.WebPort}/place",
+                instanceData.VanityName));
+            
+            var encoded = Encoding.UTF8.GetBytes("X" + info);
+            encoded[0] = (byte) WorkerPackets.InstanceQuery;
+            await server.SendAsync(args.Client, encoded);
             break;
         }
         case (byte) ClientPackets.CreateVanity:
         {
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[42..]);
 
             // Check with auth server that they are allowed to do this
             var authoriseVanity = new TaskCompletionSource<bool>();
@@ -447,8 +478,8 @@ server.MessageReceived += async (_, args) =>
             var authBuffer = new byte[51 + data[46..].Length + vanityLinkBuffer.Length];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateVanity; // 1 byte - Packet code
             data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.TryWriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
             data[46..].CopyTo(authBuffer, 51); // Copy over vanity name (variable length)
             vanityLinkBuffer.CopyTo(authBuffer, 51 + data[46..].Length); // Append real canvas link (variable length)
             await client.SendAsync(authBuffer);
