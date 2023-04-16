@@ -8,6 +8,7 @@ public enum WorkerPackets
     PlayerDisconnected,
     BackupCreated,
     InstanceQuery,
+    InstanceCreated,
     
     // Sent to auth server
     AuthenticateCreate = 128,

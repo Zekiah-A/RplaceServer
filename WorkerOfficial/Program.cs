@@ -5,16 +5,15 @@ using RplaceServer;
 using WatsonWebsocket;
 using WorkerOfficial;
 
-const string configPath = "server_config.json";
+const string configFilePath = "server_config.json";
 const string dataPath = "ServerData";
-var dataFilePath = Path.Join(dataPath, "server_data.json");
 
 async Task CreateConfig()
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write($"[Warning]: Could not find game config file, at {configPath}.");
+    Console.Write($"[Warning]: Could not find game config file, at {configFilePath}.");
 
-    await using var configFile = File.OpenWrite(configPath);
+    await using var configFile = File.OpenWrite(configFilePath);
     var defaultConfiguration =
         new Configuration(
             27277,
@@ -35,7 +34,7 @@ async Task CreateConfig()
     Console.ResetColor();
 }
 
-if (!File.Exists(configPath))
+if (!File.Exists(configFilePath))
 {
     await CreateConfig();
     Environment.Exit(0);
@@ -51,23 +50,21 @@ if (!Directory.Exists(dataPath))
     Console.ResetColor();
 }
 
-if (!File.Exists(dataFilePath))
-{
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not find data file, at " + dataFilePath);
-    var defaultDataFile = new WorkerData(new List<int>(), new List<int>(), new List<int>());
-    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(defaultDataFile));
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"\n[INFO]: Data file recreated successfully, program will continue to run.");
-    Console.ResetColor();
-}
-
 var defaultGameData = new GameData(
     5000, 2500, false, true, new List<string>(), new List<string>(),
     new List<string>(), 1000, 1000, 600000,  false, "Canvases",
     "Posts", 60, 300000, true, 100, "", null);
-var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
-var workerData = await JsonSerializer.DeserializeAsync<WorkerData>(File.OpenRead(dataFilePath));
+var workerData = new WorkerData
+{
+    Ids = new List<int>(),
+    SocketPorts = new List<int>(),
+    WebPorts = new List<int>()
+};
+Configuration config;
+await using (var configFileStream = File.OpenRead(configFilePath))
+{
+    config = await JsonSerializer.DeserializeAsync<Configuration>(configFileStream);
+}
 var instances = new Dictionary<int, ServerInstance>();
 var client = new WatsonWsClient(new Uri(config.AuthServerUri));
 var server = new WatsonWsServer(27277, config.UseHttps, config.CertPath, config.KeyPath);
@@ -93,7 +90,6 @@ int NextId()
     }
     
     workerData.Ids.Add(next);
-    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
@@ -112,7 +108,6 @@ int NextSocketPort()
     }
     
     workerData.SocketPorts.Add(next);
-    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
@@ -131,7 +126,6 @@ int NextWebPort()
     }
     
     workerData.WebPorts.Add(next);
-    File.WriteAllText(dataFilePath, JsonSerializer.Serialize(workerData));
     return next;
 }
 
@@ -212,9 +206,6 @@ void AttachSubscribers(int instanceId)
     };
 }
 
-workerData.SocketPorts = new List<int>();
-workerData.WebPorts = new List<int>();
-
 // Wake up and add all existing instances
 foreach (var id in workerData.Ids.ToList())
 {
@@ -253,7 +244,6 @@ foreach (var id in workerData.Ids.ToList())
 
     instances.Add(id, new ServerInstance(gameData, config.KeyPath, config.CertPath, "", serverData.SocketPort, serverData.WebPort, config.UseHttps));
     AttachSubscribers(id);
-    await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
 }
 
 // We announce ourselves to the auth server so that we can be advertised to clients
@@ -299,7 +289,7 @@ server.MessageReceived += async (_, args) =>
     {
         case (byte) ClientPackets.CreateInstance:
         {
-            if (data.Length != 42)
+            if (data.Length != 46)
             {
                 return;
             }
@@ -330,7 +320,6 @@ server.MessageReceived += async (_, args) =>
                 workerData.Ids.Remove(id);
                 workerData.SocketPorts.Remove(socketPort);
                 workerData.WebPorts.Remove(webPort);
-                await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
                 
                 // Remove from the queue now that we are done with it
                 authQueue.Remove(requestHandle);
@@ -356,6 +345,13 @@ server.MessageReceived += async (_, args) =>
             instances.Add(id, instance);
             AttachSubscribers(id);
             _ = Task.Run(instance.StartAsync);
+            
+            // data 42...46 is a requestID used by the client so that it can confirm completion, along with the instance ID of the new instance
+            var completionBuffer = new byte[9];
+            completionBuffer[0] = (byte) WorkerPackets.InstanceCreated;
+            data[42..46].CopyTo(completionBuffer, 1);
+            BinaryPrimitives.WriteInt32BigEndian(completionBuffer.AsSpan()[5..], id);
+            await server.SendAsync(args.Client, completionBuffer);
             break;
         }
         case (byte) ClientPackets.DeleteInstance:
@@ -393,7 +389,6 @@ server.MessageReceived += async (_, args) =>
             
             // TODO: Find a fix for the port leakage which will occur due to ports not being released.
             workerData.Ids.Remove(instanceId);
-            await JsonSerializer.SerializeAsync(File.OpenWrite(dataFilePath), workerData);
             break;
         }
         case (byte) ClientPackets.Subscribe:
@@ -438,7 +433,7 @@ server.MessageReceived += async (_, args) =>
             
             var instanceId = BinaryPrimitives.ReadInt32BigEndian(data);
             
-            await using var dataStream = File.Open(Path.Join(dataPath, instanceId.ToString(), "server_data.json"), FileMode.Open);
+            await using var dataStream = File.OpenRead(Path.Join(dataPath, instanceId.ToString(), "server_data.json"));
             var instanceData = await JsonSerializer.DeserializeAsync<ServerData>(dataStream);
             if (instanceData is null)
             {
@@ -465,7 +460,7 @@ server.MessageReceived += async (_, args) =>
             var requestHandle = requestId++;
             authQueue.Add(requestHandle, authoriseVanity);
 
-            await using var dataStream = File.Open(Path.Join(dataPath, instanceId.ToString(), "server_data.json"), FileMode.Open);
+            await using var dataStream = File.OpenRead(Path.Join(dataPath, instanceId.ToString(), "server_data.json"));
             var instanceData = await JsonSerializer.DeserializeAsync<ServerData>(dataStream);
             if (instanceData is null)
             {

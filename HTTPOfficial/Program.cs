@@ -140,6 +140,11 @@ server.MessageReceived += (_, args) =>
     {
         case (byte) ClientPackets.CreateAccount:
         {
+            if (data.Length < 362)
+            {
+                return;
+            }
+            
             var stringData = Encoding.UTF8.GetString(data);
             var username = stringData[..10].TrimEnd();
             var password = stringData[10..42].TrimEnd();
@@ -288,6 +293,11 @@ server.MessageReceived += (_, args) =>
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
         case (byte) WorkerPackets.AnnounceExistence:
         {
+            if (data.Length < 8)
+            {
+                return;
+            }
+            
             var idRangeStart = BinaryPrimitives.ReadInt32BigEndian(data);
             var idRangeEnd = BinaryPrimitives.ReadInt32BigEndian(data[4..]);
             var instanceKeyAddress = Encoding.UTF8.GetString(data[8..]).Split("\n");
@@ -356,6 +366,14 @@ server.MessageReceived += (_, args) =>
                 // of the client, removing this instance ID from the client's instances list to ensure it is synchronised with the worker.
                 case (byte) WorkerPackets.AuthenticateCreate:
                 {
+                    // Reject - Client is not allowed more than 2 canvases on free plan
+                    if (accountData.AccountTier == 0 && accountData.Instances.Count >= 2)
+                    {
+                        responseBuffer[5] = 0; // Failed to authenticate
+                        server.SendAsync(args.Client, responseBuffer);
+                        return;
+                    }
+                    
                     // Accept -  We add this instance to their account data, save the account data and send back the response
                     accountData.Instances.Add(instanceId);
                     responseBuffer[5] = 1; // Successfully authenticated
