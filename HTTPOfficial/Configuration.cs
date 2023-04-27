@@ -10,4 +10,6 @@ public record struct Configuration(
     string EmailUsername,
     string EmailPassword,
     List<string> KnownWorkers,
-    string InstanceKey);
+    string InstanceKey,
+    string RedditAuthClientId,
+    string RedditAuthClientSecret);

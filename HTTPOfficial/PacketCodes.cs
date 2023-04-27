@@ -10,7 +10,9 @@ public enum ClientPackets
     Authenticate,
     LocateVanity,
     LocateWorkers,
-    VanityAvailable
+    VanityAvailable,
+    RedditCreateAccount,
+    RedditAuthenticate
 }
 
 public enum ServerPackets
@@ -21,6 +23,7 @@ public enum ServerPackets
     VanityLocation,
     WorkerLocations,
     AvailableVanity,
+    RedditRefreshToken,
     
     // Sent to worker server
     Authorised = 130

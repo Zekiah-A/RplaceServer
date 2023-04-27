@@ -1,6 +1,8 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +14,7 @@ using WatsonWebsocket;
 
 const string configPath = "server_config.json";
 const string dataPath = "ServerData";
+const string base64Characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 async Task CreateConfig()
 {
@@ -29,7 +32,9 @@ async Task CreateConfig()
             "myUsername@email.com",
             "myEmailPassword",
             new List<string>(),
-            Guid.NewGuid().ToString());
+            Guid.NewGuid().ToString(),
+            "MY_REDDIT_API_APPLICATION_CLIENT_ID",
+            "MY_REDDIT_API_APPLICATION_CLIENT_SECRET");
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
     await configFile.FlushAsync();
     
@@ -72,10 +77,18 @@ var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, c
 var emailAttributes = new EmailAddressAttribute();
 
 // Vanity -> URL of  actual socket server & board, done by worker clients on startup
+var httpClient = new HttpClient();
 var registeredVanities = new Dictionary<string, string>();
 var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
 var toAuthenticate = new Dictionary<ClientMetadata, string>();
 var clientAccountDatas = new Dictionary<ClientMetadata, AccountData>();
+var refreshTokenAuthDates = new Dictionary<string, DateTime>();
+var refreshTokenAccessTokens = new Dictionary<string, string>();
+var redditSerialiserOptions = new JsonSerializerOptions
+{
+    PropertyNameCaseInsensitive = true, 
+    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+};
 var random = new Random();
 var emojis = new[]
 {
@@ -99,7 +112,7 @@ async Task UpdateConfigAsync()
     await configFile.FlushAsync();
 }
 
-// This method will GOBBLE the first 42 bytes of the input array, be warned
+// This method will consume the first 42 bytes of the input array, be warned
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
 {
     if (data.Length < 42)
@@ -114,7 +127,7 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     var accountPath = Path.Join(dataPath, HashSha256String(username + HashSha256String(password)));
     data = data[42..];
 
-    if (!File.Exists((accountPath)))
+    if (!File.Exists(accountPath))
     {
         accountData = null!;
         return false;
@@ -129,6 +142,56 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     
     accountData = account;
     return true;
+}
+
+bool RedditAuthenticate(string refreshToken, out AccountData accountData)
+{
+    var accountPath = Path.Join(dataPath, HashSha256String(refreshToken));
+    if (!File.Exists(accountPath))
+    {
+        accountData = null!;
+        return false;
+    }
+    
+    var account = JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath));
+    if (account is null)
+    {
+        accountData = null!;
+        return false;
+    }
+    accountData = account;
+    return true;
+}
+
+async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
+{
+    // If we already have their auth token cached,and it is within date, then we just return that
+    if (refreshTokenAuthDates!.TryGetValue(refreshToken, out var expiryDate) && expiryDate - DateTime.Now <= TimeSpan.FromHours(1))
+    {
+        return refreshTokenAccessTokens![refreshToken];
+    }
+    
+    // Otherwise, we need to refresh their auth token and update our caches respectively
+    httpClient!.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+        Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
+    var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
+    {
+        { "grant_type", "refresh_token" },
+        { "refresh_token", refreshToken }
+    });
+        
+    var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
+    var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
+    // We need to make ultra sure this auth will never be sent to someone else
+    httpClient.DefaultRequestHeaders.Authorization = null;
+    if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
+    {
+        return null;
+    }
+    
+    refreshTokenAuthDates!.Add(refreshToken, DateTime.Now);
+    refreshTokenAccessTokens!.Add(refreshToken, tokenData.AccessToken);
+    return tokenData.AccessToken;
 }
 
 server.MessageReceived += (_, args) =>
@@ -163,7 +226,7 @@ server.MessageReceived += (_, args) =>
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
             var authCode = string.Join("", codeChars);
-            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>());
+            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(), "", false);
             
             toAuthenticate.TryAdd(args.Client, authCode);
             clientAccountDatas.TryAdd(args.Client, accountData);
@@ -196,7 +259,7 @@ server.MessageReceived += (_, args) =>
                 }
                 catch (Exception exception)
                 {
-                    Console.WriteLine("Could not send error message" + exception);
+                    Console.WriteLine("Could not send email message: " + exception);
                 }
             }
             
@@ -228,9 +291,7 @@ server.MessageReceived += (_, args) =>
             File.WriteAllText(Path.Join(dataPath,
                 HashSha256String(accountData.Username + accountData.Password)),
                 JsonSerializer.Serialize(accountData));
-            
             toAuthenticate.Remove(args.Client);
-            Console.WriteLine("Client created account successfully");
             break;
         }
         case (byte) ClientPackets.DeleteAccount:
@@ -286,6 +347,73 @@ server.MessageReceived += (_, args) =>
                 (byte) (registeredVanities.ContainsKey(Encoding.UTF8.GetString(data)) ? 0 : 1)
             };
             server.SendAsync(args.Client, buffer);
+            break;
+        }
+        case (byte) ClientPackets.RedditCreateAccount: // Mirror of ClientPackets.CreateAccount but for reddit oauth accounts
+        {
+            var accountCode = Encoding.UTF8.GetString(data);
+            
+            // We to exchange this with an access token so we can execute API calls with this user, such as fetching their
+            // unique ID (/me) endpoint, anc checking if we already have it saved (then they already have an account,
+            // and we can fetch account data, else, we create acocunt data for this user with data we can scrape from the API).
+            async Task ExchangeAccessTokenAsync()
+            {
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+                    Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
+                
+                var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    { "grant_type", "authorization_code" },
+                    { "code", accountCode },
+                    { "redirect_uri", "https://rplace.tk/" }
+                });
+                var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
+                var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
+                // We need to make ultra sure this auth will never be sent to someone else
+                httpClient.DefaultRequestHeaders.Authorization = null;
+                if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
+                {
+                    return;
+                }
+                
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
+                var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/me", redditSerialiserOptions);
+                httpClient.DefaultRequestHeaders.Authorization = null;
+                if (meData is null)
+                {
+                    return;
+                }
+                
+                var accountPath = Path.Join(dataPath, HashSha256String(tokenData.RefreshToken));
+                if (!File.Exists(accountPath))
+                {
+                    var accountData = new AccountData(meData.Data.Name, "", "", 0, new List<int>(), tokenData.RefreshToken, false);
+                    File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+                    refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
+                    refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
+
+                    var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
+                    tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
+                    await server.SendAsync(args.Client, tokenBuffer);
+                }
+                
+                // If they already have an account, we can simply authenticate them
+                if (RedditAuthenticate(tokenData.RefreshToken, out var data))
+                {
+                    clientAccountDatas.Add(args.Client, data);
+                }
+            }
+
+            Task.Run(ExchangeAccessTokenAsync);
+            break;
+        }
+        case (byte) ClientPackets.RedditAuthenticate: // Mirror of ClientPackets.Authenticate but for reddit oauth accounts
+        {
+            var refreshToken = Encoding.UTF8.GetString(data);
+            if (RedditAuthenticate(refreshToken, out var accountData))
+            {
+                clientAccountDatas.TryAdd(args.Client, accountData);
+            }
             break;
         }
         
