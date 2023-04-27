@@ -1,7 +1,6 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
 using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,7 +13,6 @@ using WatsonWebsocket;
 
 const string configPath = "server_config.json";
 const string dataPath = "ServerData";
-const string base64Characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 async Task CreateConfig()
 {
@@ -144,35 +142,33 @@ bool Authenticate(ref Span<byte> data, out AccountData accountData)
     return true;
 }
 
-bool RedditAuthenticate(string refreshToken, out AccountData accountData)
+async Task<AccountData?> RedditAuthenticate(string refreshToken)
 {
-    var accountPath = Path.Join(dataPath, HashSha256String(refreshToken));
-    if (!File.Exists(accountPath))
+    var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
+    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+    var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/me", redditSerialiserOptions);
+    httpClient.DefaultRequestHeaders.Authorization = null;
+    if (meData is null)
     {
-        accountData = null!;
-        return false;
+        return null;
     }
-    
-    var account = JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath));
-    if (account is null)
-    {
-        accountData = null!;
-        return false;
-    }
-    accountData = account;
-    return true;
+
+    var accountPath = Path.Join(dataPath, meData.Data.Id);
+    return File.Exists(accountPath)
+        ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
+        : null;
 }
 
 async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
 {
     // If we already have their auth token cached,and it is within date, then we just return that
-    if (refreshTokenAuthDates!.TryGetValue(refreshToken, out var expiryDate) && expiryDate - DateTime.Now <= TimeSpan.FromHours(1))
+    if (refreshTokenAuthDates.TryGetValue(refreshToken, out var expiryDate) && expiryDate - DateTime.Now <= TimeSpan.FromHours(1))
     {
-        return refreshTokenAccessTokens![refreshToken];
+        return refreshTokenAccessTokens[refreshToken];
     }
     
     // Otherwise, we need to refresh their auth token and update our caches respectively
-    httpClient!.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
         Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
     var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
     {
@@ -189,8 +185,8 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
         return null;
     }
     
-    refreshTokenAuthDates!.Add(refreshToken, DateTime.Now);
-    refreshTokenAccessTokens!.Add(refreshToken, tokenData.AccessToken);
+    refreshTokenAuthDates.Add(refreshToken, DateTime.Now);
+    refreshTokenAccessTokens.Add(refreshToken, tokenData.AccessToken);
     return tokenData.AccessToken;
 }
 
@@ -349,13 +345,15 @@ server.MessageReceived += (_, args) =>
             server.SendAsync(args.Client, buffer);
             break;
         }
-        case (byte) ClientPackets.RedditCreateAccount: // Mirror of ClientPackets.CreateAccount but for reddit oauth accounts
+        // Will create an account if doesn't exist, or allow a user to get the refresh token of their account & authenticate
+        // if they already had an account, but were not OAuthed on that specific device (did not have RefreshToken in localStorage).
+        case (byte) ClientPackets.RedditCreateAccount:
         {
             var accountCode = Encoding.UTF8.GetString(data);
             
             // We to exchange this with an access token so we can execute API calls with this user, such as fetching their
             // unique ID (/me) endpoint, anc checking if we already have it saved (then they already have an account,
-            // and we can fetch account data, else, we create acocunt data for this user with data we can scrape from the API).
+            // and we can fetch account data, else, we create account data for this user with data we can scrape from the API).
             async Task ExchangeAccessTokenAsync()
             {
                 httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
@@ -384,9 +382,10 @@ server.MessageReceived += (_, args) =>
                     return;
                 }
                 
-                var accountPath = Path.Join(dataPath, HashSha256String(tokenData.RefreshToken));
+                var accountPath = Path.Join(dataPath, meData.Data.Id);
                 if (!File.Exists(accountPath))
                 {
+                    // Create new accountData for this client
                     var accountData = new AccountData(meData.Data.Name, "", "", 0, new List<int>(), tokenData.RefreshToken, false);
                     File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
                     refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
@@ -397,23 +396,34 @@ server.MessageReceived += (_, args) =>
                     await server.SendAsync(args.Client, tokenBuffer);
                 }
                 
-                // If they already have an account, we can simply authenticate them
-                if (RedditAuthenticate(tokenData.RefreshToken, out var data))
                 {
-                    clientAccountDatas.Add(args.Client, data);
+                    // If they already have an account, we can simply authenticate them
+                    var accountData = await RedditAuthenticate(tokenData.RefreshToken);
+                    if (accountData is not null)
+                    {
+                        clientAccountDatas.TryAdd(args.Client, accountData);
+                    }
                 }
             }
 
             Task.Run(ExchangeAccessTokenAsync);
             break;
         }
-        case (byte) ClientPackets.RedditAuthenticate: // Mirror of ClientPackets.Authenticate but for reddit oauth accounts
+        // If they already have a RefreshToken in localstorage, then they can simply authenticate and login
+        case (byte) ClientPackets.RedditAuthenticate:
         {
             var refreshToken = Encoding.UTF8.GetString(data);
-            if (RedditAuthenticate(refreshToken, out var accountData))
+
+            async Task AuthenticateClientAsync()
             {
-                clientAccountDatas.TryAdd(args.Client, accountData);
+                var accountData = await RedditAuthenticate(refreshToken);
+                if (accountData is not null)
+                {
+                    clientAccountDatas.TryAdd(args.Client, accountData);
+                }
             }
+
+            Task.Run(AuthenticateClientAsync);
             break;
         }
         
