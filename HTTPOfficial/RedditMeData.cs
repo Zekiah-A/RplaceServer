@@ -1,4 +1,3 @@
 namespace HTTPOfficial;
 
-public record RedditMeResponse(string AccessToken, RedditMeData Data);
-public record RedditMeData(string Id, string Name);
+public record RedditMeResponse(string Id, string Name, string SnoovatarImg);

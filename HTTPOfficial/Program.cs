@@ -76,6 +76,7 @@ var emailAttributes = new EmailAddressAttribute();
 
 // Vanity -> URL of  actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
+httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by zekiahepic)");
 var registeredVanities = new Dictionary<string, string>();
 var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
 var toAuthenticate = new Dictionary<ClientMetadata, string>();
@@ -146,14 +147,14 @@ async Task<AccountData?> RedditAuthenticate(string refreshToken)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-    var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/me", redditSerialiserOptions);
+    var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/api/v1/me", redditSerialiserOptions);
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (meData is null)
     {
         return null;
     }
 
-    var accountPath = Path.Join(dataPath, meData.Data.Id);
+    var accountPath = Path.Join(dataPath, meData.Id);
     return File.Exists(accountPath)
         ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
         : null;
@@ -222,7 +223,7 @@ server.MessageReceived += (_, args) =>
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
             var authCode = string.Join("", codeChars);
-            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(), "", false);
+            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(), false);
             
             toAuthenticate.TryAdd(args.Client, authCode);
             clientAccountDatas.TryAdd(args.Client, accountData);
@@ -375,25 +376,23 @@ server.MessageReceived += (_, args) =>
                 }
                 
                 httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
-                var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/me", redditSerialiserOptions);
+                var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
+                var meStr = await meResponse.Content.ReadAsStringAsync();
+                var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
                 httpClient.DefaultRequestHeaders.Authorization = null;
-                if (meData is null)
+                if (!meResponse.IsSuccessStatusCode || meData is null)
                 {
                     return;
                 }
                 
-                var accountPath = Path.Join(dataPath, meData.Data.Id);
+                var accountPath = Path.Join(dataPath, meData.Id);
                 if (!File.Exists(accountPath))
                 {
                     // Create new accountData for this client
-                    var accountData = new AccountData(meData.Data.Name, "", "", 0, new List<int>(), tokenData.RefreshToken, false);
+                    var accountData = new AccountData(meData.Name, "", "", 0, new List<int>(), false);
                     File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
                     refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
                     refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
-
-                    var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
-                    tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
-                    await server.SendAsync(args.Client, tokenBuffer);
                 }
                 
                 {
@@ -402,6 +401,10 @@ server.MessageReceived += (_, args) =>
                     if (accountData is not null)
                     {
                         clientAccountDatas.TryAdd(args.Client, accountData);
+                        
+                        var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
+                        tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
+                        await server.SendAsync(args.Client, tokenBuffer);
                     }
                 }
             }
