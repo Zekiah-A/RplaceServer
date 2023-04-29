@@ -127,11 +127,11 @@ void InvokeLogger(string message)
 }
 
 // This method will consume the first 42 bytes of the input array, be warned
-var emailAuthCompletionSources = new Dictionary<string, TaskCompletionSource>();
+var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
 async Task<AccountData?> Authenticate(string? accountToken, string? name, string? email)
 {
     // If they already have a valid token, we can do a quick and simple auth
-    if (accountTokenAccountNames.TryGetValue(accountToken, out var accountId) && File.Exists(Path.Join(dataPath, accountId)))
+    if (accountToken is not null && accountTokenAccountNames.TryGetValue(accountToken, out var accountId) && File.Exists(Path.Join(dataPath, accountId)))
     {
         return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountId)));
     }
@@ -153,8 +153,8 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
         codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
     }
     var authCode = string.Join("", codeChars);
-    var emailCompletionSource = new TaskCompletionSource();
-    emailAuthCompletionSources.Add(authCode, emailCompletionSource);
+    var emailCompletionSource = new TaskCompletionSource<bool>();
+    emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
     
     var message = new MimeMessage();
     message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
@@ -164,10 +164,9 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
     {
         Text = "<div style=\"background-color: #f0f0f0;\">" + 
                "<h1 style=\"background: orangered;color: white;\">Hello </h1>" +
-               "<p>Someone used your email to register a new rplace account.</p>" +
-               "<p>If that's you, then cool, your code is:</p>" +
+               "<p>Here's your rplace authentication code. Enter it on the site to finish logging in.</p>" +
                "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
-               "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
+               "<p>Be quick, this code will expire in 10 minutes!</p>" +
                "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
                "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
                "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"+
@@ -187,9 +186,9 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
         return null;
     }
 
-    // Wait for response
-    await emailCompletionSource.Task;
-    return accountData;
+    // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode,
+    // once a correct email auth code is provided, we will finally allow them to acess their account data.
+    return await emailCompletionSource.Task ? accountData : null;
 }
 
 async Task<AccountData?> RedditAuthenticate(string refreshToken)
@@ -256,10 +255,10 @@ server.MessageReceived += (_, args) =>
                 return;
             }
             
-            var stringData = Encoding.UTF8.GetString(data).Split("\n");
-            var username = stringData.ElementAtOrDefault(0);
-            var email = stringData.ElementAtOrDefault(1);
-            if (username is null || email is null || username.Length <= 4 || !emailAttributes.IsValid(email))
+            var stringData = Encoding.UTF8.GetString(data);
+            var username = stringData[..32].TrimEnd();
+            var email = stringData[32..352].TrimEnd();
+            if (username.Length <= 4 || !emailAttributes.IsValid(email))
             {
                 var response = Encoding.UTF8.GetBytes("XCould not create account. Invalid information provided!");
                 response[0] = (byte) ServerPackets.Fail;
@@ -273,8 +272,8 @@ server.MessageReceived += (_, args) =>
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
             var authCode = string.Join("", codeChars);
-            var emailCompletionSource = new TaskCompletionSource();
-            emailAuthCompletionSources.Add(authCode, emailCompletionSource);
+            var emailCompletionSource = new TaskCompletionSource<bool>();
+            emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
             var accountData = new AccountData(username, email, 0, new List<int>(),
                 "", "", "", 0, DateTime.Now, new List<Badge>(), false, "");
             clientAccountDatas.TryAdd(args.Client, accountData);
@@ -312,8 +311,12 @@ server.MessageReceived += (_, args) =>
                     InvokeLogger("Could not send email message: " + exception);
                 }
 
-                await emailCompletionSource.Task;
-                File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
+                // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode
+                // once they have given the correct email authentication code, we finally commit saving and creating the account to disk.
+                if (await emailCompletionSource.Task)
+                {
+                    File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
+                }
             }
             
             Task.Run(SendCodeEmailAsync);
@@ -322,9 +325,9 @@ server.MessageReceived += (_, args) =>
         case (byte) ClientPackets.AccountCode:
         {
             var code = Encoding.UTF8.GetString(data);
-            if (emailAuthCompletionSources.TryGetValue(code, out var completionSource))
+            if (emailAuthCompletions.TryGetValue(code, out var completion))
             {
-                completionSource.SetResult();
+                completion.TaskSource.SetResult(completion.StartDate - DateTime.Now <= TimeSpan.FromMinutes(10));
             }
             break;
         }
@@ -332,7 +335,9 @@ server.MessageReceived += (_, args) =>
         {
             if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
-                File.Delete(Path.Join(dataPath, accountData.Username));
+                File.Delete(Path.Join(dataPath, accountData.UsesRedditAuthentication
+                    ? accountData.RedditId
+                    : accountData.Username));
                 // TODO: Tell worker servers to delete all their instances
             }
             break;
