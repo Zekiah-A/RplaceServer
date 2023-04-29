@@ -1,5 +1,4 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
-using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -12,6 +11,7 @@ using MailKit.Security;
 using MimeKit;
 using WatsonWebsocket;
 
+const string alphanumerics = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const string configPath = "server_config.json";
 const string dataPath = "ServerData";
 
@@ -79,12 +79,17 @@ var emailAttributes = new EmailAddressAttribute();
 // Vanity -> URL of  actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
 httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by zekiahepic)");
+// Used by worker servers
 var registeredVanities = new Dictionary<string, string>();
 var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
-var toAuthenticate = new Dictionary<ClientMetadata, string>();
 var clientAccountDatas = new Dictionary<ClientMetadata, AccountData>();
+
+// Used by reddit auth
 var refreshTokenAuthDates = new Dictionary<string, DateTime>();
 var refreshTokenAccessTokens = new Dictionary<string, string>();
+
+// Used by normal normal accounts
+var accountTokenAccountNames = new Dictionary<string, string>();
 var redditSerialiserOptions = new JsonSerializerOptions
 {
     PropertyNameCaseInsensitive = true, 
@@ -122,35 +127,69 @@ void InvokeLogger(string message)
 }
 
 // This method will consume the first 42 bytes of the input array, be warned
-bool Authenticate(ref Span<byte> data, out AccountData accountData)
+var emailAuthCompletionSources = new Dictionary<string, TaskCompletionSource>();
+async Task<AccountData?> Authenticate(string? accountToken, string? name, string? email)
 {
-    if (data.Length < 42)
+    // If they already have a valid token, we can do a quick and simple auth
+    if (accountTokenAccountNames.TryGetValue(accountToken, out var accountId) && File.Exists(Path.Join(dataPath, accountId)))
     {
-        accountData = null!;
-        return false;
+        return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountId)));
     }
     
-    var stringData = Encoding.UTF8.GetString(data);
-    var username = stringData[..10].TrimEnd();
-    var password = stringData[10..42].TrimEnd();
-    var accountPath = Path.Join(dataPath, HashSha256String(username + HashSha256String(password)));
-    data = data[42..];
-
-    if (!File.Exists(accountPath))
+    // We predeserialise their account data using their name to prove that the email they provided is even for this account
+    var accountPath = Path.Join(dataPath, name);
+    var accountData = File.Exists(accountPath)
+        ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
+        : null;
+    if (accountData is null || !accountData.Email.Equals(email))
     {
-        accountData = null!;
-        return false;
-    }
-
-    var account = JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath));
-    if (account is null)
-    {
-        accountData = null!;
-        return false;
+        return null;
     }
     
-    accountData = account;
-    return true;
+    // Otherwise, we have to send them an email so that they can reverify their account and get a new account token
+    var codeChars = new string[10];
+    for (var i = 0; i < 10; i++)
+    {
+        codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
+    }
+    var authCode = string.Join("", codeChars);
+    var emailCompletionSource = new TaskCompletionSource();
+    emailAuthCompletionSources.Add(authCode, emailCompletionSource);
+    
+    var message = new MimeMessage();
+    message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
+    message.To.Add(new MailboxAddress(email, email));
+    message.Subject = "rplace.tk Account Code";
+    message.Body = new TextPart("html")
+    {
+        Text = "<div style=\"background-color: #f0f0f0;\">" + 
+               "<h1 style=\"background: orangered;color: white;\">Hello </h1>" +
+               "<p>Someone used your email to register a new rplace account.</p>" +
+               "<p>If that's you, then cool, your code is:</p>" +
+               "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
+               "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
+               "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
+               "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
+               "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"+
+               "</div>"
+    };
+    try
+    {
+        using var smtpClient = new SmtpClient();
+        await smtpClient.ConnectAsync(config.SmtpHost, config.SmtpPort, SecureSocketOptions.StartTlsWhenAvailable);
+        await smtpClient.AuthenticateAsync(config.EmailUsername, config.EmailPassword);
+        await smtpClient.SendAsync(message);
+        await smtpClient.DisconnectAsync(true);
+    }
+    catch (Exception exception)
+    {
+        InvokeLogger("Could not send email message: " + exception);
+        return null;
+    }
+
+    // Wait for response
+    await emailCompletionSource.Task;
+    return accountData;
 }
 
 async Task<AccountData?> RedditAuthenticate(string refreshToken)
@@ -162,7 +201,7 @@ async Task<AccountData?> RedditAuthenticate(string refreshToken)
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (!meResponse.IsSuccessStatusCode || meData is null)
     {
-        InvokeLogger("Could not request ne data for authentication, reason: " + meResponse.ReasonPhrase);
+        InvokeLogger("Could not request me data for authentication, reason: " + meResponse.ReasonPhrase);
         return null;
     }
     
@@ -217,11 +256,10 @@ server.MessageReceived += (_, args) =>
                 return;
             }
             
-            var stringData = Encoding.UTF8.GetString(data);
-            var username = stringData[..10].TrimEnd();
-            var password = stringData[10..42].TrimEnd();
-            var email = stringData[42..362].TrimEnd();
-            if (username.Length <= 4 || password.Length <= 6 || !emailAttributes.IsValid(email))
+            var stringData = Encoding.UTF8.GetString(data).Split("\n");
+            var username = stringData.ElementAtOrDefault(0);
+            var email = stringData.ElementAtOrDefault(1);
+            if (username is null || email is null || username.Length <= 4 || !emailAttributes.IsValid(email))
             {
                 var response = Encoding.UTF8.GetBytes("XCould not create account. Invalid information provided!");
                 response[0] = (byte) ServerPackets.Fail;
@@ -235,9 +273,10 @@ server.MessageReceived += (_, args) =>
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
             var authCode = string.Join("", codeChars);
-            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(),
+            var emailCompletionSource = new TaskCompletionSource();
+            emailAuthCompletionSources.Add(authCode, emailCompletionSource);
+            var accountData = new AccountData(username, email, 0, new List<int>(),
                 "", "", "", 0, DateTime.Now, new List<Badge>(), false, "");
-            toAuthenticate.TryAdd(args.Client, authCode);
             clientAccountDatas.TryAdd(args.Client, accountData);
 
             async Task SendCodeEmailAsync()
@@ -245,17 +284,19 @@ server.MessageReceived += (_, args) =>
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "rplace.tk Instance Manager Account Code";
+                message.Subject = "rplace.tk Account Code";
                 message.Body = new TextPart("html")
                 {
-                    Text = "<h1>Hello</h1>" +
-                           "<p>Someone used your email to register a new rplace instance manager account.</p>" +
+                    Text = "<div style=\"background-color: #f0f0f0;\">" + 
+                           "<h1 style=\"background: orangered;color: white;\">Hello </h1>" +
+                           "<p>Someone used your email to register a new rplace account.</p>" +
                            "<p>If that's you, then cool, your code is:</p>" +
                            "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
                            "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
                            "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
                            "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
-                           "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"
+                           "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"+
+                           "</div>"
                 };
                 
                 try
@@ -268,8 +309,11 @@ server.MessageReceived += (_, args) =>
                 }
                 catch (Exception exception)
                 {
-                    Console.WriteLine("Could not send email message: " + exception);
+                    InvokeLogger("Could not send email message: " + exception);
                 }
+
+                await emailCompletionSource.Task;
+                File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
             }
             
             Task.Run(SendCodeEmailAsync);
@@ -277,37 +321,18 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) ClientPackets.AccountCode:
         {
-            if (!toAuthenticate.TryGetValue(args.Client, out var realCode))
-            {
-                var response = Encoding.UTF8.GetBytes("XCould not create account. No pending account found!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
-
             var code = Encoding.UTF8.GetString(data);
-            if (!realCode.Equals(code.Trim().Replace(" ", "")))
+            if (emailAuthCompletionSources.TryGetValue(code, out var completionSource))
             {
-                var response = Encoding.UTF8.GetBytes("XCould not create account. Code was invalid!");
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                
-                toAuthenticate.Remove(args.Client);
-                return;
+                completionSource.SetResult();
             }
-
-            var accountData = clientAccountDatas[args.Client];
-            File.WriteAllText(Path.Join(dataPath,
-                HashSha256String(accountData.Username + accountData.Password)),
-                JsonSerializer.Serialize(accountData));
-            toAuthenticate.Remove(args.Client);
             break;
         }
         case (byte) ClientPackets.DeleteAccount:
         {
             if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
-                File.Delete(Path.Join(dataPath, HashSha256String(accountData.Username + accountData.Password)));
+                File.Delete(Path.Join(dataPath, accountData.Username));
                 // TODO: Tell worker servers to delete all their instances
             }
             break;
@@ -324,10 +349,29 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) ClientPackets.Authenticate:
         {
-            if (Authenticate(ref data, out var accountData))
+            var text = Encoding.UTF8.GetString(data);
+            var name = text.Split("\n").ElementAtOrDefault(0);
+            var email = text.Split("\n").ElementAtOrDefault(1);
+
+            async Task AuthenticateClientAsync()
             {
-                clientAccountDatas.TryAdd(args.Client, accountData);
+                // Either text will be invalid, or name and email
+                var accountData = await Authenticate(text, name, email);
+                if (accountData is not null)
+                {
+                    clientAccountDatas.TryAdd(args.Client, accountData);
+                    // TODO: More crypto secure random for account tokens
+                    var tokenChars = new char[60];
+                    for (var i = 0; i < 64; i++)
+                    {
+                        tokenChars[i] = alphanumerics[random.Next(alphanumerics.Length - 1)];
+                    }
+                    var accountToken = string.Join("", tokenChars);
+                    accountTokenAccountNames.Add(accountToken, accountData.Username);
+                }
             }
+
+            Task.Run(AuthenticateClientAsync);
             break;
         }
         case (byte) ClientPackets.LocateVanity:
@@ -402,7 +446,7 @@ server.MessageReceived += (_, args) =>
                 if (!File.Exists(accountPath))
                 {
                     // Create new accountData for this client
-                    var accountData = new AccountData(meData.Name, "", "", 0, new List<int>(),
+                    var accountData = new AccountData(meData.Name, "", 0, new List<int>(),
                         "", "", meData.Name, 0, DateTime.Now, new List<Badge>(), true, meData.Id);
                     File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
                     refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
@@ -417,7 +461,7 @@ server.MessageReceived += (_, args) =>
                         clientAccountDatas.TryAdd(args.Client, accountData);
                         
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
-                        tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
+                        tokenBuffer[0] = (byte) ServerPackets.AccountToken;
                         await server.SendAsync(args.Client, tokenBuffer);
                         InvokeLogger($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
                     }
@@ -466,7 +510,7 @@ server.MessageReceived += (_, args) =>
                     accountData.Username = input;
                     break;
                 }
-                case (byte) PublicEditableData.DiscordHandle:
+                case (byte) PublicEditableData.DiscordId:
                 {
                     var input = Encoding.UTF8.GetString(data[1..]);
                     if (!Regex.IsMatch(input, @"^.{3,32}#[0-9]{4}$"))
@@ -474,7 +518,7 @@ server.MessageReceived += (_, args) =>
                         return;
                     }
 
-                    accountData.DiscordHandle = input;
+                    accountData.DiscordId = input;
                     break;
                 }
                 case (byte) PublicEditableData.TwitterHandle:
@@ -517,16 +561,30 @@ server.MessageReceived += (_, args) =>
             }
             
             var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
-                    ? HashSha256String(accountData.Username + accountData.Password)
+                    ? accountData.Username
                     : accountData.RedditId);
             File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+            break;
+        }
+        case (byte) ClientPackets.ProfileInfo:
+        {
+            var id = Encoding.UTF8.GetString(data);
+            var accountPath = Path.Join(dataPath, id);
+            if (File.Exists(accountPath))
+            {
+                var buffer = Encoding.UTF8.GetBytes("X" + JsonSerializer.Deserialize<AccountProfile>(File.ReadAllText(accountPath)));
+                buffer[0] = (byte) ServerPackets.AccountProfile;
+                server.SendAsync(args.Client, buffer);
+            }
             break;
         }
         
         //TODO: BREAKING - In order to authenticate with different methods, such as via reddit oauth, standard login, or whatever is added
         //TODO: in the future, the packets should be structured as |(byte) authLength|(byte) authType (standard|reddit)|(n) authPayload|....
+        //TODO: This is all broken, both reddit and normal accounts now use tokens. Switch to this eventually.
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
+        /*
         case (byte) WorkerPackets.AnnounceExistence:
         {
             if (data.Length < 8)
@@ -614,9 +672,7 @@ server.MessageReceived += (_, args) =>
                     accountData.Instances.Add(instanceId);
                     responseBuffer[5] = 1; // Successfully authenticated
                     server.SendAsync(args.Client, responseBuffer);
-                    File.WriteAllText(Path.Join(dataPath,
-                        HashSha256String(accountData.Username + accountData.Password)),
-                        JsonSerializer.Serialize(accountData));
+                    File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
                     break;
                 }
                 // A client has just asked the worker server to delete an instance, the worker server then checks with the auth server
@@ -628,9 +684,7 @@ server.MessageReceived += (_, args) =>
                     accountData.Instances.Remove(instanceId);
                     responseBuffer[5] = 1; // Failed to authenticate
                     server.SendAsync(args.Client, responseBuffer);
-                    File.WriteAllText(Path.Join(dataPath,
-                        HashSha256String(accountData.Username + accountData.Password)),
-                        JsonSerializer.Serialize(accountData));
+                    File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
                     break;
                 }
                 // A client has just asked the worker server to modify, subscribe to, or have some other kind of access to a
@@ -665,6 +719,7 @@ server.MessageReceived += (_, args) =>
             }
             break;
         }
+        */
     }
 };
 server.ClientDisconnected += (_, args) =>

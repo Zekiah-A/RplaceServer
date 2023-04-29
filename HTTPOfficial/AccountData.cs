@@ -2,7 +2,6 @@ namespace HTTPOfficial;
 
 public record AccountData (
     string Username,
-    string Password,
     string Email,
     int AccountTier,
     List<int> Instances,
@@ -14,7 +13,7 @@ public record AccountData (
     List<Badge> Badges,
     bool UsesRedditAuthentication,
     string RedditId
-)  : PublicData(
+)  : AccountProfile(
     Username,
     DiscordHandle,
     TwitterHandle,

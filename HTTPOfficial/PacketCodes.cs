@@ -13,7 +13,8 @@ public enum ClientPackets : byte
     VanityAvailable,
     RedditCreateAccount,
     RedditAuthenticate,
-    UpdateProfile
+    UpdateProfile,
+    ProfileInfo
 }
 
 public enum ServerPackets : byte
@@ -24,8 +25,9 @@ public enum ServerPackets : byte
     VanityLocation,
     WorkerLocations,
     AvailableVanity,
-    RedditRefreshToken,
-    
+    AccountToken,
+    AccountProfile,
+
     // Sent to worker server
     Authorised = 130
 }

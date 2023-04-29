@@ -3,7 +3,7 @@ namespace HTTPOfficial;
 public enum PublicEditableData : byte
 {
     Username,
-    DiscordHandle,
+    DiscordId,
     TwitterHandle,
     RedditHandle,
     Badges

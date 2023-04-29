@@ -1,8 +1,8 @@
 namespace HTTPOfficial;
 
-public record PublicData(
+public record AccountProfile(
     string Username,
-    string DiscordHandle,
+    string DiscordId,
     string TwitterHandle,
     string RedditHandle,
     int PixelsPlaced,
@@ -11,7 +11,7 @@ public record PublicData(
     bool UsesRedditAuthentication)
 {
     public string Username { get; set; } = Username;
-    public string DiscordHandle { get; set; } = DiscordHandle;
+    public string DiscordId { get; set; } = DiscordId;
     public string TwitterHandle { get; set; } = TwitterHandle;
     public string RedditHandle { get; set; } = RedditHandle;
     public int PixelsPlaced { get; set; } = PixelsPlaced;
