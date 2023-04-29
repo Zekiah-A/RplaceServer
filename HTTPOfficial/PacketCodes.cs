@@ -1,6 +1,6 @@
 namespace HTTPOfficial;
 
-public enum ClientPackets
+public enum ClientPackets : byte
 {
     DeleteAccount,
     UpdateAccount,
@@ -12,10 +12,11 @@ public enum ClientPackets
     LocateWorkers,
     VanityAvailable,
     RedditCreateAccount,
-    RedditAuthenticate
+    RedditAuthenticate,
+    UpdateProfile
 }
 
-public enum ServerPackets
+public enum ServerPackets : byte
 {
     // Sent to clients
     Fail,
@@ -29,7 +30,7 @@ public enum ServerPackets
     Authorised = 130
 }
 
-public enum WorkerPackets
+public enum WorkerPackets : byte
 {
     AuthenticateCreate = 128,
     AuthenticateDelete = 129,

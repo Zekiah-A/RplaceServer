@@ -1,6 +1,6 @@
 namespace RplaceServer.Types;
 
-public enum ClientPacket
+public enum ClientPacket : byte
 {
     PixelPlace = 4,
     ChatMessage = 15,

@@ -129,6 +129,8 @@ int NextWebPort()
     return next;
 }
 
+//TODO: BREAKING - In order to authenticate with different methods, such as via reddit oauth, standard login, or whatever is added
+//TODO: in the future, the packets should be structured as |(byte) authLength|(byte) authType (standard|reddit)|(n) authPayload|....
 void AttachSubscribers(int instanceId)
 {
     if (!instances.TryGetValue(instanceId, out var instance))

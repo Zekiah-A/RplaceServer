@@ -1,6 +1,6 @@
 namespace RplaceServer.Types;
 
-public enum ServerPacket
+public enum ServerPacket : byte
 {
     Palette = 0,
     CanvasInfo = 1,

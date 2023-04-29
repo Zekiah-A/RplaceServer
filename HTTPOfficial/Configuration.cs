@@ -12,4 +12,5 @@ public record struct Configuration(
     List<string> KnownWorkers,
     string InstanceKey,
     string RedditAuthClientId,
-    string RedditAuthClientSecret);
+    string RedditAuthClientSecret,
+    bool Logger);

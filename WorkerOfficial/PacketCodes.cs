@@ -1,6 +1,6 @@
 namespace WorkerOfficial;
 
-public enum WorkerPackets
+public enum WorkerPackets : byte
 {
     // Sent to clients
     Logger,
@@ -19,12 +19,12 @@ public enum WorkerPackets
     AnnounceVanity = 133
 }
 
-public enum ServerPackets
+public enum ServerPackets : byte
 {
     Authorised = 130
 }
 
-public enum ClientPackets
+public enum ClientPackets : byte
 {
     CreateInstance,
     DeleteInstance,

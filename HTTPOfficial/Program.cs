@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HTTPOfficial;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -32,7 +33,8 @@ async Task CreateConfig()
             new List<string>(),
             Guid.NewGuid().ToString(),
             "MY_REDDIT_API_APPLICATION_CLIENT_ID",
-            "MY_REDDIT_API_APPLICATION_CLIENT_SECRET");
+            "MY_REDDIT_API_APPLICATION_CLIENT_SECRET",
+            true);
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
     await configFile.FlushAsync();
     
@@ -111,6 +113,14 @@ async Task UpdateConfigAsync()
     await configFile.FlushAsync();
 }
 
+void InvokeLogger(string message)
+{
+    if (config.Logger)
+    {
+        Console.WriteLine("[WebServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
+    }
+}
+
 // This method will consume the first 42 bytes of the input array, be warned
 bool Authenticate(ref Span<byte> data, out AccountData accountData)
 {
@@ -147,13 +157,15 @@ async Task<AccountData?> RedditAuthenticate(string refreshToken)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-    var meData = await httpClient.GetFromJsonAsync<RedditMeResponse>("https://oauth.reddit.com/api/v1/me", redditSerialiserOptions);
+    var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
+    var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
     httpClient.DefaultRequestHeaders.Authorization = null;
-    if (meData is null)
+    if (!meResponse.IsSuccessStatusCode || meData is null)
     {
+        InvokeLogger("Could not request ne data for authentication, reason: " + meResponse.ReasonPhrase);
         return null;
     }
-
+    
     var accountPath = Path.Join(dataPath, meData.Id);
     return File.Exists(accountPath)
         ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
@@ -179,10 +191,10 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
         
     var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
     var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
-    // We need to make ultra sure this auth will never be sent to someone else
     httpClient.DefaultRequestHeaders.Authorization = null;
-    if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
+    if (!tokenResponse.IsSuccessStatusCode || tokenData is null)
     {
+        InvokeLogger("Could not get or update access token, token response was non-positive: " + tokenResponse.ReasonPhrase);
         return null;
     }
     
@@ -223,8 +235,8 @@ server.MessageReceived += (_, args) =>
                 codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
             }
             var authCode = string.Join("", codeChars);
-            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(), false);
-            
+            var accountData = new AccountData(username, HashSha256String(password), email, 0, new List<int>(),
+                "", "", "", 0, DateTime.Now, new List<Badge>(), false, "");
             toAuthenticate.TryAdd(args.Client, authCode);
             clientAccountDatas.TryAdd(args.Client, accountData);
 
@@ -372,16 +384,17 @@ server.MessageReceived += (_, args) =>
                 httpClient.DefaultRequestHeaders.Authorization = null;
                 if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
                 {
+                    InvokeLogger("Client create account rejected for failed access taken retrieval, reason: " + tokenResponse.ReasonPhrase);
                     return;
                 }
                 
                 httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
-                var meStr = await meResponse.Content.ReadAsStringAsync();
                 var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
                 httpClient.DefaultRequestHeaders.Authorization = null;
                 if (!meResponse.IsSuccessStatusCode || meData is null)
                 {
+                    InvokeLogger("Client create account rejected for null me API response, reason: " + tokenResponse.ReasonPhrase);
                     return;
                 }
                 
@@ -389,7 +402,8 @@ server.MessageReceived += (_, args) =>
                 if (!File.Exists(accountPath))
                 {
                     // Create new accountData for this client
-                    var accountData = new AccountData(meData.Name, "", "", 0, new List<int>(), false);
+                    var accountData = new AccountData(meData.Name, "", "", 0, new List<int>(),
+                        "", "", meData.Name, 0, DateTime.Now, new List<Badge>(), true, meData.Id);
                     File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
                     refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
                     refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
@@ -405,7 +419,10 @@ server.MessageReceived += (_, args) =>
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
                         tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
                         await server.SendAsync(args.Client, tokenBuffer);
+                        InvokeLogger($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
                     }
+                    
+                    InvokeLogger($"Client create account {meData.Name} succeeded for client: {args.Client.IpPort}");
                 }
             }
 
@@ -429,7 +446,85 @@ server.MessageReceived += (_, args) =>
             Task.Run(AuthenticateClientAsync);
             break;
         }
+        case (byte) ClientPackets.UpdateProfile:
+        {
+            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            {
+                return;
+            }
+            
+            switch (data[0])
+            {
+                case (byte) PublicEditableData.Username:
+                {
+                    var input = Encoding.UTF8.GetString(data[1..]);
+                    if (input.Length is < 0 or > 20)
+                    {
+                        return;
+                    }
+
+                    accountData.Username = input;
+                    break;
+                }
+                case (byte) PublicEditableData.DiscordHandle:
+                {
+                    var input = Encoding.UTF8.GetString(data[1..]);
+                    if (!Regex.IsMatch(input, @"^.{3,32}#[0-9]{4}$"))
+                    {
+                        return;
+                    }
+
+                    accountData.DiscordHandle = input;
+                    break;
+                }
+                case (byte) PublicEditableData.TwitterHandle:
+                {
+                    var input = Encoding.UTF8.GetString(data[1..]);
+                    if (!Regex.IsMatch(input, @"^.{3,32}#[0-9]{4}$"))
+                    {
+                        return;
+                    }
+
+                    accountData.TwitterHandle = input;
+                    break;
+                }
+                case (byte) PublicEditableData.RedditHandle:
+                {
+                    var input = Encoding.UTF8.GetString(data[1..]);
+                    if (!Regex.IsMatch(input, @"^(/ua/)?[A-Za-z0-9_-]+$") || accountData.UsesRedditAuthentication)
+                    {
+                        return;
+                    }
+
+                    accountData.RedditHandle = input;
+                    break;
+                }
+                case (byte) PublicEditableData.Badges:
+                {
+                    if (data[1] == (byte) Badge.Gay)
+                    {
+                        if (data[0] == 1)
+                        {
+                            accountData.Badges.Add(Badge.Gay);
+                        }
+                        else
+                        {
+                            accountData.Badges.Remove(Badge.Gay);
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
+                    ? HashSha256String(accountData.Username + accountData.Password)
+                    : accountData.RedditId);
+            File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+            break;
+        }
         
+        //TODO: BREAKING - In order to authenticate with different methods, such as via reddit oauth, standard login, or whatever is added
+        //TODO: in the future, the packets should be structured as |(byte) authLength|(byte) authType (standard|reddit)|(n) authPayload|....
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
         case (byte) WorkerPackets.AnnounceExistence:
