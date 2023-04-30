@@ -132,9 +132,9 @@ var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
 async Task<AccountData?> Authenticate(string? accountToken, string? name, string? email)
 {
     // If they already have a valid token, we can do a quick and simple auth
-    if (accountToken is not null && accountTokenAccountNames.TryGetValue(accountToken, out var accountId) && File.Exists(Path.Join(dataPath, accountId)))
+    if (accountToken is not null && accountTokenAccountNames.TryGetValue(accountToken, out var accountName) && File.Exists(Path.Join(dataPath, accountName)))
     {
-        return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountId)));
+        return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountName)));
     }
     
     // We pre-deserialise their account data using their name to prove that the email they provided is even for this account
@@ -144,6 +144,7 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
         : null;
     if (accountData is null || !accountData.Email.Equals(email))
     {
+        InvokeLogger("Account data was null or email provided was invalid, could not authenticate account login.");
         return null;
     }
     
@@ -366,8 +367,8 @@ server.MessageReceived += (_, args) =>
         case (byte) ClientPackets.Authenticate:
         {
             var text = Encoding.UTF8.GetString(data);
-            var name = text.Split("\n").ElementAtOrDefault(0);
-            var email = text.Split("\n").ElementAtOrDefault(1);
+            var name = text.Length >= 352 ? text[..32] : null;
+            var email = text.Length >= 352 ? text[32..352] : null;
 
             async Task AuthenticateClientAsync()
             {
