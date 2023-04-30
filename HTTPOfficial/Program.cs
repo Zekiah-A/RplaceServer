@@ -328,6 +328,14 @@ server.MessageReceived += (_, args) =>
                 if (await emailCompletionSource.Task)
                 {
                     File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
+                    
+                    // Send them their token and sign them in
+                    clientAccountDatas.TryAdd(args.Client, accountData);
+                    var accountToken = RandomNumberGenerator.GetHexString(64);
+                    accountTokenAccountNames.Add(accountToken, accountData.Username);
+                    var tokenBuffer = Encoding.UTF8.GetBytes("X" + accountToken);
+                    tokenBuffer[0] = (byte) ServerPackets.AccountToken;
+                    await server.SendAsync(args.Client, tokenBuffer);
                 }
             }
             
