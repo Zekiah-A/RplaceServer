@@ -3,7 +3,7 @@ namespace HTTPOfficial;
 public enum ClientPackets : byte
 {
     DeleteAccount,
-    UpdateAccount,
+    UpdateAccount, // PLACEHOLDER/DEPRECATED
     CreateAccount,
     AccountCode,
     AccountInfo,
@@ -25,8 +25,9 @@ public enum ServerPackets : byte
     VanityLocation,
     WorkerLocations,
     AvailableVanity,
-    AccountToken,
+    AccountToken, // Account token used for normal auth
     AccountProfile,
+    RedditRefreshToken, // Refresh token used for reddit OAuth
 
     // Sent to worker server
     Authorised = 130

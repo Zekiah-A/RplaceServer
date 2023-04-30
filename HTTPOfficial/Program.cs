@@ -477,7 +477,7 @@ server.MessageReceived += (_, args) =>
                         clientAccountDatas.TryAdd(args.Client, accountData);
                         
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
-                        tokenBuffer[0] = (byte) ServerPackets.AccountToken;
+                        tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
                         await server.SendAsync(args.Client, tokenBuffer);
                         InvokeLogger($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
                     }
