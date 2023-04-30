@@ -368,15 +368,20 @@ server.MessageReceived += (_, args) =>
         case (byte) ClientPackets.Authenticate:
         {
             var text = Encoding.UTF8.GetString(data);
+            var token = text.Trim();
             var name = text.Length >= 352 ? text[..32].Trim() : null;
             var email = text.Length >= 352 ? text[32..352].Trim() : null;
 
             async Task AuthenticateClientAsync()
             {
                 // Either text will be invalid, or name and email
-                var accountData = await Authenticate(text, name, email);
+                var accountData = await Authenticate(token, name, email);
                 if (accountData is not null)
                 {
+                    // Regardless of if they are autologging in with account token, or signing in for the first time on
+                    // that device with an email code, we make sure to invalidate their previous token and give them a
+                    // new one after every authentication. 
+                    accountTokenAccountNames.Remove(token);
                     clientAccountDatas.TryAdd(args.Client, accountData);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountNames.Add(accountToken, accountData.Username);
