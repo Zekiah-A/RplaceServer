@@ -127,8 +127,9 @@ void InvokeLogger(string message)
     }
 }
 
-// This method will consume the first 42 bytes of the input array, be warned
 var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
+// Either accountToken is valid, which allows immediate authentication, or if accountToken is null/invalid, while name and email
+// are valid, the user will be prompted to use slower email authentication with an email code.
 async Task<AccountData?> Authenticate(string? accountToken, string? name, string? email)
 {
     // If they already have a valid token, we can do a quick and simple auth
@@ -367,8 +368,8 @@ server.MessageReceived += (_, args) =>
         case (byte) ClientPackets.Authenticate:
         {
             var text = Encoding.UTF8.GetString(data);
-            var name = text.Length >= 352 ? text[..32] : null;
-            var email = text.Length >= 352 ? text[32..352] : null;
+            var name = text.Length >= 352 ? text[..32].Trim() : null;
+            var email = text.Length >= 352 ? text[32..352].Trim() : null;
 
             async Task AuthenticateClientAsync()
             {
