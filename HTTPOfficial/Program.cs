@@ -1,4 +1,6 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
+
+using System.Buffers.Binary;
 using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -136,7 +138,7 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
         return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountId)));
     }
     
-    // We predeserialise their account data using their name to prove that the email they provided is even for this account
+    // We pre-deserialise their account data using their name to prove that the email they provided is even for this account
     var accountPath = Path.Join(dataPath, name);
     var accountData = File.Exists(accountPath)
         ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
@@ -162,15 +164,19 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
     message.Subject = "rplace.tk Account Code";
     message.Body = new TextPart("html")
     {
-        Text = "<div style=\"background-color: #f0f0f0;\">" + 
-               "<h1 style=\"background: orangered;color: white;\">Hello </h1>" +
-               "<p>Here's your rplace authentication code. Enter it on the site to finish logging in.</p>" +
-               "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
-               "<p>Be quick, this code will expire in 10 minutes!</p>" +
-               "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
-               "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
-               "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"+
-               "</div>"
+        Text = $"""
+            <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
+                <h1 style="background: orangered;color: white;">Hello </h1>
+                <div style="margin: 8px;">
+                    <p>Here's your rplace authentication code. Enter it on the site to finish logging in.</p>
+                    <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;">{authCode}</h1>
+                    <p>Be quick, this code will expire in 10 minutes!</p>
+                    <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
+                    <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
+                    <a href="https://rplace.tk" style="text-decoration: none;">https://rplace.tk</a></p>
+                </div>
+            </div>
+            """
     };
     try
     {
@@ -286,16 +292,20 @@ server.MessageReceived += (_, args) =>
                 message.Subject = "rplace.tk Account Code";
                 message.Body = new TextPart("html")
                 {
-                    Text = "<div style=\"background-color: #f0f0f0;\">" + 
-                           "<h1 style=\"background: orangered;color: white;\">Hello </h1>" +
-                           "<p>Someone used your email to register a new rplace account.</p>" +
-                           "<p>If that's you, then cool, your code is:</p>" +
-                           "<h1 style=\"background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;\">" + authCode + "</h1>" +
-                           "<p>Otherwise, you can ignore this email, who cares anyway??</p>" +
-                           "<img src=\"https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png\">" +
-                           "<p style=\"opacity: 0.6;\">Email sent at " + DateTime.Now + " | Feel free to reply |" +
-                           "<a href=\"https://rplace.tk\" style=\"text-decoration: none;\">https://rplace.tk</a></p>"+
-                           "</div>"
+                    Text = $"""
+                        <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
+                            <h1 style="background: orangered;color: white;">Hello </h1>
+                            <div style="margin: 8px;">
+                                <p>Someone used your email to register a new rplace account.</p>
+                                <p>If that's you, then cool, your code is:</p>
+                                <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
+                                <p>Otherwise, you can ignore this email, who cares anyway??</p>
+                                <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
+                                <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
+                                <a href="https://rplace.tk" style="text-decoration: none;">https://rplace.tk</a></p>
+                            <div>
+                        </div>
+                        """
                 };
                 
                 try
@@ -335,10 +345,11 @@ server.MessageReceived += (_, args) =>
         {
             if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
             {
+                // TODO: Tell worker servers to delete all their instances
+                clientAccountDatas.Remove(args.Client);
                 File.Delete(Path.Join(dataPath, accountData.UsesRedditAuthentication
                     ? accountData.RedditId
                     : accountData.Username));
-                // TODO: Tell worker servers to delete all their instances
             }
             break;
         }
@@ -365,13 +376,7 @@ server.MessageReceived += (_, args) =>
                 if (accountData is not null)
                 {
                     clientAccountDatas.TryAdd(args.Client, accountData);
-                    // TODO: More crypto secure random for account tokens
-                    var tokenChars = new char[60];
-                    for (var i = 0; i < 64; i++)
-                    {
-                        tokenChars[i] = alphanumerics[random.Next(alphanumerics.Length - 1)];
-                    }
-                    var accountToken = string.Join("", tokenChars);
+                    var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountNames.Add(accountToken, accountData.Username);
                 }
             }
@@ -507,7 +512,7 @@ server.MessageReceived += (_, args) =>
                 case (byte) PublicEditableData.Username:
                 {
                     var input = Encoding.UTF8.GetString(data[1..]);
-                    if (input.Length is < 0 or > 20)
+                    if (input.Length is < 0 or > 32)
                     {
                         return;
                     }
@@ -517,19 +522,15 @@ server.MessageReceived += (_, args) =>
                 }
                 case (byte) PublicEditableData.DiscordId:
                 {
-                    var input = Encoding.UTF8.GetString(data[1..]);
-                    if (!Regex.IsMatch(input, @"^.{3,32}#[0-9]{4}$"))
-                    {
-                        return;
-                    }
-
-                    accountData.DiscordId = input;
+                    //TODO: Validate
+                    var snowflake = BinaryPrimitives.ReadInt64BigEndian(data[1..]);
+                    accountData.DiscordId = snowflake.ToString();
                     break;
                 }
                 case (byte) PublicEditableData.TwitterHandle:
                 {
                     var input = Encoding.UTF8.GetString(data[1..]);
-                    if (!Regex.IsMatch(input, @"^.{3,32}#[0-9]{4}$"))
+                    if (!TwitterHandleRegex().IsMatch(input))
                     {
                         return;
                     }
@@ -540,7 +541,7 @@ server.MessageReceived += (_, args) =>
                 case (byte) PublicEditableData.RedditHandle:
                 {
                     var input = Encoding.UTF8.GetString(data[1..]);
-                    if (!Regex.IsMatch(input, @"^(/ua/)?[A-Za-z0-9_-]+$") || accountData.UsesRedditAuthentication)
+                    if (!RedditHandleRegex().IsMatch(input) || accountData.UsesRedditAuthentication)
                     {
                         return;
                     }
@@ -550,16 +551,18 @@ server.MessageReceived += (_, args) =>
                 }
                 case (byte) PublicEditableData.Badges:
                 {
-                    if (data[1] == (byte) Badge.Gay)
+                    if ((Badge) data[1] is not Badge.EthicalBotter or Badge.Gay or Badge.ScriptKiddie)
                     {
-                        if (data[0] == 1)
-                        {
-                            accountData.Badges.Add(Badge.Gay);
-                        }
-                        else
-                        {
-                            accountData.Badges.Remove(Badge.Gay);
-                        }
+                        return;
+                    }
+                    
+                    if (data[0] == 1)
+                    {
+                        accountData.Badges.Add((Badge) data[1]);
+                    }
+                    else
+                    {
+                        accountData.Badges.Add((Badge) data[1]);
                     }
                     break;
                 }
@@ -746,3 +749,15 @@ Console.WriteLine("Server listening on port " + config.Port);
 server.Logger = Console.WriteLine;
 await server.StartAsync();
 await Task.Delay(-1);
+
+partial class Program
+{
+    [GeneratedRegex(@"^.{3,32}#[0-9]{4}$")]
+    private static partial Regex TwitterHandleRegex();
+}
+
+partial class Program
+{
+    [GeneratedRegex(@"^(/ua/)?[A-Za-z0-9_-]+$")]
+    private static partial Regex RedditHandleRegex();
+}
