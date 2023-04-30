@@ -13,7 +13,7 @@ using WatsonWebsocket;
 
 namespace RplaceServer;
 
-public sealed class SocketServer
+public sealed partial class SocketServer
 {
     private readonly HttpClient httpClient = new();
     private readonly WatsonWsServer app;
@@ -23,12 +23,6 @@ public sealed class SocketServer
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
-    private static readonly Regex CensoredWordsRegex =
-        new(@"\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\b|ing\b|ed\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex BlockedDomainsRegex =
-        new(@"(https?://)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*/?",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly List<string> AllowedDomains = new()
     {
         "https://rplace.tk", "https://discord.com", "https://google.com", "https://wikipedia.org", "https://pxls.space",
@@ -40,6 +34,12 @@ public sealed class SocketServer
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
     public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
+    [GeneratedRegex("\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
+    public static partial Regex CensoredWordsRegex();
+    [GeneratedRegex("(https?://)?([\\da-z.-]+)\\.([a-z.]{2,6})([/\\w .-]*)*/?", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
+    public static partial Regex BlockedDomainsRegex();
+    [GeneratedRegex("\\W+")]
+    private static partial Regex PlayerNameRegex();
 
     public SocketServer(GameData data, string certPath, string keyPath, string originHeader, bool ssl, int port)
     {
@@ -65,15 +65,16 @@ public sealed class SocketServer
         var realIpPort = args.Client.IpPort;
         var realIp = realIpPort.Split(":").FirstOrDefault() ?? realIpPort;
         
+        // Resolve the real IPs from reverse-proxied addresses
         if ((args.Client.IpPort.StartsWith("::1") || args.Client.IpPort.StartsWith("localhost") ||
-             args.Client.IpPort.StartsWith("127.0.0.1")) && args.HttpRequest.Headers.ContainsKey("X-Forwarded-For"))
+             args.Client.IpPort.StartsWith("127.0.0.1")) && args.HttpRequest.Headers.TryGetValue("X-Forwarded-For", out var forwardedForHeader))
         {
-            var addresses = args.HttpRequest.Headers["X-Forwarded-For"].ToString().Split(",", StringSplitOptions.RemoveEmptyEntries);
+            var addresses = forwardedForHeader.ToString().Split(",", StringSplitOptions.RemoveEmptyEntries);
             realIpPort = addresses.FirstOrDefault() ?? args.Client.IpPort;
         }
         
         // Reject
-        if ((!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin) || gameData.Bans.Contains(realIp))
+        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin || gameData.Bans.Contains(realIp))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating ban or initial headers checks");
             app.DisconnectClient(args.Client);
@@ -110,14 +111,7 @@ public sealed class SocketServer
         if (gameData.CaptchaEnabled)
         {
             var result = CaptchaGenerator.Generate(CaptchaType.Emoji);
-            if (gameData.PendingCaptchas.ContainsKey(realIp))
-            {
-                gameData.PendingCaptchas[realIp] = result.Answer;
-            }
-            else
-            {
-                gameData.PendingCaptchas.Add(realIp, result.Answer);
-            }
+            gameData.PendingCaptchas[realIp] = result.Answer;
 
             var dummiesSize = Encoding.UTF8.GetByteCount(result.Dummies);
             var captchaBuffer = new byte[3 + dummiesSize + result.ImageData.Length];
@@ -255,7 +249,7 @@ public sealed class SocketServer
 
                 message = gameData.CensorChatMessages ? message : CensorText(message);
                 name = gameData.CensorChatMessages ? CensorText(name) : name;
-                name = new Regex(@"\W+").Replace(name, "").ToLowerInvariant();
+                name = PlayerNameRegex().Replace(name, "").ToLowerInvariant();
                 
                 var type = splitText.ElementAtOrDefault(3) switch
                 {
@@ -460,8 +454,8 @@ public sealed class SocketServer
     
     public static string CensorText(string text)
     {
-        var censoredText = CensoredWordsRegex.Replace(text, match => new string('*', match.Length));
-        censoredText = BlockedDomainsRegex.Replace(censoredText, match =>
+        var censoredText = CensoredWordsRegex().Replace(text, match => new string('*', match.Length));
+        censoredText = BlockedDomainsRegex().Replace(censoredText, match =>
         {
             var url = match.ToString();
             var domain = url.Replace("http://", "").Replace("https://", "");

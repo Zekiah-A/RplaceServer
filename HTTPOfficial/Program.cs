@@ -48,14 +48,13 @@ async Task CreateConfig()
 
 static string HashSha256String(string rawData)
 {
-    using var sha256Hash = SHA256.Create();
-    var bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(rawData));
-    var builder = new StringBuilder();  
+    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
+    var builder = new StringBuilder();
     foreach (var @byte in bytes)
     {
         builder.Append(@byte.ToString("x2"));
     }
-    
+
     return builder.ToString();
 }
 
@@ -256,8 +255,9 @@ server.MessageReceived += (_, args) =>
     {
         case (byte) ClientPackets.CreateAccount:
         {
-            if (data.Length < 362)
+            if (data.Length < 352)
             {
+                InvokeLogger($"Rejecting account creation from client {args.Client} due to invalid packet length");
                 return;
             }
             
@@ -266,7 +266,7 @@ server.MessageReceived += (_, args) =>
             var email = stringData[32..352].TrimEnd();
             if (username.Length <= 4 || !emailAttributes.IsValid(email))
             {
-                var response = Encoding.UTF8.GetBytes("XCould not create account. Invalid information provided!");
+                var response = "XCould not create account. Invalid information provided!"u8.ToArray();
                 response[0] = (byte) ServerPackets.Fail;
                 server.SendAsync(args.Client, response);
                 return;
@@ -378,6 +378,10 @@ server.MessageReceived += (_, args) =>
                     clientAccountDatas.TryAdd(args.Client, accountData);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountNames.Add(accountToken, accountData.Username);
+                    
+                    var tokenBuffer = Encoding.UTF8.GetBytes("X" + accountToken);
+                    tokenBuffer[0] = (byte) ServerPackets.AccountToken;
+                    await server.SendAsync(args.Client, tokenBuffer);
                 }
             }
 
@@ -569,8 +573,8 @@ server.MessageReceived += (_, args) =>
             }
             
             var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
-                    ? accountData.Username
-                    : accountData.RedditId);
+                    ? accountData.RedditId
+                    : accountData.Username);
             File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
             break;
         }
@@ -735,9 +739,9 @@ server.ClientDisconnected += (_, args) =>
     clientAccountDatas.Remove(args.Client);
 };
 
-Console.CancelKeyPress += (_, _) =>
+Console.CancelKeyPress += async (_, _) =>
 {
-    server.StopAsync();
+    await server.StopAsync();
     Environment.Exit(0);
 };
 AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
