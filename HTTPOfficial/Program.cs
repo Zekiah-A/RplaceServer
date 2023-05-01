@@ -320,6 +320,7 @@ server.MessageReceived += (_, args) =>
                 // once they have given the correct email authentication code, we finally commit saving and creating the account to disk.
                 if (await emailCompletionSource.Task)
                 {
+                    accountData.Badges.Add(Badge.Newbie);
                     File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
                     
                     // Send them their token and sign them in
@@ -480,8 +481,10 @@ server.MessageReceived += (_, args) =>
                     var accountData = await RedditAuthenticate(tokenData.RefreshToken);
                     if (accountData is not null)
                     {
+                        accountData.Badges.Add(Badge.Newbie);
                         clientAccountDatas.TryAdd(args.Client, accountData);
                         
+                        // Send them their token so that they can quickly login again without having to reauthenticate
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
                         tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
                         await server.SendAsync(args.Client, tokenBuffer);
@@ -505,6 +508,28 @@ server.MessageReceived += (_, args) =>
                 var accountData = await RedditAuthenticate(refreshToken);
                 if (accountData is not null)
                 {
+                    // If they have been on the site for 20+ days, we remove their noob badge
+                    if (accountData.Badges.Contains(Badge.Newbie) && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(20))
+                    {
+                        accountData.Badges.Remove(Badge.Newbie);
+                        
+                        var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
+                            ? accountData.RedditId
+                            : accountData.Username);
+                        File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+                    }
+                    if (!accountData.Badges.Contains(Badge.Veteran) &&
+                        DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
+                    {
+                        accountData.Badges.Add(Badge.Veteran);
+                        
+                        var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
+                            ? accountData.RedditId
+                            : accountData.Username);
+                        File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+                    }
+                    
+                    // Add them to server authenticated client memory so they do not have to authenticate each server API call
                     clientAccountDatas.TryAdd(args.Client, accountData);
                 }
             }
