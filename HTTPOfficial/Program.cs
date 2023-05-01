@@ -13,7 +13,6 @@ using MailKit.Security;
 using MimeKit;
 using WatsonWebsocket;
 
-const string alphanumerics = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const string configPath = "server_config.json";
 const string dataPath = "ServerData";
 
@@ -24,7 +23,8 @@ async Task CreateConfig()
 
     await using var configFile = File.OpenWrite(configPath);
     var defaultConfiguration =
-        new Configuration(8080,
+        new Configuration(
+            1234,
             false,
             "",
             "",
@@ -77,7 +77,7 @@ var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(
 var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 var emailAttributes = new EmailAddressAttribute();
 
-// Vanity -> URL of  actual socket server & board, done by worker clients on startup
+// Vanity -> URL of actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
 httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by zekiahepic)");
 // Used by worker servers
@@ -111,13 +111,6 @@ var emojis = new[]
     "😂", "😍", "🚀", "😈", "👟", "🍷", "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "🖱", "😷",
     "🌱", "🏀", "🛠", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
 };
-
-async Task UpdateConfigAsync()
-{
-    await using var configFile = File.OpenWrite(configPath);
-    await JsonSerializer.SerializeAsync(configFile, config, new JsonSerializerOptions { WriteIndented = true });
-    await configFile.FlushAsync();
-}
 
 void InvokeLogger(string message)
 {
@@ -194,7 +187,7 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
     }
 
     // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode,
-    // once a correct email auth code is provided, we will finally allow them to acess their account data.
+    // once a correct email auth code is provided, we will finally allow them to access their account data.
     return await emailCompletionSource.Task ? accountData : null;
 }
 
@@ -386,9 +379,9 @@ server.MessageReceived += (_, args) =>
                 var accountData = await Authenticate(token, name, email);
                 if (accountData is not null)
                 {
-                    // Regardless of if they are autologging in with account token, or signing in for the first time on
-                    // that device with an email code, we make sure to invalidate their previous token and give them a
-                    // new one after every authentication. 
+                    // Regardless of if they are automatically logging in with account token, or logging in for the first
+                    // time on that device with an email code, we make sure to invalidate their previous token and give 
+                    // them a new one after every authentication. 
                     accountTokenAccountNames.Remove(token);
                     clientAccountDatas.TryAdd(args.Client, accountData);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
@@ -570,7 +563,8 @@ server.MessageReceived += (_, args) =>
                 }
                 case (byte) PublicEditableData.Badges:
                 {
-                    if ((Badge) data[1] is not Badge.EthicalBotter or Badge.Gay or Badge.ScriptKiddie)
+                    if ((Badge) data[1] != Badge.EthicalBotter || (Badge) data[1] != Badge.Gay
+                        || (Badge) data[1] != Badge.ScriptKiddie)
                     {
                         return;
                     }
@@ -761,22 +755,33 @@ Console.CancelKeyPress += async (_, _) =>
 };
 AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
 {
-    Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
+    InvokeLogger("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
 };
-
-Console.WriteLine("Server listening on port " + config.Port);
+var expiredAccountCodeTimer = new System.Timers.Timer(TimeSpan.FromMinutes(10))
+{
+    Enabled = true,
+    AutoReset = true
+};
+expiredAccountCodeTimer.Elapsed += (_, _) =>
+{
+    foreach (var completion in emailAuthCompletions)
+    {
+        if (DateTime.Now - completion.Value.StartDate >= TimeSpan.FromMinutes(10))
+        {
+            emailAuthCompletions.Remove(completion.Key);
+        }
+    }
+};
+    
+InvokeLogger("Server listening on port " + config.Port);
 server.Logger = Console.WriteLine;
 await server.StartAsync();
 await Task.Delay(-1);
 
-partial class Program
+internal partial class Program
 {
     [GeneratedRegex(@"^.{3,32}#[0-9]{4}$")]
     private static partial Regex TwitterHandleRegex();
-}
-
-partial class Program
-{
     [GeneratedRegex(@"^(/ua/)?[A-Za-z0-9_-]+$")]
     private static partial Regex RedditHandleRegex();
 }
