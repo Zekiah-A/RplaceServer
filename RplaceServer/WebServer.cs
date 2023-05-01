@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +8,9 @@ using RplaceServer.Events;
 using RplaceServer.Types;
 using UnbloatDB;
 using UnbloatDB.Serialisers;
+using System.Diagnostics;
+using System.Runtime.InteropServices.ComTypes;
+using System.Timers;
 
 namespace RplaceServer;
 
@@ -19,7 +23,9 @@ public sealed class WebServer
     private readonly RateLimiter postLimiter;
     public Action<string>? Logger;
     
-    public event EventHandler<CanvasBackupCreatedEventArgs> CanvasBackupCreated = (_, _) => { };
+    private double cpuUsagePercentage;
+    
+    public event EventHandler<CanvasBackupCreatedEventArgs>? CanvasBackupCreated;
 
     public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
@@ -27,9 +33,15 @@ public sealed class WebServer
         postsDB = new Database(new Config(gameData.PostsFolder, new JsonSerialiser()));
         timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriod));
         postLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.PostLimitPeriod));
-        
-        var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
 
+        var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
+        if (!Directory.Exists(pagesRoot))
+        {
+            Logger?.Invoke("Could not find Pages root in current working directory. Regenerating.");
+            Directory.CreateDirectory(pagesRoot);
+            RecursiveCopy(Path.Join(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), @"Pages"), pagesRoot);
+        }
+        
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             WebRootPath = pagesRoot
@@ -44,17 +56,60 @@ public sealed class WebServer
         builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = keyPath;
         
         app = builder.Build();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            ServeUnknownFileTypes = true,
+            FileProvider = new PhysicalFileProvider(pagesRoot),
+            RequestPath = ""
+        });
+        
+        app.UseDirectoryBrowser(new DirectoryBrowserOptions
+        {
+            FileProvider = new PhysicalFileProvider(pagesRoot),
+            RequestPath = ""
+        });
         app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
         app.UseCors(policy =>
         {
             policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials();
         });
 
-        app.UseStaticFiles(new StaticFileOptions
+        var cpuUsageTimer = new System.Timers.Timer(TimeSpan.FromSeconds(2))
         {
-            ServeUnknownFileTypes = true,
-            FileProvider = new PhysicalFileProvider(pagesRoot)
-        });
+            Enabled = true,
+            AutoReset = true
+        };
+        cpuUsageTimer.Elapsed += (_, _) =>
+        {
+            var startTime = DateTime.UtcNow;
+            var startCpuUsage = Process.GetCurrentProcess().TotalProcessorTime;
+            // As this method is asynchronous, the total processor time will increase even though we wait on this thread
+            // due to all the rest of the server processes occuring in the background.
+            Thread.Sleep(1000);
+            var endTime = DateTime.UtcNow;
+            var endCpuUsage = Process.GetCurrentProcess().TotalProcessorTime;
+
+            var cpuUsedMs = (endCpuUsage - startCpuUsage).TotalMilliseconds;
+            var totalMsPassed = (endTime - startTime).TotalMilliseconds;
+            var cpuUsageTotal = cpuUsedMs / (Environment.ProcessorCount * totalMsPassed);
+
+            cpuUsagePercentage = cpuUsageTotal * 100;
+        };
+    }
+
+    private static void RecursiveCopy(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
+        }
+
+        foreach (var directory in Directory.GetDirectories(sourceDir))
+        {
+            RecursiveCopy(directory, Path.Combine(targetDir, Path.GetFileName(directory)));
+        }
     }
 
     public async Task StartAsync()
@@ -97,6 +152,16 @@ public sealed class WebServer
             
             var stream = await TimelapseGenerator.GenerateTimelapseAsync(timelapseInfo, gameData);
             return Results.File(stream);
+        });
+
+        app.MapGet("/statistics", () =>
+        {
+            var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
+            return Results.Json(new PerformanceStatistics(
+                GC.GetTotalMemory(false),
+                cpuUsagePercentage,
+                backups.Length,
+                backups.Sum(file => file.Length)));
         });
         
         app.MapGet("/posts", () =>
@@ -220,7 +285,7 @@ public sealed class WebServer
         var boardPath = Path.Join(gameData.CanvasFolder, backupName);
         await File.WriteAllBytesAsync(boardPath, BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth));
             
-        CanvasBackupCreated.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
+        CanvasBackupCreated?.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
     }
 
     public async Task StopAsync()

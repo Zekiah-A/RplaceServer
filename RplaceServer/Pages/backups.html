@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>rPlace Server - Backups</title>
+    <title>rplace Server - Backups</title>
+    <link rel="stylesheet" href="styles.css" />
     <style>
         .highlight {
             border-radius: 4px;
@@ -10,38 +11,51 @@
             box-shadow: -2px -2px 4px darkkhaki inset;
         }
     </style>
+    <script>
+        function search(val) {
+            let str = val.toLowerCase().trim()
+            let links = document.getElementsByTagName("a")
+            for (let link of links) {
+                let text = link.innerText.toLowerCase()
+                if (text === "..") return
+                if (str.length && text.indexOf(str) || !str) link.classList.remove("highlight")
+                else link.classList.add("highlight")
+            }
+        }
+
+        async function getList() {
+            let backupList = (await (await fetch("./backuplist")).text()).split("\n")
+            for (let backup of backupList) {
+                let anchor = document.createElement("a")
+                anchor.innerText = backup
+                anchor.href = "./backups/" + backup
+                backupsContainer.appendChild(anchor)
+                backupsContainer.appendChild(document.createElement("br"))
+            }
+        }
+
+        getList()
+    </script>
 </head>
 <body>
-    <h1>rPlace canvas place file/backup list.</h1>
-    <p>See [domain-url]/backuplist.txt for cleanly formatted list of backups saved here.</p>
-    <span style="color: red;">(Do not try to iterate directly through this page directory with code, please instead use the plaintext list at /backuplist.)</span>
-    <br> <br>
-    <input type="text" placeholder="Search.." onkeyup="search(this.value)">
-    <br> <br>
+    <header>
+        <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png" alt="rplace_logo">
+        <h1>rplace canvas place file/backup list.</h1>
+    </header>
+    <div class="reddit-cards-container">
+        <div>
+            <div></div>
+            <div>
+                <h2 style="margin: 0;">Here you can find a list of links to all available canvas backups!</h2>
+                <span>See [domain-url]/backuplist.txt for cleanly formatted list of backups saved here.</span>
+                <span style="color: red;font-style: italic;">(Do not try to iterate through the backups listed on this page with code, please instead use the plaintext list at /backuplist.)</span>
+                <input type="text" placeholder="Search.." onkeyup="search(this.value)">
+            </div>
+        </div>
+        <div>
+            <div></div>
+            <div id="backupsContainer"></div>
+        </div>
+    </div>
 </body>
-<script>
-    function search(val) {
-        let str = val.toLowerCase().trim()
-        let links = document.getElementsByTagName("a")
-        for (let link of links) {
-            let text = link.innerText.toLowerCase()
-            if (text === "..") return
-            if (str.length && text.indexOf(str) || !str) link.classList.remove("highlight")
-            else link.classList.add("highlight")
-        }
-    }
-
-    async function getList() {
-        let backupList = (await (await fetch("./backuplist")).text()).split("\n")
-        for (let backup of backupList) {
-            let anchor = document.createElement("a")
-            anchor.innerText = backup
-            anchor.href = "./backups/" + backup
-            document.body.appendChild(anchor)
-            document.body.appendChild(document.createElement("br"))
-        }
-    }
-    
-    getList()
-</script>
 </html>

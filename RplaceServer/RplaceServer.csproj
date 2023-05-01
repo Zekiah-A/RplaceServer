@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
-        <TargetFramework>net7.0</TargetFramework>
+        <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -19,8 +18,8 @@
     <ItemGroup>
         <Content Include="Pages\*">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+            <CopyToPublishDirectory></CopyToPublishDirectory>
         </Content>
-        <None Remove="CaptchaGeneration\NotoColorEmoji-Regular.ttf" />
         <Content Include="CaptchaGeneration\NotoColorEmoji-Regular.ttf">
           <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>

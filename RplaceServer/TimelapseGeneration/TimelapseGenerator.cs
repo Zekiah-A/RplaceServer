@@ -9,7 +9,7 @@ namespace PlaceHttpsServer;
 /// Dependencies:
 /// Windows: ffmpeg,
 /// MacOS: ffmpeg, mono-libgdiplus,
-/// Linux: ffmpeg libgdiplus
+/// Linux: ffmpeg libgdiplus,
 /// </summary>
 internal static class TimelapseGenerator
 {
@@ -31,8 +31,7 @@ internal static class TimelapseGenerator
             .SkipWhile(backup => Path.GetFileName(backup) != info.BackupStart)
             .TakeWhile(backup => Path.GetFileName(backup) != info.BackupEnd)
             .ToArray();
-
-
+        
         if (info.Reverse)
         {
             Array.Reverse(backups);
@@ -71,8 +70,7 @@ internal static class TimelapseGenerator
                 i += unpacked.Width - (info.EndX - info.StartX);
             }
 
-            using var frame = new SKBitmapFrame(bitmap);
-            frames.Add(frame);
+            frames.Add(new SKBitmapFrame(bitmap));
         }
         
         using var stream = new MemoryStream();
