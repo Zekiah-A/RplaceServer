@@ -428,7 +428,7 @@ closeWizard:
         saveCanvasButton.Clicked += async () =>
         {
             Logger?.Invoke("Canvas saved to disk");
-            await Program.Server.WebServer.SaveCanvasBackup();
+            await Program.Server.WebServer.SaveCanvasBackupAsync();
         };
 
         var stopServerButton = new Button
@@ -439,7 +439,7 @@ closeWizard:
         stopServerButton.Clicked += async () =>
         {
             Logger?.Invoke("Server shutdown request received");
-            await Program.Server.WebServer.SaveCanvasBackup();
+            await Program.Server.WebServer.SaveCanvasBackupAsync();
             Application.Shutdown();
             await Program.Server.StopAsync();
             Console.Clear();
@@ -587,6 +587,12 @@ closeWizard:
 
         // Statistics log panel
         var serverLogs = new List<string>();
+        var serverLogClear = new Button("Clear")
+        {
+            Y = Pos.AnchorEnd() - 11,
+            X = Pos.AnchorEnd() - 10
+        };
+        serverLogClear.Clicked += () => serverLogs.Clear();
         var serverLogPanel = new PanelView
         {
             Y = Pos.AnchorEnd() - 10,
@@ -605,7 +611,7 @@ closeWizard:
         };
 
         Add(serverActionsPanel, clientsPanel, statisticLogLabel, serverUptimeLabel, serverIpPortLabel,
-            serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel);
+            serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel, serverLogClear);
         
         // Server uptime timer
         var elapsedSeconds = 0;

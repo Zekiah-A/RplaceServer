@@ -13,4 +13,8 @@ public record struct Configuration(
     string InstanceKey,
     string RedditAuthClientId,
     string RedditAuthClientSecret,
-    bool Logger);
+    bool Logger,
+    string PostsFolder,
+    int PostLimitSeconds,
+    string Origin,
+    int HttpPort);

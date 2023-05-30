@@ -19,8 +19,6 @@ public record GameData
     int BackupFrequency, // Milliseconds
     bool UseCloudflare,
     string CanvasFolder,
-    string PostsFolder,
-    int PostLimitPeriod, // Milliseconds
     int TimelapseLimitPeriod, // Milliseconds
     bool CensorChatMessages,
     int ChatHistoryLength,

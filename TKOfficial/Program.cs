@@ -36,7 +36,7 @@ public static class Program
 
             var defaultConfig = new Config(5000, 2500, true, true, new List<string>(),
             new List<string>(), new List<string>(), 1000, 1000, 600000,  false, 
-            "Canvases", "Posts", 60, 300000, true, 100, true, "", "",
+            "Canvases", 300000, true, 100, true, "", "",
             "", 8080, 8081, false);
             
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
@@ -52,14 +52,13 @@ public static class Program
         
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
         {
-            await Server.WebServer.SaveCanvasBackup();
+            await Server.WebServer.SaveCanvasBackupAsync();
             Application.Shutdown();
             await Server.StopAsync();
         };
-        
-        AppDomain.CurrentDomain.UnhandledException += async (sender, exceptionEventArgs) =>
+        AppDomain.CurrentDomain.UnhandledException += async (_, exceptionEventArgs) =>
         {
-            await Server.WebServer.SaveCanvasBackup();
+            await Server.WebServer.SaveCanvasBackupAsync();
             Application.Shutdown();
             await Server.StopAsync();
             Console.WriteLine("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);

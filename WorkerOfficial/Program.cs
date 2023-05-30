@@ -53,7 +53,7 @@ if (!Directory.Exists(dataPath))
 var defaultGameData = new GameData(
     5000, 2500, false, true, new List<string>(), new List<string>(),
     new List<string>(), 1000, 1000, 600000,  false, "Canvases",
-    "Posts", 60, 300000, true, 100, "", null);
+    300000, true, 100, "");
 var workerData = new WorkerData
 {
     Ids = new List<int>(),
@@ -291,11 +291,6 @@ server.MessageReceived += async (_, args) =>
     {
         case (byte) ClientPackets.CreateInstance:
         {
-            if (data.Length != 46)
-            {
-                return;
-            }
-            
             // Accept - start making new server instance
             var id = NextId();
             var socketPort = NextSocketPort();
@@ -310,11 +305,13 @@ server.MessageReceived += async (_, args) =>
             var requestHandle = requestId++;
             authQueue.Add(requestHandle, authoriseCompletion);
 
-            var authBuffer = new byte[51];
+            var authLength = data[0]; // Auth length (byte), auth type (byte), text token (byte)
+            var authBuffer = new byte[3 + authLength + 8];
             authBuffer[0] = (byte) WorkerPackets.AuthenticateCreate; // 1 byte - Packet code
-            data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], id); // 4 bytes - instance ID
+            data.CopyTo(authBuffer.AsSpan()[1..]); // authLength bytes - Client auth
+            
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[(3 + authLength)..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[(7 + authLength)..], id); // 4 bytes - instance ID
             await client.SendAsync(authBuffer);
             
             if (!await authoriseCompletion.Task)
@@ -336,7 +333,7 @@ server.MessageReceived += async (_, args) =>
             Directory.CreateDirectory(instanceDirectory);
 
             // Set up the new instance server software data files
-            var gameData = defaultGameData with { CanvasFolder = Path.Join(instanceDirectory, "Canvases"), PostsFolder = Path.Join(instanceDirectory, "Posts") };
+            var gameData = defaultGameData with { CanvasFolder = Path.Join(instanceDirectory, "Canvases") };
             var instance = new ServerInstance(gameData, config.CertPath, config.KeyPath, "", socketPort, webPort, config.UseHttps);
             await using var gameDataStream = File.Create(Path.Join(instanceDirectory, "game_data.json"));
             await JsonSerializer.SerializeAsync(gameDataStream, gameData);
@@ -346,35 +343,33 @@ server.MessageReceived += async (_, args) =>
             // Start the new instance
             instances.Add(id, instance);
             AttachSubscribers(id);
-            _ = Task.Run(instance.StartAsync);
+            Task.Run(instance.StartAsync);
             
-            // data 42...46 is a requestID used by the client so that it can confirm completion, along with the instance ID of the new instance
+            // Data 2 + authLength -> 6 + authLength is a requestID used by the client so that it can confirm completion,
+            // along with the instance ID of the new instance.
             var completionBuffer = new byte[9];
             completionBuffer[0] = (byte) WorkerPackets.InstanceCreated;
-            data[42..46].CopyTo(completionBuffer, 1);
+            data[(2 + authLength)..(6 + authLength)].CopyTo(completionBuffer, 1);
             BinaryPrimitives.WriteInt32BigEndian(completionBuffer.AsSpan()[5..], id);
             await server.SendAsync(args.Client, completionBuffer);
             break;
         }
         case (byte) ClientPackets.DeleteInstance:
-        {
-            if (data.Length != 46)
-            {
-                return;
-            }
-            
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[42..]);
-
+        { 
             // Check with auth server that they are allowed to do this
             var authoriseDeletion = new TaskCompletionSource<bool>();
             var requestHandle = requestId++;
             authQueue.Add(requestHandle, authoriseDeletion);
 
-            var authBuffer = new byte[51];
-            authBuffer[0] = (byte) WorkerPackets.AuthenticateDelete; // 1 byte - Packet code
-            data.CopyTo(authBuffer.AsSpan()[1..]); // 42 bytes - Client auth
-            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[43..], requestHandle); // 4 bytes - request ID
-            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[47..], instanceId); // 4 bytes - instance ID
+            var authLength = data[0]; // Auth length (byte), auth type (byte), text token (byte)
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[(2 + authLength)..]);
+
+            var authBuffer = new byte[3 + authLength + 4];
+            authBuffer[0] = (byte) WorkerPackets.AuthenticateCreate; // 1 byte - Packet code
+            data.CopyTo(authBuffer.AsSpan()[1..]); // authLength bytes - Client auth
+            
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[(3 + authLength)..], requestHandle); // 4 bytes - request ID
+            BinaryPrimitives.WriteInt32BigEndian(authBuffer.AsSpan()[(7 + authLength)..], instanceId); // 4 bytes - instance ID
             await client.SendAsync(authBuffer);
 
             if (!await authoriseDeletion.Task)
@@ -455,7 +450,7 @@ server.MessageReceived += async (_, args) =>
         }
         case (byte) ClientPackets.CreateVanity:
         {
-            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data[42..]);
+            var instanceId = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan()[42..]);
 
             // Check with auth server that they are allowed to do this
             var authoriseVanity = new TaskCompletionSource<bool>();

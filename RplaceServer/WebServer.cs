@@ -18,21 +18,19 @@ public sealed class WebServer
 {
     private readonly WebApplication app;
     private readonly GameData gameData;
-    private readonly Database postsDB;
     private readonly RateLimiter timelapseLimiter;
-    private readonly RateLimiter postLimiter;
     public Action<string>? Logger;
     
     private double cpuUsagePercentage;
+    private long backupsSize;
+    public int backupsCount;
     
     public event EventHandler<CanvasBackupCreatedEventArgs>? CanvasBackupCreated;
 
     public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
         gameData = data;
-        postsDB = new Database(new Config(gameData.PostsFolder, new JsonSerialiser()));
         timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriod));
-        postLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.PostLimitPeriod));
 
         var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
         if (!Directory.Exists(pagesRoot))
@@ -71,7 +69,10 @@ public sealed class WebServer
         app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
         app.UseCors(policy =>
         {
-            policy.AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(_ => true).AllowCredentials();
+            policy.AllowAnyMethod()
+                .AllowAnyHeader()
+                .SetIsOriginAllowed(_ => true) // TODO: Add origin block/check
+                .AllowCredentials();
         });
 
         var cpuUsageTimer = new System.Timers.Timer(TimeSpan.FromSeconds(2))
@@ -86,15 +87,16 @@ public sealed class WebServer
             // As this method is asynchronous, the total processor time will increase even though we wait on this thread
             // due to all the rest of the server processes occuring in the background.
             Thread.Sleep(1000);
-            var endTime = DateTime.UtcNow;
-            var endCpuUsage = Process.GetCurrentProcess().TotalProcessorTime;
-
-            var cpuUsedMs = (endCpuUsage - startCpuUsage).TotalMilliseconds;
-            var totalMsPassed = (endTime - startTime).TotalMilliseconds;
+            
+            var cpuUsedMs = (Process.GetCurrentProcess().TotalProcessorTime - startCpuUsage).TotalMilliseconds;
+            var totalMsPassed = (DateTime.UtcNow - startTime).TotalMilliseconds;
             var cpuUsageTotal = cpuUsedMs / (Environment.ProcessorCount * totalMsPassed);
-
             cpuUsagePercentage = cpuUsageTotal * 100;
         };
+        
+        var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
+        backupsCount = backups.Length;
+        backupsSize = backups.Sum(file => file.Length);
     }
 
     private static void RecursiveCopy(string sourceDir, string targetDir)
@@ -154,90 +156,11 @@ public sealed class WebServer
             return Results.File(stream);
         });
 
-        app.MapGet("/statistics", () =>
-        {
-            var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
-            return Results.Json(new PerformanceStatistics(
-                GC.GetTotalMemory(false),
-                cpuUsagePercentage,
-                backups.Length,
-                backups.Sum(file => file.Length)));
-        });
-        
-        app.MapGet("/posts", () =>
-            Results.Json(postsDB.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false)));
-
-        app.MapGet("/posts/{masterKey}", (string masterKey) =>
-            Results.Json(postsDB.GetRecord<Post>(masterKey)));
-        
-        app.MapPost("/posts/upload", async (Post submission, HttpContext context) =>
-        {
-            var address = context.Connection.RemoteIpAddress;
-            
-            if (address is null || !postLimiter.IsAuthorised(address))
-            {
-                Logger?.Invoke($"Client {address} denied post upload for breaching rate limit, or null address.");
-                return Results.Unauthorized();
-            }
-
-            var sanitised = submission with
-            {
-                Upvotes = 0,
-                Downvotes = 0,
-                CreationDate = DateTime.Now,
-                ContentPath = null,
-                
-            };
-
-            // If client also wanted to upload content with this post, we grant them the post key, which gives them
-            // temporary permission to upload the content to the CDN.
-            var postKey = await postsDB.CreateRecord(sanitised);
-            return Results.Text(postKey);
-        });
-
-        app.MapGet("/content/{contentPath}", (string contentPath) =>
-        {
-            var path = Path.Join(gameData.PostsFolder, "Content", contentPath);
-            path = path.Replace("..", "");
-            
-            if (!File.Exists(path))
-            {
-                return Results.NotFound();
-            }
-            
-            var stream = new FileStream(path, FileMode.Open);
-            return Results.File(stream);
-        });
-
-        app.MapPost("/content/upload/{masterKey}", async (HttpRequest request, string masterKey) =>
-        {
-            var address = request.HttpContext.Connection.RemoteIpAddress;
-            var pendingPost = await postsDB.GetRecord<Post>(masterKey);
-            
-            if (pendingPost is null || !pendingPost.MasterKey.Equals(masterKey) || pendingPost.Data.ContentPath is not null)
-            {
-                Logger?.Invoke($"Client {address} denied content upload for invalid master key or post not found.");
-                return Results.Unauthorized();
-            }
-            
-            // Limit stream length to 5MB to prevent excessively large uploads
-            if (request.Body.Length > 5_000_000)
-            {
-                Logger?.Invoke($"Client {address} denied content upload for too large stream file size.");
-                return Results.UnprocessableEntity();
-            }
-
-            // Save data to CDN folder
-            var contentPath = Guid.NewGuid().ToString();
-            pendingPost.Data.ContentPath = contentPath;
-
-            await using var fileStream = File.Create(Path.Join(gameData.PostsFolder, "Content", contentPath));
-            request.Body.Seek(0, SeekOrigin.Begin);
-            await request.Body.CopyToAsync(fileStream);
-            
-            return Results.Ok();
-        })
-        .Accepts<IFormFile>("image/gif", "image/jpeg","image/png", "image/webp");
+        app.MapGet("/statistics", () => Results.Json(new PerformanceStatistics(
+            GC.GetTotalMemory(false),
+            cpuUsagePercentage,
+            backupsCount,
+            backupsSize)));
         
         if (gameData.CreateBackups)
         {
@@ -264,7 +187,7 @@ public sealed class WebServer
             }
             
             timer.Interval = gameData.BackupFrequency;
-            await SaveCanvasBackup();
+            await SaveCanvasBackupAsync();
         };
     }
     
@@ -272,25 +195,29 @@ public sealed class WebServer
     /// Writes a canvas backup to the disk, putting a new entry into the backuplist.txt log file, and saving the current
     /// canvas state with palette and width metadata so that the canvas state can be easily recovered.
     /// </summary>
-    public async Task SaveCanvasBackup()
+    public async Task SaveCanvasBackupAsync()
     {
         // Save the place file so that we can recover after a server restart
         await File.WriteAllBytesAsync(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
 
         // Save a dated backup of the canvas to timestamp the place file at this point in time
         var backupName = "place " + DateTime.Now.ToString("yyyy.MM.dd HH.mm.ss");
-        await using var file = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
-        await file.WriteLineAsync(backupName);
+        await using var backupList = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
+        await backupList.WriteLineAsync(backupName);
+        await backupList.FlushAsync();
 
         var boardPath = Path.Join(gameData.CanvasFolder, backupName);
-        await File.WriteAllBytesAsync(boardPath, BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth));
-            
+        var boardData = BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth);
+        await File.WriteAllBytesAsync(boardPath, boardData);
+        backupsCount++;
+        backupsSize += boardData.Length;
+
         CanvasBackupCreated?.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
     }
 
     public async Task StopAsync()
     {
-        await SaveCanvasBackup();
+        await SaveCanvasBackupAsync();
         await app.StopAsync();
     }
 }
