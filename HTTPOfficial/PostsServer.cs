@@ -18,7 +18,7 @@ public class PostsServer
     public PostsServer(Configuration config)
     {
         configuration = config;
-        postsDb = new Database(new Config(configuration.PostsFolder, new JsonSerialiser()));
+        postsDb = new Database(new UnbloatDB.Configuration(configuration.PostsFolder, new JsonSerialiser()));
         postLimiter = new RateLimiter(TimeSpan.FromSeconds(configuration.PostLimitSeconds));
         
         var builder = WebApplication.CreateBuilder();
@@ -54,9 +54,9 @@ public class PostsServer
             return Results.Json(postsDb.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false));
         });
 
-        app.MapGet("/posts/{masterKey}", (string masterKey) =>
+        app.MapGet("/posts/{masterKey}", async (string masterKey) =>
         {
-            return Results.Json(postsDb.GetRecord<Post>(masterKey));
+            return Results.Json(await postsDb.GetRecord<Post>(masterKey));
         });
         
         app.MapPost("/posts/upload", async (Post submission, HttpContext context) =>
