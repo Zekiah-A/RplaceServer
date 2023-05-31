@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using RplaceServer;
 using RplaceServer.Types;
 using UnbloatDB;
@@ -8,15 +9,15 @@ namespace HTTPOfficial;
 public class PostsServer
 {
     private readonly WebApplication app;
-    private readonly Database postsDB;
+    private readonly Database postsDb;
     private readonly RateLimiter postLimiter;
-    private Configuration configuration;
+    private readonly Configuration configuration;
     public Action<string>? Logger;
 
     public PostsServer(Configuration config)
     {
         configuration = config;
-        postsDB = new Database(new Config(configuration.PostsFolder, new JsonSerialiser()));
+        postsDb = new Database(new Config(configuration.PostsFolder, new JsonSerialiser()));
         postLimiter = new RateLimiter(TimeSpan.FromSeconds(configuration.PostLimitSeconds));
         
         var builder = WebApplication.CreateBuilder();
@@ -38,18 +39,23 @@ public class PostsServer
                 .SetIsOriginAllowed(_ => true)
                 .AllowCredentials();
         });
+        
+        app.UseForwardedHeaders(new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+        });
     }
 
     public async Task StartAsync()
     {
         app.MapGet("/posts", () =>
         {
-            return Results.Json(postsDB.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false));
+            return Results.Json(postsDb.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false));
         });
 
         app.MapGet("/posts/{masterKey}", (string masterKey) =>
         {
-            return Results.Json(postsDB.GetRecord<Post>(masterKey));
+            return Results.Json(postsDb.GetRecord<Post>(masterKey));
         });
         
         app.MapPost("/posts/upload", async (Post submission, HttpContext context) =>
@@ -68,12 +74,11 @@ public class PostsServer
                 Downvotes = 0,
                 CreationDate = DateTime.Now,
                 ContentPath = null,
-                
             };
 
             // If client also wanted to upload content with this post, we give the post key, which gives them
             // temporary permission to upload the content to the CDN.
-            var postKey = await postsDB.CreateRecord(sanitised);
+            var postKey = await postsDb.CreateRecord(sanitised);
             return Results.Text(postKey);
         });
 
@@ -94,7 +99,7 @@ public class PostsServer
         app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string postKey) =>
         {
             var address = request.HttpContext.Connection.RemoteIpAddress;
-            var pendingPost = await postsDB.GetRecord<Post>(postKey);
+            var pendingPost = await postsDb.GetRecord<Post>(postKey);
             
             if (pendingPost is null || !pendingPost.MasterKey.Equals(postKey) || pendingPost.Data.ContentPath is not null)
             {
@@ -110,13 +115,17 @@ public class PostsServer
             }
 
             // Save data to CDN folder & update DB
-            var contentPath = Guid.NewGuid().ToString();
-            await using var fileStream = File.Create(Path.Join(configuration.PostsFolder, "Content", contentPath));
+            var contentPath = Path.Join(configuration.PostsFolder, "Content");
+            if (!Directory.Exists(contentPath))
+            {
+                Directory.CreateDirectory(contentPath);
+            }
+            await using var fileStream = File.Create(Path.Join(contentPath, postKey));
             request.Body.Seek(0, SeekOrigin.Begin);
             await request.Body.CopyToAsync(fileStream);
             
-            pendingPost.Data.ContentPath = contentPath;
-            await postsDB.UpdateRecord(pendingPost);
+            pendingPost.Data.ContentPath = postKey;
+            await postsDb.UpdateRecord(pendingPost);
 
             return Results.Ok();
         })
