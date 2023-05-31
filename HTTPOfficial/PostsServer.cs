@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using RplaceServer;
 using RplaceServer.Types;
 using UnbloatDB;
@@ -96,7 +97,7 @@ public class PostsServer
             return Results.File(stream);
         });
         
-        app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string postKey) =>
+        app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string postKey, Stream body) =>
         {
             var address = request.HttpContext.Connection.RemoteIpAddress;
             var pendingPost = await postsDb.GetRecord<Post>(postKey);
@@ -120,9 +121,10 @@ public class PostsServer
             {
                 Directory.CreateDirectory(contentPath);
             }
-            await using var fileStream = File.Create(Path.Join(contentPath, postKey));
-            request.Body.Seek(0, SeekOrigin.Begin);
-            await request.Body.CopyToAsync(fileStream);
+            await using var fileStream = File.OpenWrite(Path.Join(contentPath, postKey));
+            fileStream.Seek(0, SeekOrigin.Begin);
+            fileStream.SetLength(0);
+            await body.CopyToAsync(fileStream);
             
             pendingPost.Data.ContentPath = postKey;
             await postsDb.UpdateRecord(pendingPost);
