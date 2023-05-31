@@ -108,7 +108,7 @@ public class PostsServer
             }
             
             // Limit stream length to 5MB to prevent excessively large uploads
-            if (request.Body.Length > 5_000_000)
+            if (request.ContentLength > 5_000_000)
             {
                 Logger?.Invoke($"Client {address} denied content upload for too large stream file size.");
                 return Results.UnprocessableEntity();
