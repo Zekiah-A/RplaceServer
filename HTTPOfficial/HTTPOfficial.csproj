@@ -18,4 +18,11 @@
     <ItemGroup>
       <PackageReference Include="MailKit" Version="3.6.0" />
     </ItemGroup>
+
+    <ItemGroup>
+      <None Remove="trusted_domains.txt" />
+      <Resource Include="trusted_domains.txt">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Resource>
+    </ItemGroup>
 </Project>

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using OneOf.Types;
 using RplaceServer;
 using RplaceServer.Types;
 using UnbloatDB;
@@ -49,14 +50,36 @@ public class PostsServer
 
     public async Task StartAsync()
     {
-        app.MapGet("/posts", () =>
+        app.MapGet("/posts/{fromDate}", async (DateTime fromDate) =>
         {
-            return Results.Json(postsDb.FindRecordsBefore<Post, DateTime>(nameof(Post.CreationDate), DateTime.Now, false));
+            var indexer = postsDb.GetGroupIndexer<Post>(nameof(Post.CreationDate), typeof(DateTime));
+            // HACK: Everything indexer currently works with is a string, until that is changed we will have to
+            // HACK: parse the string date from the indexer.
+            var values = indexer.Index.Select(pair => DateTime.Parse((string) pair.Value)).ToList();
+            var keys = indexer.Index.Select(pair => pair.Key).ToList();
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (values[i] < fromDate)
+                {
+                    // Select the 10 next post master keys to send to the client
+                    return Results.Json(keys[i..(i + 10)]);
+                    break;
+                }
+            }
+
+            return Results.NotFound();
         });
 
         app.MapGet("/posts/{masterKey}", async (string masterKey) =>
         {
-            return Results.Json(await postsDb.GetRecord<Post>(masterKey));
+            var recordPath = Path.Join(configuration.PostsFolder, nameof(Post), masterKey);
+            if (!File.Exists(recordPath))
+            {
+                return Results.NotFound();
+            }
+
+            await using var recordStream = File.OpenRead(recordPath);
+            return Results.Stream(recordStream, "application/json");
         });
         
         app.MapPost("/posts/upload", async (Post submission, HttpContext context) =>

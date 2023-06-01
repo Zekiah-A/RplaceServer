@@ -13,4 +13,5 @@ public record Post
     [JsonInclude] public int? Downvotes;
     [JsonInclude] public string? ContentPath;
     [JsonInclude] public DateTime? CreationDate;
+    [JsonInclude] public int UploadId;
 };

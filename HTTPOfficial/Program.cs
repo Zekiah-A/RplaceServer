@@ -12,6 +12,7 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 using WatsonWebsocket;
+using UnbloatDB;
 
 const string configPath = "server_config.json";
 const string dataPath = "ServerData";
@@ -23,7 +24,7 @@ async Task CreateConfig()
 
     await using var configFile = File.OpenWrite(configPath);
     var defaultConfiguration =
-        new Configuration(
+        new HTTPOfficial.Configuration(
             1234,
             false,
             "",
@@ -77,20 +78,26 @@ if (!Directory.Exists(dataPath))
     Console.ResetColor();
 }
 
-var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
-var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
+// Email and trusted domains
 var emailAttributes = new EmailAddressAttribute();
+var trustedEmailDomains = File.ReadAllLines("trusted_domains.txt")
+    .Where(entry => !string.IsNullOrWhiteSpace(entry) && entry.TrimStart().First() != '#').ToList();
 
-// Post server
+var config = await JsonSerializer.DeserializeAsync<HTTPOfficial.Configuration>(File.OpenRead(configPath));
+var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
+var accountsDb = new Database(new UnbloatDB.Configuration("Accounts", new UnbloatDB.Serialisers.JsonSerialiser()));
+
+// Post server & database
 var postsServer = new PostsServer(config);
 
 // Vanity -> URL of actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
-httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by zekiahepic)");
+httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by Zekiah-A)");
+
 // Used by worker servers
 var registeredVanities = new Dictionary<string, string>();
 var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
-var clientAccountDatas = new Dictionary<ClientMetadata, AccountData>();
+var authorisedClients = new Dictionary<ClientMetadata, string>();
 
 // Used by reddit auth
 var refreshTokenAuthDates = new Dictionary<string, DateTime>();
@@ -248,6 +255,16 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     return tokenData.AccessToken;
 }
 
+async Task<bool> CheckValidEmail(string email)
+{
+    if (!emailAttributes.IsValid(email) || trustedEmailDomains.BinarySearch(email.Split("@").Last()) < 0)
+    {
+        return false;
+    }
+
+    return (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Email), email)).Length == 0;
+}
+
 server.MessageReceived += (_, args) =>
 {
     var packetCode = args.Data.ToArray()[0];
@@ -266,28 +283,28 @@ server.MessageReceived += (_, args) =>
             var stringData = Encoding.UTF8.GetString(data);
             var username = stringData[..32].TrimEnd();
             var email = stringData[32..352].TrimEnd();
-            if (username.Length <= 4 || !emailAttributes.IsValid(email))
-            {
-                var response = "XCould not create account. Invalid information provided!"u8.ToArray();
-                response[0] = (byte) ServerPackets.Fail;
-                server.SendAsync(args.Client, response);
-                return;
-            }
 
-            var codeChars = new string[10];
-            for (var i = 0; i < 10; i++)
+            async Task CreateAccountAsync()
             {
-                codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
-            }
-            var authCode = string.Join("", codeChars);
-            var emailCompletionSource = new TaskCompletionSource<bool>();
-            emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
-            var accountData = new AccountData(username, email, 0, new List<int>(),
-                "", "", "", 0, DateTime.Now, new List<Badge>(), false, "");
-            clientAccountDatas.TryAdd(args.Client, accountData);
+                if (username.Length <= 4 || !await CheckValidEmail(email))
+                {
+                    var response = "XCould not create account. Invalid information provided!"u8.ToArray();
+                    response[0] = (byte) ServerPackets.Fail;
+                    await server.SendAsync(args.Client, response);
+                    return;
+                }
 
-            async Task SendCodeEmailAsync()
-            {
+                var codeChars = new string[10];
+                for (var i = 0; i < 10; i++)
+                {
+                    codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
+                }
+                var authCode = string.Join("", codeChars);
+                var emailCompletionSource = new TaskCompletionSource<bool>();
+                emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
+                var accountData = new AccountData(username, email, 0, new List<int>(),
+                    "", "", "", 0, DateTime.Now, new List<Badge>(), false, "");
+
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
                 message.To.Add(new MailboxAddress(email, email));
@@ -328,10 +345,10 @@ server.MessageReceived += (_, args) =>
                 if (await emailCompletionSource.Task)
                 {
                     accountData.Badges.Add(Badge.Newbie);
-                    File.WriteAllText(Path.Join(dataPath, accountData.Username), JsonSerializer.Serialize(accountData));
-                    
+                    var accountKey = await accountsDb.CreateRecord(accountData);
+                    authorisedClients.TryAdd(args.Client, accountKey);
+
                     // Send them their token and sign them in
-                    clientAccountDatas.TryAdd(args.Client, accountData);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountNames.Add(accountToken, accountData.Username);
                     var tokenBuffer = Encoding.UTF8.GetBytes("X" + accountToken);
@@ -340,7 +357,7 @@ server.MessageReceived += (_, args) =>
                 }
             }
             
-            Task.Run(SendCodeEmailAsync);
+            Task.Run(CreateAccountAsync);
             break;
         }
         case (byte) ClientPackets.AccountCode:
@@ -354,19 +371,17 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) ClientPackets.DeleteAccount:
         {
-            if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            if (authorisedClients.TryGetValue(args.Client, out var accountKey))
             {
-                // TODO: Tell worker servers to delete all their instances
-                clientAccountDatas.Remove(args.Client);
-                File.Delete(Path.Join(dataPath, accountData.UsesRedditAuthentication
-                    ? accountData.RedditId
-                    : accountData.Username));
+                // TODO: Tell worker servers to delete all their instances belonging to this account
+                authorisedClients.Remove(args.Client);
+                accountsDb.DeleteRecord<AccountData>(accountKey);
             }
             break;
         }
         case (byte) ClientPackets.AccountInfo:
         {
-            if (clientAccountDatas.TryGetValue(args.Client, out var accountData))
+            if (authorisedClients.TryGetValue(args.Client, out var accountData))
             {
                 var dataBlob = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize(accountData));
                 dataBlob[0] = (byte) ServerPackets.AccountInfo;
@@ -391,7 +406,7 @@ server.MessageReceived += (_, args) =>
                     // time on that device with an email code, we make sure to invalidate their previous token and give 
                     // them a new one after every authentication. 
                     accountTokenAccountNames.Remove(token);
-                    clientAccountDatas.TryAdd(args.Client, accountData);
+                    authorisedClients.TryAdd(args.Client, accountData);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountNames.Add(accountToken, accountData.Username);
                     
@@ -489,7 +504,7 @@ server.MessageReceived += (_, args) =>
                     if (accountData is not null)
                     {
                         accountData.Badges.Add(Badge.Newbie);
-                        clientAccountDatas.TryAdd(args.Client, accountData);
+                        authorisedClients.TryAdd(args.Client, accountData);
                         
                         // Send them their token so that they can quickly login again without having to reauthenticate
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
@@ -537,7 +552,7 @@ server.MessageReceived += (_, args) =>
                     }
                     
                     // Add them to server authenticated client memory so they do not have to authenticate each server API call
-                    clientAccountDatas.TryAdd(args.Client, accountData);
+                    authorisedClients.TryAdd(args.Client, accountData);
                 }
             }
 
@@ -546,92 +561,103 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) ClientPackets.UpdateProfile:
         {
-            if (!clientAccountDatas.TryGetValue(args.Client, out var accountData))
-            {
-                return;
-            }
+            var marshalledData = data.ToArray();
             
-            switch (data[0])
+            async Task UpdateProfileAsync()
             {
-                case (byte) PublicEditableData.Username:
+                if (!authorisedClients.TryGetValue(args.Client, out var accountKey)
+                    || await accountsDb.GetRecord<AccountData>(accountKey) is not { } accountData)
                 {
-                    var input = Encoding.UTF8.GetString(data[1..]);
-                    if (input.Length is < 0 or > 32)
+                    return;
+                }
+                
+                switch (marshalledData[0])
+                {
+                    case (byte) PublicEditableData.Username:
                     {
-                        return;
-                    }
+                        var input = Encoding.UTF8.GetString(marshalledData[1..]);
+                        if (input.Length is < 0 or > 32)
+                        {
+                            return;
+                        }
 
-                    accountData.Username = input;
-                    break;
-                }
-                case (byte) PublicEditableData.DiscordId:
-                {
-                    //TODO: Validate
-                    var snowflake = BinaryPrimitives.ReadInt64BigEndian(data[1..]);
-                    accountData.DiscordId = snowflake.ToString();
-                    break;
-                }
-                case (byte) PublicEditableData.TwitterHandle:
-                {
-                    var input = Encoding.UTF8.GetString(data[1..]);
-                    if (!TwitterHandleRegex().IsMatch(input))
-                    {
-                        return;
+                        accountData.Data.Username = input;
+                        break;
                     }
+                    case (byte) PublicEditableData.DiscordId:
+                    {
+                        //TODO: Validate
+                        var snowflake = BinaryPrimitives.ReadInt64BigEndian(marshalledData[1..]);
+                        accountData.Data.DiscordId = snowflake.ToString();
+                        break;
+                    }
+                    case (byte) PublicEditableData.TwitterHandle:
+                    {
+                        var input = Encoding.UTF8.GetString(marshalledData[1..]);
+                        if (!TwitterHandleRegex().IsMatch(input))
+                        {
+                            return;
+                        }
 
-                    accountData.TwitterHandle = input;
-                    break;
-                }
-                case (byte) PublicEditableData.RedditHandle:
-                {
-                    var input = Encoding.UTF8.GetString(data[1..]);
-                    if (!RedditHandleRegex().IsMatch(input) || accountData.UsesRedditAuthentication)
-                    {
-                        return;
+                        accountData.Data.TwitterHandle = input;
+                        break;
                     }
+                    case (byte) PublicEditableData.RedditHandle:
+                    {
+                        var input = Encoding.UTF8.GetString(marshalledData[1..]);
+                        if (!RedditHandleRegex().IsMatch(input) || accountData.Data.UsesRedditAuthentication)
+                        {
+                            return;
+                        }
 
-                    accountData.RedditHandle = input;
-                    break;
+                        accountData.Data.RedditHandle = input;
+                        break;
+                    }
+                    case (byte) PublicEditableData.Badges:
+                    {
+                        if ((Badge) marshalledData[1] != Badge.EthicalBotter || (Badge) marshalledData[1] != Badge.Gay
+                            || (Badge) marshalledData[1] != Badge.ScriptKiddie)
+                        {
+                            return;
+                        }
+                        
+                        if (marshalledData[0] == 1)
+                        {
+                            accountData.Data.Badges.Add((Badge) marshalledData[1]);
+                        }
+                        else
+                        {
+                            accountData.Data.Badges.Add((Badge) marshalledData[1]);
+                        }
+                        break;
+                    }
                 }
-                case (byte) PublicEditableData.Badges:
-                {
-                    if ((Badge) data[1] != Badge.EthicalBotter || (Badge) data[1] != Badge.Gay
-                        || (Badge) data[1] != Badge.ScriptKiddie)
-                    {
-                        return;
-                    }
-                    
-                    if (data[0] == 1)
-                    {
-                        accountData.Badges.Add((Badge) data[1]);
-                    }
-                    else
-                    {
-                        accountData.Badges.Add((Badge) data[1]);
-                    }
-                    break;
-                }
+
+                await accountsDb.UpdateRecord(accountData);
             }
-            
-            var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
-                    ? accountData.RedditId
-                    : accountData.Username);
-            File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+
+            Task.Run(UpdateProfileAsync);
             break;
         }
         case (byte) ClientPackets.ProfileInfo:
         {
-            var id = Encoding.UTF8.GetString(data);
-            var accountPath = Path.Join(dataPath, id);
-            if (File.Exists(accountPath))
+            var accountKey = Encoding.UTF8.GetString(data);
+
+            async Task GetProfileInfoAsync()
             {
-                var buffer = Encoding.UTF8.GetBytes("X" + JsonSerializer.Deserialize<AccountProfile>(File.ReadAllText(accountPath)));
-                buffer[0] = (byte) ServerPackets.AccountProfile;
-                server.SendAsync(args.Client, buffer);
+                var accountData = await accountsDb.GetRecord<AccountData>(accountKey);
+                if (accountData != null)
+                {
+                    var buffer = Encoding.UTF8.GetBytes("X" + JsonSerializer.Serialize<AccountProfile>(accountData.Data));
+                    buffer[0] = (byte) ServerPackets.AccountProfile;
+                    await server.SendAsync(args.Client, buffer);
+                }
             }
+
+            Task.Run(GetProfileInfoAsync);
             break;
         }
-        
+        /*
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
         case (byte) WorkerPackets.AnnounceExistence:
@@ -784,11 +810,12 @@ server.MessageReceived += (_, args) =>
             Task.Run(CheckAuthAsync);
             break;
         }
+        */
     }
 };
 server.ClientDisconnected += (_, args) =>
 {
-    clientAccountDatas.Remove(args.Client);
+    authorisedClients.Remove(args.Client);
 };
 
 Console.CancelKeyPress += async (_, _) =>
