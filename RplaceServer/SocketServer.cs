@@ -77,7 +77,7 @@ public sealed partial class SocketServer
         if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin || gameData.Bans.Contains(realIp))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating ban or initial headers checks");
-            app.DisconnectClient(args.Client);
+            app.DisconnectClientAsync(args.Client);
             return;
         }
         
@@ -91,7 +91,7 @@ public sealed partial class SocketServer
             if (clearance is null)
             {
                 Logger?.Invoke($"Client {realIpPort} disconnected for null cloudflare clearance cookie");
-                app.DisconnectClient(args.Client);
+                app.DisconnectClientAsync(args.Client);
                 return;
             }
             
@@ -99,7 +99,7 @@ public sealed partial class SocketServer
                 .Where(metadata => metadata.HttpContext.Request.Cookies["cf_clearance"] == clearance))
             {
                 Logger?.Invoke($"Client {realIpPort} disconnected for new connection from the same clearance cookie");
-                app.DisconnectClient(metadata);
+                app.DisconnectClientAsync(metadata);
             }
         }
         
@@ -316,7 +316,7 @@ public sealed partial class SocketServer
                 if (gameData.PendingCaptchas.TryGetValue(realIp, out var answer) || !response.Equals(answer))
                 {
                     Logger?.Invoke($"Client {GetRealIpPort(args.Client)} disconnected for invalid captcha response");
-                    app.DisconnectClient(args.Client);
+                    app.DisconnectClientAsync(args.Client);
                     return;
                 }
                 
@@ -436,10 +436,10 @@ public sealed partial class SocketServer
     /// of this instance running (is not persistent between server restarts unless implemented by a server software).
     /// </summary>
     /// <param name="client">The client who is to be banned from reconnecting to the game</param>
-    public void BanPlayer(ClientMetadata client)
+    public async Task BanPlayer(ClientMetadata client)
     {
         gameData.Bans.Add(GetRealIp(client));
-        app.DisconnectClient(client);
+        await app.DisconnectClientAsync(client);
     }
 
     /// <summary>
@@ -447,9 +447,9 @@ public sealed partial class SocketServer
     /// permanent solution, see BanPlayer(ClientMetadata client).
     /// </summary>
     /// <param name="client">The client who is to be kicked (disconnected) from the socket server.</param>
-    public void KickPlayer(ClientMetadata client)
+    public async Task KickPlayer(ClientMetadata client)
     {
-        app.DisconnectClient(client);
+        await app.DisconnectClientAsync(client);
     }
     
     public static string CensorText(string text)
@@ -469,7 +469,7 @@ public sealed partial class SocketServer
     {
         foreach (var client in app.Clients)
         {
-            app.DisconnectClient(client);
+            await app.DisconnectClientAsync(client);
         }
         
         await app.StopAsync();
