@@ -431,10 +431,17 @@ closeWizard:
             await Program.Server.WebServer.SaveCanvasBackupAsync();
         };
 
+        var pruneBackupsButton = new Button
+        {
+            Text = "Prune backup list",
+            Y = Pos.Top(serverActionsContainer) + 9
+        };
+        pruneBackupsButton.Clicked += () => Task.Run(PruneBackupList);
+
         var stopServerButton = new Button
         {
             Text = "Gracefully stop server",
-            Y = Pos.Top(serverActionsContainer) + 9
+            Y = Pos.Top(serverActionsContainer) + 10
         };
         stopServerButton.Clicked += async () =>
         {
@@ -446,7 +453,8 @@ closeWizard:
         };
         
         serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, chatCooldownButton,
-            broadcastChatButton, changeGameCooldownButton, editPaletteButton, restoreBackupButton, saveCanvasButton, stopServerButton);
+            broadcastChatButton, changeGameCooldownButton, editPaletteButton, restoreBackupButton, saveCanvasButton,
+            pruneBackupsButton, stopServerButton);
         // End server actions stack panel container
         
         // Server actions panel, provides nice border around container
@@ -695,6 +703,31 @@ closeWizard:
         {
             return null;
         }
+    }
+
+    private async Task PruneBackupList()
+    {
+        var newListPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt." + DateTime.Now.ToFileTime());
+        await using var newBackupList = new StreamWriter(newListPath);
+        var listPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt");
+        using (var reader = new StreamReader(listPath))
+        {
+            var line = await reader.ReadLineAsync();
+            while (line is not null)
+            {
+                if (File.Exists(Path.Join(Program.Config.CanvasFolder, line)))
+                {
+                    await newBackupList.WriteLineAsync(line);
+                }
+                
+                line = await reader.ReadLineAsync();
+            }
+        }
+        
+        await newBackupList.FlushAsync();
+        await newBackupList.DisposeAsync();
+        
+        File.Move(newListPath, listPath, true);
     }
     
     private static string RgbFormatColour(uint colourValue)
