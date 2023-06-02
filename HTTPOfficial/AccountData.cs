@@ -1,8 +1,10 @@
+using UnbloatDB.Attributes;
+
 namespace HTTPOfficial;
 
 public record AccountData (
-    string Username,
-    string Email,
+    string Username, // [MustBeUnique]
+    string Email, // [MustBeUnique]
     int AccountTier,
     List<int> Instances,
     string DiscordHandle,
@@ -12,7 +14,7 @@ public record AccountData (
     DateTime JoinDate,
     List<Badge> Badges,
     bool UsesRedditAuthentication,
-    string RedditId
+    string RedditId // [MustBeUnique]
 )  : AccountProfile(
     Username,
     DiscordHandle,

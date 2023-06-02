@@ -15,7 +15,6 @@ using WatsonWebsocket;
 using UnbloatDB;
 
 const string configPath = "server_config.json";
-const string dataPath = "ServerData";
 
 async Task CreateConfig()
 {
@@ -42,7 +41,10 @@ async Task CreateConfig()
             60,
             "https://rplace.tk",
             8080);
-    await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions { WriteIndented = true });
+    await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions
+    {
+        WriteIndented = true
+    });
     await configFile.FlushAsync();
     
     Console.ForegroundColor = ConsoleColor.Green;
@@ -66,16 +68,6 @@ static string HashSha256String(string rawData)
 if (!File.Exists(configPath))
 {
     await CreateConfig();
-}
-
-if (!Directory.Exists(dataPath))
-{
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not find data path, at " + dataPath);
-    Directory.CreateDirectory(dataPath);
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"\n[INFO]: Data path recreated successfully, program will continue to run.");
-    Console.ResetColor();
 }
 
 // Email and trusted domains
@@ -104,7 +96,7 @@ var refreshTokenAuthDates = new Dictionary<string, DateTime>();
 var refreshTokenAccessTokens = new Dictionary<string, string>();
 
 // Used by normal normal accounts
-var accountTokenAccountNames = new Dictionary<string, string>();
+var accountTokenAccountKeys = new Dictionary<string, string>();
 var redditSerialiserOptions = new JsonSerializerOptions
 {
     PropertyNameCaseInsensitive = true, 
@@ -137,20 +129,18 @@ void InvokeLogger(string message)
 var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
 // Either accountToken is valid, which allows immediate authentication, or if accountToken is null/invalid, while name and email
 // are valid, the user will be prompted to use slower email authentication with an email code.
-async Task<AccountData?> Authenticate(string? accountToken, string? name, string? email)
+async Task<RecordStructure<AccountData>?> Authenticate(string? accountToken, string? name, string? email)
 {
     // If they already have a valid token, we can do a quick and simple auth
-    if (accountToken is not null && accountTokenAccountNames.TryGetValue(accountToken, out var accountName) && File.Exists(Path.Join(dataPath, accountName)))
+    if (accountToken is not null && accountTokenAccountKeys.TryGetValue(accountToken, out var accountKey)
+        && await accountsDb.GetRecord<AccountData>(accountKey) is { } accountData)
     {
-        return JsonSerializer.Deserialize<AccountData>(File.ReadAllText(Path.Join(dataPath, accountName)));
+        return accountData;
     }
     
-    // We pre-deserialise their account data using their name to prove that the email they provided is even for this account
-    var accountPath = Path.Join(dataPath, name);
-    var accountData = File.Exists(accountPath)
-        ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
-        : null;
-    if (accountData is null || !accountData.Email.Equals(email))
+    // We get their account data using their name to prove that the email they provided is actually for this account
+    accountData = (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Username), name)).FirstOrDefault();
+    if (accountData is null || !accountData.Data.Email.Equals(email))
     {
         InvokeLogger("Account data was null or email provided was invalid, could not authenticate account login.");
         return null;
@@ -205,7 +195,7 @@ async Task<AccountData?> Authenticate(string? accountToken, string? name, string
     return await emailCompletionSource.Task ? accountData : null;
 }
 
-async Task<AccountData?> RedditAuthenticate(string refreshToken)
+async Task<RecordStructure<AccountData>?> RedditAuthenticate(string refreshToken)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -217,11 +207,8 @@ async Task<AccountData?> RedditAuthenticate(string refreshToken)
         InvokeLogger("Could not request me data for authentication, reason: " + meResponse.ReasonPhrase);
         return null;
     }
-    
-    var accountPath = Path.Join(dataPath, meData.Id);
-    return File.Exists(accountPath)
-        ? JsonSerializer.Deserialize<AccountData>(File.ReadAllText(accountPath))
-        : null;
+
+    return (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.RedditId), meData.Id)).FirstOrDefault();
 }
 
 async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
@@ -253,6 +240,22 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     refreshTokenAuthDates.Add(refreshToken, DateTime.Now);
     refreshTokenAccessTokens.Add(refreshToken, tokenData.AccessToken);
     return tokenData.AccessToken;
+}
+
+async Task RunPostAuthentication(RecordStructure<AccountData> accountData)
+{
+    // If they have been on the site for 20+ days, we remove their noob badge
+    if (accountData.Data.Badges.Contains(Badge.Newbie) && DateTime.Now - accountData.Data.JoinDate >= TimeSpan.FromDays(20))
+    {
+        accountData.Data.Badges.Remove(Badge.Newbie);
+        await accountsDb.UpdateRecord(accountData);
+    }
+    if (!accountData.Data.Badges.Contains(Badge.Veteran) &&
+        DateTime.Now - accountData.Data.JoinDate >= TimeSpan.FromDays(365))
+    {
+        accountData.Data.Badges.Add(Badge.Veteran);
+        await accountsDb.UpdateRecord(accountData);
+    }
 }
 
 async Task<bool> CheckValidEmail(string email)
@@ -308,14 +311,14 @@ server.MessageReceived += (_, args) =>
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "rplace.tk Account Code";
+                message.Subject = "rplace.tk Account Creation Code";
                 message.Body = new TextPart("html")
                 {
                     Text = $"""
                         <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
                             <h1 style="background: orangered;color: white;">Hello </h1>
                             <div style="margin: 8px;">
-                                <p>Someone used your email to register a new rplace account.</p>
+                                <p>Someone used your email to register a new rplace.tk account.</p>
                                 <p>If that's you, then cool, your code is:</p>
                                 <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
                                 <p>Otherwise, you can ignore this email, who cares anyway??</p>
@@ -350,7 +353,7 @@ server.MessageReceived += (_, args) =>
 
                     // Send them their token and sign them in
                     var accountToken = RandomNumberGenerator.GetHexString(64);
-                    accountTokenAccountNames.Add(accountToken, accountData.Username);
+                    accountTokenAccountKeys.Add(accountToken, accountData.Username);
                     var tokenBuffer = Encoding.UTF8.GetBytes("X" + accountToken);
                     tokenBuffer[0] = (byte) ServerPackets.AccountToken;
                     await server.SendAsync(args.Client, tokenBuffer);
@@ -371,12 +374,17 @@ server.MessageReceived += (_, args) =>
         }
         case (byte) ClientPackets.DeleteAccount:
         {
-            if (authorisedClients.TryGetValue(args.Client, out var accountKey))
+            async Task DeleteAccountAsync()
             {
-                // TODO: Tell worker servers to delete all their instances belonging to this account
-                authorisedClients.Remove(args.Client);
-                accountsDb.DeleteRecord<AccountData>(accountKey);
+                if (authorisedClients.TryGetValue(args.Client, out var accountKey))
+                {
+                    // TODO: Tell worker servers to delete all their instances belonging to this account
+                    authorisedClients.Remove(args.Client);
+                    await accountsDb.DeleteRecord<AccountData>(accountKey);
+                }
             }
+
+            Task.Run(DeleteAccountAsync);
             break;
         }
         case (byte) ClientPackets.AccountInfo:
@@ -402,13 +410,15 @@ server.MessageReceived += (_, args) =>
                 var accountData = await Authenticate(token, name, email);
                 if (accountData is not null)
                 {
+                    await RunPostAuthentication(accountData);
+
                     // Regardless of if they are automatically logging in with account token, or logging in for the first
                     // time on that device with an email code, we make sure to invalidate their previous token and give 
                     // them a new one after every authentication. 
-                    accountTokenAccountNames.Remove(token);
-                    authorisedClients.TryAdd(args.Client, accountData);
+                    accountTokenAccountKeys.Remove(token);
+                    authorisedClients.TryAdd(args.Client, accountData.MasterKey);
                     var accountToken = RandomNumberGenerator.GetHexString(64);
-                    accountTokenAccountNames.Add(accountToken, accountData.Username);
+                    accountTokenAccountKeys.Add(accountToken, accountData.MasterKey);
                     
                     var tokenBuffer = Encoding.UTF8.GetBytes("X" + accountToken);
                     tokenBuffer[0] = (byte) ServerPackets.AccountToken;
@@ -486,14 +496,18 @@ server.MessageReceived += (_, args) =>
                     InvokeLogger("Client create account rejected for null me API response, reason: " + tokenResponse.ReasonPhrase);
                     return;
                 }
+
                 
-                var accountPath = Path.Join(dataPath, meData.Id);
-                if (!File.Exists(accountPath))
+                // Create their account, first check no other account with that ID is signed up
+                if ((await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.RedditId), meData.Id)).Length == 0)
                 {
                     // Create new accountData for this client
                     var accountData = new AccountData(meData.Name, "", 0, new List<int>(),
                         "", "", meData.Name, 0, DateTime.Now, new List<Badge>(), true, meData.Id);
-                    File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
+                    accountData.Badges.Add(Badge.Newbie);
+
+                    var accountKey = await accountsDb.CreateRecord(accountData);
+                    authorisedClients.TryAdd(args.Client, accountKey);
                     refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
                     refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
                 }
@@ -503,8 +517,8 @@ server.MessageReceived += (_, args) =>
                     var accountData = await RedditAuthenticate(tokenData.RefreshToken);
                     if (accountData is not null)
                     {
-                        accountData.Badges.Add(Badge.Newbie);
-                        authorisedClients.TryAdd(args.Client, accountData);
+                        await RunPostAuthentication(accountData);
+                        authorisedClients.TryAdd(args.Client, accountData.MasterKey);
                         
                         // Send them their token so that they can quickly login again without having to reauthenticate
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
@@ -530,29 +544,10 @@ server.MessageReceived += (_, args) =>
                 var accountData = await RedditAuthenticate(refreshToken);
                 if (accountData is not null)
                 {
-                    // If they have been on the site for 20+ days, we remove their noob badge
-                    if (accountData.Badges.Contains(Badge.Newbie) && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(20))
-                    {
-                        accountData.Badges.Remove(Badge.Newbie);
-                        
-                        var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
-                            ? accountData.RedditId
-                            : accountData.Username);
-                        File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
-                    }
-                    if (!accountData.Badges.Contains(Badge.Veteran) &&
-                        DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
-                    {
-                        accountData.Badges.Add(Badge.Veteran);
-                        
-                        var accountPath = Path.Join(dataPath, accountData.UsesRedditAuthentication
-                            ? accountData.RedditId
-                            : accountData.Username);
-                        File.WriteAllText(accountPath, JsonSerializer.Serialize(accountData));
-                    }
-                    
+                    await RunPostAuthentication(accountData);
+
                     // Add them to server authenticated client memory so they do not have to authenticate each server API call
-                    authorisedClients.TryAdd(args.Client, accountData);
+                    authorisedClients.TryAdd(args.Client, accountData.MasterKey);
                 }
             }
 
