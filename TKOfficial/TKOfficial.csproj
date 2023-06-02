@@ -9,8 +9,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Natron.Library" Version="1.0.0" />
-        <PackageReference Include="OneOf" Version="3.0.223" />
         <PackageReference Include="Terminal.Gui" Version="1.12.1" />
     </ItemGroup>
 
