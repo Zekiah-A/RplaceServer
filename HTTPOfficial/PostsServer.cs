@@ -86,7 +86,7 @@ public class PostsServer
             return Results.NotFound();
         });
 
-        app.MapGet("/posts/{masterKey}", async (string masterKey) =>
+        app.MapGet("/posts/{masterKey}", (string masterKey) =>
         {
             var recordPath = Path.Join(configuration.PostsFolder, nameof(Post), masterKey);
             if (!File.Exists(recordPath))
@@ -94,7 +94,7 @@ public class PostsServer
                 return Results.NotFound();
             }
 
-            await using var recordStream = File.OpenRead(recordPath);
+            var recordStream = File.OpenRead(recordPath);
             return Results.Stream(recordStream, "application/json");
         });
         
