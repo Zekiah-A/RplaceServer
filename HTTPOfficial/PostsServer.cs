@@ -48,7 +48,7 @@ public class PostsServer
 
     public async Task StartAsync()
     {
-        app.MapGet("/posts/{fromDate}", async (DateTime fromDate) =>
+        app.MapGet("/posts/since/{fromDate}", async (DateTime fromDate) =>
         {
             var indexer = postsDb.GetGroupIndexer<Post>(nameof(Post.CreationDate), typeof(DateTime));
             // HACK: Everything indexer currently works with is a string, until that is changed we will have to
@@ -61,7 +61,25 @@ public class PostsServer
                 {
                     // Select the 10 next post master keys to send to the client
                     return Results.Json(keys[i..(i + 10)]);
-                    break;
+                }
+            }
+
+            return Results.NotFound();
+        });
+
+        app.MapGet("posts/before/{beforeDate}", async (DateTime beforeDate) =>
+        {
+            var indexer = postsDb.GetGroupIndexer<Post>(nameof(Post.CreationDate), typeof(DateTime));
+            // HACK: Everything indexer currently works with is a string, until that is changed we will have to
+            // HACK: parse the string date from the indexer.
+            var values = indexer.Index.Select(pair => DateTime.Parse((string) pair.Value)).ToList();
+            var keys = indexer.Index.Select(pair => pair.Key).ToList();
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (values[i] < beforeDate)
+                {
+                    // Select the 10 previous post master keys to send to the client
+                    return Results.Json(keys[Math.Max(0, i - 10)..i]);
                 }
             }
 
