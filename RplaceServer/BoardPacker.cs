@@ -44,11 +44,8 @@ public static class BoardPacker
         {
             palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
         }
-
-        var board = new byte[boardLength];
-        packedBoard[..boardLength].CopyTo(board);
-
-        return new UnpackedBoard(board, (int) boardWidth, palette);
+        
+        return new UnpackedBoard(packedBoard[..boardLength].ToArray(), (int) boardWidth, palette);
     }
 
     public static byte[] RunLengthCompressBoard(byte[] board)

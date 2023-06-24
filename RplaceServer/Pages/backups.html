@@ -19,10 +19,11 @@
             transform: translateY(-50%);
             width: 40%;
             aspect-ratio: 1/1;
-            background: white;
-            opacity: 0.3;
             border: 1px solid #afb2b4;
             border-radius: 4px;
+            background: url(https://media.tenor.com/On7kvXhzml4AAAAj/loading-gif.gif) no-repeat 50%;
+            background-size: 10%;
+            backdrop-filter: blur(10px);
         }
     </style>
     <script>
@@ -38,7 +39,10 @@
         }
         
         async function backupHovered(event) {
+            const ctx = previewCanvas.getContext("2d")
+            ctx.clearRect(0, 0, +previewCanvas.getAttribute("width") || 0, +previewCanvas.getAttribute("height") || 0)
             previewCanvas.style.visibility = 'visible'
+            
             let response = await fetch(event.target.href)
             if (!response.ok) {
                 backupLeft(null)
@@ -49,21 +53,30 @@
             let metadataLength = placeView.getInt16(placeView.byteLength - 2)
             let boardLength = placeView.byteLength - metadataLength
             let boardWidth = placeView.getUint32(boardLength)
+            let boardHeight = boardLength / boardWidth 
             previewCanvas.setAttribute("width", boardWidth)
-            previewCanvas.setAttribute("height", boardWidth / boardLength)
-
-            var palette = new List<uint>();
-            for (var i = boardLength + 4; i < packedBoard.Length - 2; i++)
-            {
-                palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
-            }
+            previewCanvas.setAttribute("height", boardHeight)
             
             let palette = []
             for (let i = boardLength + 4; i < boardLength - 2; i += 4) {
-                palette.push()
+                palette.push(placeView.getUint32(i))
+            }
+            if (!palette.length) {
+                palette = [0xff1a006d, 0xff3900be, 0xff0045ff, 0xff00a8ff, 0xff35d6ff, 0xffb8f8ff, 0xff68a300, 0xff78cc00,
+                    0xff56ed7e, 0xff6f7500, 0xffaa9e00, 0xffc0cc00, 0xffa45024, 0xffea9036, 0xfff4e951, 0xffc13a49, 0xffff5c6a,
+                    0xffffb394, 0xff9f1e81, 0xffc04ab4, 0xffffabe4, 0xff7f10de, 0xff8138ff, 0xffaa99ff, 0xff2f486d, 0xff26699c,
+                    0xff70b4ff, 0xff000000, 0xff525251, 0xff908d89, 0xffd9d7d4, 0xffffffff] // argb
             }
             
-            console.log(metadataLength)
+            const pixelData = ctx.createImageData(1, 1)
+            for (let i = 0; i < boardLength; i++) {
+                let colour = palette[placeView.getUint8(i)]
+                pixelData.data[0] = colour & 0xFF
+                pixelData.data[1] = (colour >> 8) & 0xFF
+                pixelData.data[2] = (colour >> 16) & 0xFF
+                pixelData.data[3] = (colour >> 24) & 0xFF
+                ctx.putImageData(pixelData, i % boardWidth, Math.floor(i / boardWidth));
+            }
         }
         
         function backupLeft(_) { previewCanvas.style.visibility = 'hidden' }
