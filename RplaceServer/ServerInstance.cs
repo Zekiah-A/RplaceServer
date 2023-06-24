@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using System.Net;
 using RplaceServer;
 using RplaceServer.Exceptions;
 
@@ -54,12 +55,15 @@ public sealed class ServerInstance
             
             File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
         }
-        
-        // Make a canvas save file just before the program exits.
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+
+        if (File.Exists("bans.txt"))
         {
-            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
-        };
+            GameData.Bans.AddRange(File.ReadAllLines("bans.txt"));
+        }
+        else
+        {
+            Logger?.Invoke($"Could not find bans file at {Path.Join(gameData.CanvasFolder, "bans.txt")}. Will be regenerated when a player is banned");
+        }
     }
     
     public async Task StartAsync()

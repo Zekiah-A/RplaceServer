@@ -37,7 +37,7 @@ public sealed class WebServer
         {
             Logger?.Invoke("Could not find Pages root in current working directory. Regenerating.");
             Directory.CreateDirectory(pagesRoot);
-            RecursiveCopy(Path.Join(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), @"Pages"), pagesRoot);
+            FileUtils.RecursiveCopy(Path.Join(FileUtils.BuildContentPath, @"Pages"), pagesRoot);
         }
         
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -98,22 +98,7 @@ public sealed class WebServer
         backupsCount = backups.Length;
         backupsSize = backups.Sum(file => file.Length);
     }
-
-    private static void RecursiveCopy(string sourceDir, string targetDir)
-    {
-        Directory.CreateDirectory(targetDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
-        }
-
-        foreach (var directory in Directory.GetDirectories(sourceDir))
-        {
-            RecursiveCopy(directory, Path.Combine(targetDir, Path.GetFileName(directory)));
-        }
-    }
-
+    
     public async Task StartAsync()
     {
         //Serve absolute latest board from memory.

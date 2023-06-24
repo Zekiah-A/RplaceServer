@@ -49,7 +49,11 @@ internal static class CaptchaGenerator
         var bitmap = new SKBitmap(64, 64);
         var canvas = new SKCanvas(bitmap);
         var background = new SKPaint { Color = new SKColor((byte) random.Next(), (byte) random.Next(), (byte) random.Next()) };
-        var font = new SKPaint { Typeface = SKTypeface.FromFile("CaptchaGeneration/NotoColorEmoji-Regular.ttf"), TextSize = 32 };
+        var font = new SKPaint
+        {
+            Typeface = SKTypeface.FromFile(Path.Join(Directory.GetCurrentDirectory(), "CaptchaGeneration/NotoColorEmoji-Regular.ttf")),
+            TextSize = 32
+        };
         
         canvas.DrawRect(0, 0, 64, 64, background);
         canvas.DrawText(answer, 32, 32, font);

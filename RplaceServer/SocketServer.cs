@@ -34,10 +34,13 @@ public sealed partial class SocketServer
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
     public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
+    
     [GeneratedRegex("\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
-    public static partial Regex CensoredWordsRegex();
+    private static partial Regex CensoredWordsRegex();
+    
     [GeneratedRegex("(https?://)?([\\da-z.-]+)\\.([a-z.]{2,6})([/\\w .-]*)*/?", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
-    public static partial Regex BlockedDomainsRegex();
+    private static partial Regex BlockedDomainsRegex();
+    
     [GeneratedRegex("\\W+")]
     private static partial Regex PlayerNameRegex();
 
@@ -46,6 +49,14 @@ public sealed partial class SocketServer
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         gameData = data;
         origin = originHeader;
+        
+        var captchaResources = Path.Join(Directory.GetCurrentDirectory(), @"CaptchaGeneration");
+        if (!Directory.Exists(captchaResources))
+        {
+            Logger?.Invoke("Could not find CaptchaResources in current working directory. Regenerating.");
+            Directory.CreateDirectory(captchaResources);
+            FileUtils.RecursiveCopy(Path.Join(FileUtils.BuildContentPath, @"CaptchaGeneration"), captchaResources);
+        }
     }
 
     public async Task StartAsync()
@@ -77,7 +88,7 @@ public sealed partial class SocketServer
         if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin || gameData.Bans.Contains(realIp))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating ban or initial headers checks");
-            app.DisconnectClientAsync(args.Client);
+            _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
             return;
         }
         
@@ -91,7 +102,7 @@ public sealed partial class SocketServer
             if (clearance is null)
             {
                 Logger?.Invoke($"Client {realIpPort} disconnected for null cloudflare clearance cookie");
-                app.DisconnectClientAsync(args.Client);
+                _ = app.DisconnectClientAsync(args.Client, "Invalid cloudflare clearance cookie");
                 return;
             }
             
@@ -99,7 +110,8 @@ public sealed partial class SocketServer
                 .Where(metadata => metadata.HttpContext.Request.Cookies["cf_clearance"] == clearance))
             {
                 Logger?.Invoke($"Client {realIpPort} disconnected for new connection from the same clearance cookie");
-                app.DisconnectClientAsync(metadata);
+                _ = app.DisconnectClientAsync(metadata, "Already connected with given clearance cookie");
+                return;
             }
         }
         
@@ -316,7 +328,7 @@ public sealed partial class SocketServer
                 if (gameData.PendingCaptchas.TryGetValue(realIp, out var answer) || !response.Equals(answer))
                 {
                     Logger?.Invoke($"Client {GetRealIpPort(args.Client)} disconnected for invalid captcha response");
-                    app.DisconnectClientAsync(args.Client);
+                    _ = app.DisconnectClientAsync(args.Client, "Captcha fail");
                     return;
                 }
                 
@@ -334,8 +346,8 @@ public sealed partial class SocketServer
     {
         gameData.Clients.Remove(args.Client);
         gameData.PlayerCount--;
-
         DistributePlayerCount();
+        
         PlayerDisconnected?.Invoke(this, new PlayerDisconnectedEventArgs(args.Client));
     }
 
@@ -439,7 +451,8 @@ public sealed partial class SocketServer
     public async Task BanPlayer(ClientMetadata client)
     {
         gameData.Bans.Add(GetRealIp(client));
-        await app.DisconnectClientAsync(client);
+        await File.AppendAllTextAsync("bans.txt", "\n" + GetRealIp(client));
+        await app.DisconnectClientAsync(client, "You have been banned from this instance");
     }
 
     /// <summary>
@@ -449,7 +462,7 @@ public sealed partial class SocketServer
     /// <param name="client">The client who is to be kicked (disconnected) from the socket server.</param>
     public async Task KickPlayer(ClientMetadata client)
     {
-        await app.DisconnectClientAsync(client);
+        await app.DisconnectClientAsync(client, "You have been kicked from this instance");
     }
     
     public static string CensorText(string text)
@@ -469,7 +482,7 @@ public sealed partial class SocketServer
     {
         foreach (var client in app.Clients)
         {
-            await app.DisconnectClientAsync(client);
+            await app.DisconnectClientAsync(client, "Server shutdown");
         }
         
         await app.StopAsync();
