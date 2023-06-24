@@ -12,21 +12,20 @@ public static class BoardPacker
         var packedBoard = (Span<byte>) stackalloc byte[board.Length + metadataLength];
         board.CopyTo(packedBoard);
 
-        var iteration = board.Length;
-        BinaryPrimitives.WriteUInt32BigEndian(packedBoard[iteration..(iteration + 4)], (uint) boardWidth);
-        iteration += 4;
+        var position = board.Length;
+        BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..(position + 4)], (uint) boardWidth);
+        position += 4;
 
         if (palette is not null)
         {
-            for (var colour = board.Length + 4; colour < packedBoard.Length - 2; colour++)
+            foreach (var colour in palette)
             {
-                BinaryPrimitives.WriteUInt32BigEndian(packedBoard[iteration..(iteration + 4)], palette[colour]);
-                iteration += 4;
+                BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..(position + 4)], colour);
+                position += 4;
             }
         }
         
-        BinaryPrimitives.WriteUInt16BigEndian(packedBoard[iteration..(iteration + 2)], (ushort) metadataLength);
-        
+        BinaryPrimitives.WriteUInt16BigEndian(packedBoard[position..(position + 2)], (ushort) metadataLength);
         return packedBoard.ToArray();
     }
 
@@ -41,7 +40,7 @@ public static class BoardPacker
         var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[boardLength..(boardLength + 4)]);
 
         var palette = new List<uint>();
-        for (var i = boardLength + 4; i < packedBoard.Length - 2; i++)
+        for (var i = boardLength + 4; i < packedBoard.Length - 2; i += 4)
         {
             palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
         }

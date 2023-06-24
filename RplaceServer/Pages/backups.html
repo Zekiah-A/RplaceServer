@@ -11,6 +11,19 @@
             background-color: yellow;
             box-shadow: -2px -2px 4px darkkhaki inset;
         }
+        
+        #previewCanvas {
+            position: fixed;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40%;
+            aspect-ratio: 1/1;
+            background: white;
+            opacity: 0.3;
+            border: 1px solid #afb2b4;
+            border-radius: 4px;
+        }
     </style>
     <script>
         function search(val) {
@@ -23,18 +36,50 @@
                 else link.classList.add("highlight")
             }
         }
+        
+        async function backupHovered(event) {
+            previewCanvas.style.visibility = 'visible'
+            let response = await fetch(event.target.href)
+            if (!response.ok) {
+                backupLeft(null)
+                return
+            }
+            
+            let placeView = new DataView(await response.arrayBuffer())
+            let metadataLength = placeView.getInt16(placeView.byteLength - 2)
+            let boardLength = placeView.byteLength - metadataLength
+            let boardWidth = placeView.getUint32(boardLength)
+            previewCanvas.setAttribute("width", boardWidth)
+            previewCanvas.setAttribute("height", boardWidth / boardLength)
 
+            var palette = new List<uint>();
+            for (var i = boardLength + 4; i < packedBoard.Length - 2; i++)
+            {
+                palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
+            }
+            
+            let palette = []
+            for (let i = boardLength + 4; i < boardLength - 2; i += 4) {
+                palette.push()
+            }
+            
+            console.log(metadataLength)
+        }
+        
+        function backupLeft(_) { previewCanvas.style.visibility = 'hidden' }
+        
         async function getList() {
             let backupList = (await (await fetch("./backuplist")).text()).split("\n")
             for (let backup of backupList) {
                 let anchor = document.createElement("a")
                 anchor.innerText = backup
                 anchor.href = "./backups/" + backup
+                anchor.onmouseover = backupHovered
+                anchor.onmouseleave = backupLeft
                 backupsContainer.appendChild(anchor)
                 backupsContainer.appendChild(document.createElement("br"))
             }
         }
-
         getList()
     </script>
 </head>
@@ -58,5 +103,6 @@
             <div id="backupsContainer"></div>
         </div>
     </div>
+    <canvas id="previewCanvas" style="visibility: hidden;"></canvas>
 </body>
 </html>
