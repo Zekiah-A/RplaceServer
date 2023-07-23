@@ -20,7 +20,8 @@ public sealed partial class SocketServer
 {
     private string ipEncryptionKey;
     private readonly MessagesDbService? messagesDb;
-    private readonly HttpClient httpClient = new();
+    private readonly HttpClient httpClient;
+    private readonly CaptchaGenerator captchaGenerator;
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
@@ -71,7 +72,9 @@ public sealed partial class SocketServer
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         gameData = data;
         origin = originHeader;
-        blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
+        httpClient = new HttpClient();
+        captchaGenerator = new CaptchaGenerator(gameData);
+        blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|dyke|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
         blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
         blockedDomainsRegex = new Regex(blockedDomainsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
@@ -302,7 +305,7 @@ public sealed partial class SocketServer
         
         if (gameData.CaptchaEnabled)
         {
-            var result = CaptchaGenerator.Generate(CaptchaType.Emoji);
+            var result = captchaGenerator.Generate(CaptchaType.Emoji);
             gameData.PendingCaptchas[realIp] = result.Answer;
 
             var dummiesSize = Encoding.UTF8.GetByteCount(result.Dummies);

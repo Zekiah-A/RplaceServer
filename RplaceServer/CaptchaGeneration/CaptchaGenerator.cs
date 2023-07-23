@@ -3,11 +3,12 @@ using SkiaSharp;
 
 namespace RplaceServer.CaptchaGeneration;
 
-internal static class CaptchaGenerator
+internal class CaptchaGenerator
 {
-    private static Random random = new();
+    private Random random;
+    private GameData gameData;
 
-    private static readonly string[] Emojis =
+    private readonly string[] Emojis =
     {
         "😎", "🤖", "🗣", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶", "🌳", "🌍", "🌈", "🎅", "👶", "👼",
         "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "ඞ", "📱", "🔑", "❤", "👺", "🤯", "🤬", "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪",
@@ -16,14 +17,20 @@ internal static class CaptchaGenerator
         "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
     };
 
-    private static readonly string[] Strings =
+    private readonly string[] Strings =
     {
         "rplace", "blobkat", "zekiahepic", "pixels", "game", "donate", "flag", "art", "build", "team", "create", "open",
         "canvas", "board", "anarchy", "reddit", "blank", "colour", "play", "teams", "war", "raid", "make", "learn", "fun"
     };
+
+    public CaptchaGenerator(GameData data)
+    {
+        random = new Random();
+        gameData = data;
+    }
     
     // TODO: There are currently skia-related crashes in the generator - fix.
-    internal static (string Answer, string Dummies, byte[] ImageData) Generate(CaptchaType type)
+    internal (string Answer, string Dummies, byte[] ImageData) Generate(CaptchaType type)
     {
         var answer = "";
         var dummies = new string[10];
@@ -51,7 +58,7 @@ internal static class CaptchaGenerator
         var background = new SKPaint { Color = new SKColor((byte) random.Next(), (byte) random.Next(), (byte) random.Next()) };
         var font = new SKPaint
         {
-            Typeface = SKTypeface.FromFile(Path.Join(Directory.GetCurrentDirectory(), "CaptchaGeneration/NotoColorEmoji-Regular.ttf")),
+            Typeface = SKTypeface.FromFile(Path.Join(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf")),
             TextSize = 32
         };
         

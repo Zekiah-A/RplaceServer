@@ -35,7 +35,7 @@ public static class Program
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
             var defaultConfig = new Config(
-                5000, 2500, true, true, 1000, 
+                5000, 2500, false, true, 1000, 
                 1000, 600000,  false, "Canvases", 300000,
                 true, "Resources", "SaveData", true, true,
                 "", "", "", 8080, 8081, false, "", "");
@@ -68,10 +68,7 @@ public static class Program
         try
         {
             var serverTask = Task.Run(async () => await Server.StartAsync());
-            Application.Init();
-            var consoleWindow = new ConsoleWindow();
-            Application.Top.Add(consoleWindow);
-            Application.Run();
+            Application.Run<ConsoleWindow>();
             await serverTask;
         }
         catch (Exception exception)

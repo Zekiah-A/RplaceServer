@@ -1,17 +1,30 @@
+using System.Runtime.InteropServices;
 using RplaceServer;
 using RplaceServer.Types;
 using Terminal.Gui;
 using WatsonWebsocket;
+using Microsoft.CodeAnalysis.CSharp.Scripting;
+using Microsoft.CodeAnalysis.Scripting;
 
 namespace TKOfficial;
 
 public class ConsoleWindow : Window
 {
     public Action<string>? Logger;
+    
+    // Used as a portal to allow the repl to access and interact with the server
+    public ServerInstance Server => Program.Server;
 
     public ConsoleWindow()
     {
         Initialise();
+    }
+    
+    // Used as an alias to make invoking logger from the repl easier
+    public void Print(object data)
+    {
+        var formatted = ObjectDumper.Dump(data);
+        Logger?.Invoke(formatted);
     }
 
     private void Initialise()
@@ -592,16 +605,11 @@ closeWizard:
         };
 
         // Statistics log panel
+        PanelView serverBottomPrimary = null!;
         var serverLogs = new List<string>();
-        var serverLogClear = new Button("Clear")
-        {
-            Y = Pos.AnchorEnd() - 11,
-            X = Pos.AnchorEnd() - 10
-        };
-        serverLogClear.Clicked += () => serverLogs.Clear();
         var serverLogPanel = new PanelView
         {
-            Y = Pos.AnchorEnd() - 10,
+            Y = Pos.AnchorEnd() - 13,
             Height = 8,
             Border = new Border
             {
@@ -615,9 +623,110 @@ closeWizard:
         {
             Width = Dim.Fill()
         };
+        
+        var serverReplPanel = new PanelView
+        {
+            Y = Pos.AnchorEnd() - 3,
+            Height = 2,
+            Border = new Border
+            {
+                BorderBrush = Color.White,
+                BorderStyle = BorderStyle.Rounded,
+                Title = "Command line repl"
+            },
+            ColorScheme = Colors.Base,
+        };
+        var replTextField = new TextView()
+        {
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        };
+        replTextField.KeyDown += args =>
+        {
+            if (serverBottomPrimary == serverLogPanel && args.KeyEvent.Key == Key.Enter)
+            {
+                args.Handled = true;
+                ExecuteServerRepl();
+            }
+        };
+        serverReplPanel.Child = replTextField;
+
+        void ExecuteServerRepl()
+        {
+            var codeText = replTextField.Text.ToString();
+            replTextField.Text = "";
+            
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var state = await CSharpScript.RunAsync(codeText, ScriptOptions.Default, this, typeof(ConsoleWindow));
+                    if (state.ReturnValue != null)
+                    {
+                        Logger?.Invoke(state.ReturnValue.ToString()!);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger?.Invoke(e.ToString());
+                }
+                
+            });
+        }
+
+        serverBottomPrimary = serverLogPanel;
+        var serverBottomAction = new Button("Clear")
+        {
+            Y = Pos.AnchorEnd() - 13,
+            X = Pos.AnchorEnd() - 10
+        };
+        serverBottomAction.Clicked += () =>
+        {
+            if (serverBottomPrimary == serverLogPanel)
+            {
+                serverLogs.Clear();
+            }
+            else
+            {
+                ExecuteServerRepl();
+            }
+        };
+        var serverBottomSwapPrimary = new Button("Swap primary")
+        {
+            Y = Pos.AnchorEnd() - 13,
+            X = Pos.AnchorEnd() - 26
+        };
+        serverBottomSwapPrimary.Clicked += () =>
+        {
+            var logsX = CloneObject(serverLogPanel.X);
+            var logsY = CloneObject(serverLogPanel.Y);
+            var logsHeight = CloneObject(serverLogPanel.Height);
+            
+            serverLogPanel.X = serverReplPanel.X;
+            serverLogPanel.Y = serverReplPanel.Y;
+            serverLogPanel.Height = serverReplPanel.Height;
+
+            serverReplPanel.X = logsX;
+            serverReplPanel.Y = logsY;
+            serverReplPanel.Height = logsHeight;
+            serverBottomPrimary = serverBottomPrimary == serverLogPanel ? serverReplPanel :serverLogPanel;
+
+            if (serverBottomPrimary == serverLogPanel)
+            {
+                serverBottomAction.Text = "Clear";
+            }
+            else
+            {
+                serverBottomAction.Text = "Exec";
+            }
+            
+            // We did an element position change so we need to do a full layout recalculation
+            Application.Top.LayoutSubviews();
+            Application.Refresh();
+        };
 
         Add(serverActionsPanel, clientsPanel, statisticLogLabel, serverUptimeLabel, serverIpPortLabel,
-            serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel, serverLogClear);
+            serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel, serverReplPanel, serverBottomSwapPrimary, serverBottomAction);
         
         // Server uptime timer
         var elapsedSeconds = 0;
@@ -679,6 +788,17 @@ closeWizard:
         
         Logger?.Invoke("Server software started");
     }
+    
+    private static unsafe T CloneObject<T>(T source)
+    {
+        var copyPtr = NativeMemory.Alloc((UIntPtr)sizeof(T));
+        *(T*) copyPtr = source;
+        
+        var clone = *(T*) copyPtr;
+        NativeMemory.Free(copyPtr);
+        return clone;
+    }
+
 
     private UnpackedBoard? RestoreFromBackup(string path)
     {
