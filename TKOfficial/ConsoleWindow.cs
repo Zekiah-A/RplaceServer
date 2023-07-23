@@ -14,7 +14,7 @@ public class ConsoleWindow : Window
         Initialise();
     }
 
-    public void Initialise()
+    private void Initialise()
     {
         Title = "TKOfficial CLI Environment -> ©Zekiah-A (Ctrl+Q to quit)";
 
@@ -86,7 +86,7 @@ public class ConsoleWindow : Window
                 }
                 
                 var originalDimensions = (Program.Server.GameData.BoardWidth, Program.Server.GameData.BoardHeight);
-                var newDimensions = Program.Server.SocketServer.ExpandCanvas(expandWidth, expandHeight, colourIndex);
+                var newDimensions = Program.Server.SocketServer.ExpandCanvas((uint) expandWidth, (uint) expandHeight, colourIndex);
                 var difference = newDimensions.NewWidth * newDimensions.NewHeight - originalDimensions.BoardWidth * originalDimensions.BoardHeight;
 
                 Logger?.Invoke($"Expanded canvas size to ({newDimensions.NewWidth}, {newDimensions.NewHeight}), with colour {formattedColour}, ({difference} pixels)");
@@ -300,7 +300,7 @@ closeWizard:
             {
                 if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
                 {
-                    Program.Server.GameData.Cooldown = cooldown;
+                    Program.Server.GameData.Cooldown = (uint) cooldown;
                 }
 
                 Logger?.Invoke($"Updated game pixel place cooldown to {Program.Server.GameData.Cooldown} ms");
@@ -328,7 +328,7 @@ closeWizard:
             };
             
             var firstStep = new Wizard.WizardStep("Edit colour palette"); 
-            var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()))
+            var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette))
             {
                 Width = Dim.Fill(),
                 Y = 1
@@ -500,12 +500,10 @@ closeWizard:
                 Text = "Player IP/Port: " + args.Value,
                 Y = 0
             };
-
-            var address = args.Value.ToString()!.Split(":").FirstOrDefault() ?? args.Value;
-            var isVip = Program.Server.GameData.Vips.Contains(address);
+            
             var vipLabel = new Label
             {
-                Text = isVip ? "Player is a VIP" : "Player is not a VIP",
+                Text = "Player VIP status:" + (selectedClientPair.Value.Vip ? "VIP" : selectedClientPair.Value.Admin ? "Admin" : "None"),
                 Y = 1
             };
             var lastChatLabel = new Label
@@ -518,10 +516,10 @@ closeWizard:
                 Text = "Kick player",
                 Y = 3
             };
-            kickButton.Clicked += () =>
+            kickButton.Clicked += async () =>
             {
                 Logger?.Invoke($"Disconnected player {selectedClientPair.Value.IdIpPort}");
-                Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
+                await Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
             };
             var banButton = new Button
             {
@@ -531,7 +529,7 @@ closeWizard:
             banButton.Clicked += () =>
             {
                 Logger?.Invoke($"Banned player {selectedClientPair.Value.IdIpPort}");
-                Program.Server.SocketServer.BanPlayer(selectedClientPair.Key);
+                Program.Server.SocketServer.BanPlayer(selectedClientPair.Key, 1000); //TODO: Add ban duration
             };
             firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
 
@@ -588,7 +586,7 @@ closeWizard:
         };
         var serverWebhookUrlLabel = new Label
         {
-            Text = "Game chat webhook URL: " + (Program.Config.WebhookUrl ?? "No webhook URL set"),
+            Text = "Game chat webhook URL: " + (string.IsNullOrEmpty(Program.Config.WebhookUrl) ? "No webhook URL set" : Program.Config.WebhookUrl),
             Y = Pos.Bottom(serverBackupPathLabel),
             X = Pos.Center()
         };
@@ -696,7 +694,7 @@ closeWizard:
             Program.Server.GameData.Board = boardInfo.Board;
             Program.Server.GameData.Palette = boardInfo.Palette.Count == 0 ? null : boardInfo.Palette;
             Program.Server.GameData.BoardWidth = boardInfo.Width;
-            Program.Server.GameData.BoardHeight = boardInfo.Board.Length / boardInfo.Width;
+            Program.Server.GameData.BoardHeight = (uint) (boardInfo.Board.Length / boardInfo.Width);
             return boardInfo;
         }
         catch

@@ -17,4 +17,5 @@ public record struct Configuration(
     string PostsFolder,
     int PostLimitSeconds,
     string Origin,
-    int HttpPort);
+    int HttpPort,
+    Dictionary<AccountTier, int> AccountTierInstanceLimits);

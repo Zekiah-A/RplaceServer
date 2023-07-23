@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HTTPOfficial", "HTTPOfficia
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkerOfficial", "WorkerOfficial\WorkerOfficial.csproj", "{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataProto", "DataProto\DataProto\DataProto.csproj", "{BA323DA4-6F2F-4B43-B170-5DD42BD3F5F6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,5 +44,9 @@ Global
 		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B6ACCD9-2AF5-4D94-8297-D052C5879CDD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA323DA4-6F2F-4B43-B170-5DD42BD3F5F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA323DA4-6F2F-4B43-B170-5DD42BD3F5F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA323DA4-6F2F-4B43-B170-5DD42BD3F5F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA323DA4-6F2F-4B43-B170-5DD42BD3F5F6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

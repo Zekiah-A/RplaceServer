@@ -2,34 +2,18 @@ namespace WorkerOfficial;
 
 public enum WorkerPackets : byte
 {
-    // Sent to clients
-    Logger,
-    PlayerConnected,
-    PlayerDisconnected,
-    BackupCreated,
-    InstanceQuery,
-    InstanceCreated,
-    
     // Sent to auth server
-    AuthenticateCreate = 128,
-    AuthenticateDelete = 129,
-    AuthenticateManage = 130,
-    AuthenticateVanity = 131,
-    AnnounceExistence = 132,
-    AnnounceVanity = 133
+    LoggerEntry = 130,
+    PlayerConnected = 131,
+    PlayerDisconnected = 132,
+    BackupCreated = 133,
+    SyncSuccess = 134,
+    SyncFail = 135
 }
 
 public enum ServerPackets : byte
 {
-    Authorised = 130
-}
-
-public enum ClientPackets : byte
-{
-    CreateInstance,
-    DeleteInstance,
-    RestartInstance,
-    Subscribe,
-    QueryInstance,
-    CreateVanity
+    // Come from auth server
+    QueryCanCreate = 130,
+    CreateInstance = 131,
 }

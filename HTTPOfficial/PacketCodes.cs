@@ -2,43 +2,49 @@ namespace HTTPOfficial;
 
 public enum ClientPackets : byte
 {
-    DeleteAccount,
-    UpdateAccount, // PLACEHOLDER/DEPRECATED
-    CreateAccount,
-    AccountCode,
-    AccountInfo,
-    Authenticate,
-    LocateVanity,
-    LocateWorkers,
-    VanityAvailable,
-    RedditCreateAccount,
-    RedditAuthenticate,
-    UpdateProfile,
-    ProfileInfo
+    DeleteAccount = 0,
+    CreateAccount = 2,
+    AccountCode = 3,
+    AccountInfo = 4,
+    Authenticate = 5,
+    ResolveVanity = 6,
+    VanityAvailable = 8,
+    RedditCreateAccount = 9,
+    UpdateProfile = 11,
+    ProfileInfo = 12,
+
+    CreateInstance = 13,
+    DeleteInstance = 14,
+    UpdateInstance = 15,
+    RestartInstance = 16,
+    Subscribe = 17,
+    QueryInstance = 18,
 }
 
 public enum ServerPackets : byte
 {
     // Sent to clients
-    Fail,
-    AccountInfo,
-    VanityLocation,
-    WorkerLocations,
-    AvailableVanity,
-    AccountToken, // Account token used for normal auth
-    AccountProfile,
-    RedditRefreshToken, // Refresh token used for reddit OAuth
+    AccountInfo = 1,
+    VanityLocation = 2,
+    WorkerLocations = 3,
+    AvailableVanity = 4,
+    AccountToken = 5, // Account token used for normal auth
+    AccountProfile = 6,
+    RedditRefreshToken = 7, // Refresh token used for reddit OAuth
 
     // Sent to worker server
-    Authorised = 130
+    QueryCanCreate = 130,
+    SyncInstance = 131,
+    HostInstance = 132,
 }
 
 public enum WorkerPackets : byte
 {
-    AuthenticateCreate = 128,
-    AuthenticateDelete = 129,
-    AuthenticateManage = 130,
-    AuthenticateVanity = 131,
-    AnnounceExistence = 132,
-    AnnounceVanity = 133
+    // Sent to auth server
+    LoggerEntry = 130,
+    PlayerConnected = 131,
+    PlayerDisconnected = 132,
+    BackupCreated = 133,
+    SyncSuccess = 134,
+    SyncFail = 135
 }

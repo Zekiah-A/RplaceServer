@@ -4,22 +4,20 @@ namespace TKOfficial;
 
 public record Config
 (
-    int Cooldown,
+    uint Cooldown,
     int ChatCooldown,
     bool CaptchaEnabled,
     bool CreateBackups,
-    List<string> Vips,
-    List<string> Bans,
-    List<string> Muted,
-    int BoardWidth,
-    int BoardHeight,
+    uint BoardWidth,
+    uint BoardHeight,
     int BackupFrequency,
     bool UseCloudflare,
     string CanvasFolder,
     int TimelapseLimitPeriod,
     bool CensorChatMessages,
-    int ChatHistoryLength,
-    
+    string StaticResourcesFolder,
+    string SaveDataFolder,
+    bool SaveChatMessageHistory,
     bool LogToConsole,
     string CertPath,
     string KeyPath,
@@ -27,8 +25,9 @@ public record Config
     int SocketPort,
     int HttpPort,
     bool Ssl,
-    
-    string? WebhookUrl = null,
+    string WebhookUrl,
+    string ModWebhookUrl,
     List<uint>? Palette = null
-) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, Vips, Bans, Muted, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
-    CanvasFolder, TimelapseLimitPeriod, CensorChatMessages, ChatHistoryLength, WebhookUrl, Palette);
+) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
+    CanvasFolder, TimelapseLimitPeriod, CensorChatMessages, StaticResourcesFolder, SaveDataFolder, SaveChatMessageHistory,
+    WebhookUrl, ModWebhookUrl, Palette);

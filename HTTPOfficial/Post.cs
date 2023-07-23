@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace RplaceServer.Types;
+namespace HTTPOfficial;
 
 public record Post
 (

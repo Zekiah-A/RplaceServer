@@ -34,10 +34,11 @@ public static class Program
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
-            var defaultConfig = new Config(5000, 2500, true, true, new List<string>(),
-            new List<string>(), new List<string>(), 1000, 1000, 600000,  false, 
-            "Canvases", 300000, true, 100, true, "", "",
-            "", 8080, 8081, false);
+            var defaultConfig = new Config(
+                5000, 2500, true, true, 1000, 
+                1000, 600000,  false, "Canvases", 300000,
+                true, "Resources", "SaveData", true, true,
+                "", "", "", 8080, 8081, false, "", "");
             
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
@@ -67,7 +68,10 @@ public static class Program
         try
         {
             var serverTask = Task.Run(async () => await Server.StartAsync());
-            Application.Run<ConsoleWindow>();
+            Application.Init();
+            var consoleWindow = new ConsoleWindow();
+            Application.Top.Add(consoleWindow);
+            Application.Run();
             await serverTask;
         }
         catch (Exception exception)

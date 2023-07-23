@@ -50,7 +50,7 @@ if (!Directory.Exists(dataPath))
     Console.ResetColor();
 }
 
-var defaultGameData = new GameData(
+//var defaultGameData = new GameData(
     5000, 2500, false, true, new List<string>(), new List<string>(),
     new List<string>(), 1000, 1000, 600000,  false, "Canvases",
     300000, true, 100, "");

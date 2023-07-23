@@ -5,3 +5,6 @@
 [submodule "RplaceServer/UnbloatDB"]
 	path = UnbloatDB
 	url = https://github.com/Zekiah-A/UnbloatDB
+[submodule "DataProto"]
+	path = DataProto
+	url = https://github.com/Zekiah-A/DataProto

@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using System.Collections;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -10,11 +12,14 @@ using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Types;
 using WatsonWebsocket;
+using LiteDB;
 
 namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
+    private string ipEncryptionKey;
+    private readonly MessagesDbService? messagesDb;
     private readonly HttpClient httpClient = new();
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
@@ -23,10 +28,9 @@ public sealed partial class SocketServer
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
-    private static readonly List<string> AllowedDomains = new()
+    private readonly List<string> allowedDomains = new()
     {
-        "https://rplace.tk", "https://discord.com", "https://google.com", "https://wikipedia.org", "https://pxls.space",
-        "https://reddit.com"
+        "https://rplace.tk", "https://discord.com", "https://twitter.com", "https://google.com", "https://reddit.com", "https://github.com"
     };
 
     public Action<string>? Logger;
@@ -34,12 +38,30 @@ public sealed partial class SocketServer
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
     public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
-    
-    [GeneratedRegex("\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
-    private static partial Regex CensoredWordsRegex();
-    
-    [GeneratedRegex("(https?://)?([\\da-z.-]+)\\.([a-z.]{2,6})([/\\w .-]*)*/?", RegexOptions.IgnoreCase | RegexOptions.Compiled, "en-GB")]
-    private static partial Regex BlockedDomainsRegex();
+
+    private string blockedWordsPattern;
+    private Regex blockedWordsRegex;
+    public string BlockedWordsPattern
+    {
+        get => blockedWordsPattern;
+        set
+        {
+            blockedWordsPattern = value;
+            blockedWordsRegex = new Regex(value, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
+        }
+    }
+
+    private string blockedDomainsPattern;
+    private Regex blockedDomainsRegex;
+    public string BlockedDomainsPattern
+    {
+        get => blockedDomainsPattern;
+        set
+        {
+            blockedDomainsPattern = value;
+            blockedDomainsRegex = new Regex(value, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
+        }
+    }
     
     [GeneratedRegex("\\W+")]
     private static partial Regex PlayerNameRegex();
@@ -49,18 +71,128 @@ public sealed partial class SocketServer
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         gameData = data;
         origin = originHeader;
+        blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|lesbian|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
+        blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
+        blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
+        blockedDomainsRegex = new Regex(blockedDomainsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         
-        var captchaResources = Path.Join(Directory.GetCurrentDirectory(), @"CaptchaGeneration");
+        if (gameData.SaveChatMessageHistory)
+        {
+            messagesDb = new MessagesDbService(Path.Join(gameData.SaveDataFolder, "messages.db"));
+        }
+    }
+    
+    // These are hybrid files, made up of a key value dictionary separated by a whitespace, but also can contain
+    // links to other hosted plaintext files, which will also be evaluated and added to the dictionary
+    private async Task ReadMuteBanLinkSheet<T>(IEnumerable<string> text, T targetDictionary) where T : IDictionary
+    {
+        foreach (var line in text)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var sections = line.Split(" ");
+            switch (sections.Length)
+            {
+                case 0:
+                {
+                    continue;
+                }
+                case 1:
+                {
+                    if (Uri.TryCreate(sections[0], UriKind.Absolute, out var banSheetUri) &&
+                        (banSheetUri.Scheme == Uri.UriSchemeHttp || banSheetUri.Scheme == Uri.UriSchemeHttps))
+                    {
+                        var response = await httpClient.GetAsync(sections[0]);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var linkSheet = await response.Content.ReadAsStringAsync();
+                            await ReadMuteBanLinkSheet(linkSheet.Split("\n"), targetDictionary);
+                        }
+                    }
+                    else
+                    {
+                        targetDictionary.Add(sections[0], long.MaxValue);
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    if (long.TryParse(sections[1], out var dateEnd))
+                    {
+                        targetDictionary.Add(sections[0], dateEnd);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    public async Task StartAsync()
+    {
+        var captchaResources = Path.Join(gameData.StaticResourcesFolder, @"CaptchaGeneration");
         if (!Directory.Exists(captchaResources))
         {
-            Logger?.Invoke("Could not find CaptchaResources in current working directory. Regenerating.");
+            Logger?.Invoke($"Could not find Resources Captcha Generation at {captchaResources}. Regenerating.");
             Directory.CreateDirectory(captchaResources);
             FileUtils.RecursiveCopy(Path.Join(FileUtils.BuildContentPath, @"CaptchaGeneration"), captchaResources);
         }
-    }
+        
+        var bansPath = Path.Join(gameData.SaveDataFolder, "bans.txt");
+        if (File.Exists(bansPath))
+        {
+            ReadMuteBanLinkSheet(await File.ReadAllLinesAsync(bansPath), gameData.Bans).GetAwaiter().GetResult();
+        }
+        else
+        {
+            Logger?.Invoke($"Could not find bans file at {Path.Join(gameData.SaveDataFolder, "bans.txt")}. Will be regenerated when a player is banned.");
+        }
+        
+        var mutesPath = Path.Join(gameData.SaveDataFolder, "mutes.txt");
+        if (File.Exists(mutesPath))
+        {
+            ReadMuteBanLinkSheet(await File.ReadAllLinesAsync(mutesPath), gameData.Mutes).GetAwaiter().GetResult();
+        }
+        else
+        {
+            Logger?.Invoke($"Could not find mutes file at {Path.Join(gameData.SaveDataFolder, "mutes.txt")}. Will be regenerated when a player is muted.");
+        }
 
-    public async Task StartAsync()
-    {
+        var vipPath = Path.Join(gameData.SaveDataFolder, "vip.txt");
+        if (File.Exists(vipPath))
+        {
+            gameData.VipKeys.AddRange(await File.ReadAllLinesAsync(vipPath));
+        }
+        else
+        {
+            Logger?.Invoke($"Could not find game VIPs file. Generating new VIP key file at '{vipPath}'");
+        }
+        
+        // Used for non-account senderUid generation
+        var ipEncryptPath = Path.Join(gameData.SaveDataFolder, "ipkey.txt");
+        if (File.Exists(ipEncryptPath))
+        {
+            var encrypted = File.ReadAllText(ipEncryptPath);
+            if (string.IsNullOrEmpty(encrypted) || encrypted.Length < 16)
+            {
+                Logger?.Invoke($"SERIOUS SECURITY RISK - Encrypted IP encryption key at '{ipEncryptPath
+                    }' was found to be invalid or empty. Please delete the encryption key file to generate new or use a valid key");
+            }
+
+            ipEncryptionKey = encrypted;
+        }
+        else
+        {
+            var keyBytes = RandomNumberGenerator.GetBytes(32);
+            var secureKey = Convert.ToBase64String(keyBytes);
+            ipEncryptionKey = secureKey;
+            await File.WriteAllTextAsync(ipEncryptPath, secureKey);
+            
+            Logger?.Invoke($"Could not find ip encryption key. Generating new IP encryption key at '{ipEncryptPath}'");
+        }
+        
         app.ClientConnected += ClientConnected;
         app.MessageReceived += MessageReceived;
         app.ClientDisconnected += ClientDisconnected;
@@ -84,10 +216,23 @@ public sealed partial class SocketServer
             realIpPort = addresses.FirstOrDefault() ?? args.Client.IpPort;
         }
         
-        // Reject
-        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin || gameData.Bans.Contains(realIp))
+        // Carry out ban check, if their ban time is expired we allow connect
+        if (gameData.Bans.TryGetValue(realIp, out var banUnixMsEnd))
         {
-            Logger?.Invoke($"Client {realIpPort} disconnected for violating ban or initial headers checks");
+            if (banUnixMsEnd < DateTimeOffset.Now.ToUnixTimeMilliseconds())
+            {
+                Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks");
+                return;
+            }
+
+            gameData.Bans.Remove(realIp);
+            // TODO: Send discord and console message, update bans in file
+        }
+        
+        // Reject
+        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin)
+        {
+            Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks");
             _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
             return;
         }
@@ -116,7 +261,42 @@ public sealed partial class SocketServer
         }
         
         // Accept - Create a player instance
-        var playerSocketClient = new ClientData(realIpPort, DateTimeOffset.Now);
+        // false, false, UidType.EncryptedIp,
+        /*if (url) {
+            let codeHash = sha256(url)
+            if (!VIP.has(codeHash)) {
+                return p.close()
+            }
+            p.codehash = codeHash
+            if (url.startsWith("!")) {
+                p.admin = true
+                CD = 30
+            }
+            else {
+                p.vip = true
+                CD /= 2
+            }
+        }*/
+        var playerSocketClient = new ClientData(realIpPort, DateTimeOffset.Now, UidType.EncryptedIp, "");
+        var uriKey = args.HttpRequest.Path.ToUriComponent().Split("/").FirstOrDefault();
+        if (uriKey is not null && uriKey.Length != 0)
+        {
+            var codeHash = HashSha256String(uriKey[1..]);
+            if (!gameData.VipKeys.Contains(codeHash))
+            {
+                Logger?.Invoke($"Client with IP {GetRealIp(args.Client)} attempted to use an invalid VIP key {codeHash}");
+                return;
+            }
+
+            if (uriKey[0] == '!')
+            {
+                playerSocketClient.Admin = true;
+            }
+            else
+            {
+                playerSocketClient.Vip = true;
+            }
+        }
         gameData.Clients.Add(args.Client, playerSocketClient);
         gameData.PlayerCount++;
         
@@ -150,17 +330,13 @@ public sealed partial class SocketServer
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
         // TODO: Previous cooldown that they may have had before disconnect
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], (uint) gameData.Cooldown);
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], (uint) gameData.BoardWidth);
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], (uint) gameData.BoardHeight);
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], gameData.Cooldown);
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], gameData.BoardWidth);
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
         
-        // Send player all chat message history until they joined
-        foreach (var messagePacket in gameData.ChatHistory)
-        {
-            app.SendAsync(args.Client, messagePacket);
-        }
-
+        // TODO: Send player all chat message history until they joined
+        
         DistributePlayerCount();
         PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(args.Client));
     }
@@ -204,19 +380,13 @@ public sealed partial class SocketServer
                     app.SendAsync(args.Client, buffer.ToArray());
                     return;
                 }
-
-                if (gameData.Muted.Contains(GetRealIp(args.Client)))
-                {
-                    Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for being muted ({clientCooldown})");
-                    return;
-                }
-
+                
                 var inhibitor = new EventInhibitor();
                 PixelPlacementReceived?.Invoke
                 (
                     this,
-                    new PixelPlacementEventArgs(colour, (int) (index % gameData.BoardWidth),
-                        (int) index / gameData.BoardHeight, (int) index, args.Client, data.ToArray(), inhibitor)
+                    new PixelPlacementEventArgs(colour, (index % gameData.BoardWidth),
+                        index / gameData.BoardHeight, index, args.Client, data.ToArray(), inhibitor)
                 );
 
                 if (inhibitor.Raised)
@@ -244,6 +414,19 @@ public sealed partial class SocketServer
                     Logger?.Invoke($"Chat from client {GetRealIpPort(args.Client)} rejected for breaching length/cooldown rules");
                     return;
                 }
+                
+                if (gameData.Mutes.TryGetValue(GetRealIp(args.Client), out var muteUnixMsEnd))
+                {
+                    if (muteUnixMsEnd < DateTimeOffset.Now.ToUnixTimeMilliseconds())
+                    {
+                        Logger?.Invoke($"Chat message from client {GetRealIpPort(args.Client)} rejected for being muted");
+                        return;
+                    }
+
+                    gameData.Mutes.Remove(realIp);
+                    // TODO: Send discord and console message & save to file
+                    return;
+                }
 
                 gameData.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
@@ -252,7 +435,7 @@ public sealed partial class SocketServer
                 var message = splitText.ElementAtOrDefault(0);
                 var name = splitText.ElementAtOrDefault(1);
                 var channel = splitText.ElementAtOrDefault(2);
-                
+
                 // Reject
                 if (message is null || name is null || channel is null)
                 {
@@ -300,15 +483,6 @@ public sealed partial class SocketServer
                 packet[0] = (byte) ServerPacket.ChatMessage;
                 messageData.CopyTo(packet, 1);
                 
-                if (gameData.ChatHistory.Count > gameData.ChatHistoryLength)
-                {
-                    gameData.ChatHistory.RemoveAt(0);
-                }
-                if (gameData.ChatHistoryLength != 0)
-                {
-                    gameData.ChatHistory.Add(packet);
-                }
-
                 foreach (var client in app.Clients)
                 {
                     app.SendAsync(client, packet);
@@ -337,6 +511,51 @@ public sealed partial class SocketServer
                 buffer[1] = (byte) ServerPacket.Captcha;
                 buffer[2] = (byte) CaptchaType.Success;
                 app.SendAsync(args.Client, buffer);
+                break;
+            }
+            case ClientPacket.ModAction:
+            {
+                if (!gameData.Clients.TryGetValue(args.Client, out var clientData) || !clientData.Admin)
+                {
+                    Logger?.Invoke($"Unauthenticated client {GetRealIpPort(args.Client)} attempted to initiate a mod action");
+                    return;
+                }
+
+                // TODO: Mod action
+                break;
+            }
+            case ClientPacket.Rollback:
+            {
+                if (!gameData.Clients.TryGetValue(args.Client, out var clientData) || !clientData.Admin)
+                {
+                    Logger?.Invoke($"Unauthenticated client {GetRealIpPort(args.Client)} attempted to initiate a rollback");
+                    return;
+                }
+                if (data.Length < 7)
+                {
+                    Logger?.Invoke($"Rollback from client {GetRealIpPort(args.Client)} rejected for invalid packet length ({data.Length})");
+                    return;
+                }
+
+                var regionWidth = data[1];
+                var regionHeight = data[2];
+                var boardPos = BinaryPrimitives.ReadInt32BigEndian(data[3..]);
+                if (boardPos % gameData.BoardWidth + regionWidth >= gameData.BoardWidth
+                    || boardPos + regionHeight * gameData.BoardHeight >= gameData.BoardWidth * gameData.BoardHeight)
+                {
+                    Logger?.Invoke($"Rollback from client {GetRealIpPort(args.Client)
+                        } rejected for invalid parameters (w: {regionWidth}, h: {regionHeight}, pos: {boardPos})");
+                    return;
+                }
+
+                var boardSpan = new Span<byte>(gameData.Board);
+                var regionI = 7; // We ignore initial data
+                while (regionI < regionWidth * regionHeight + 7)
+                {
+                    data[regionI..(regionI + regionWidth)].CopyTo(boardSpan[boardPos..]);
+                    boardPos += (int) gameData.BoardWidth;
+                    regionI += regionWidth;
+                }
                 break;
             }
         }
@@ -373,7 +592,7 @@ public sealed partial class SocketServer
     /// <param name="heightIncrease">The increase in pixels on the Y axis.</param>
     /// <param name="expandColour">The colour which the new expanded area of the board will be filled with.</param>
     /// <returns>The new width and new height of the board after it has been increased.</returns>
-    public (int NewWidth, int NewHeight) ExpandCanvas(int widthIncrease, int heightIncrease, int expandColour)
+    public (uint NewWidth, uint NewHeight) ExpandCanvas(uint widthIncrease, uint heightIncrease, int expandColour)
     {
         var newHeight = gameData.BoardHeight + heightIncrease;
         var newWidth = gameData.BoardWidth + widthIncrease;
@@ -399,7 +618,7 @@ public sealed partial class SocketServer
     /// <param name="client">The player that this chat message will be sent to, if no client provided, then it is sent to all.</param>
     public void BroadcastChatMessage(string message, string channel, ClientMetadata? client = null)
     {
-        var messageBytes = Encoding.UTF8.GetBytes($"\x0f{message}\n**𝖲𝖤𝖱𝖵𝖤𝖱**\n{channel}");
+        var messageBytes = Encoding.UTF8.GetBytes($"\x0f{message}\nSERVER@RPLACE✓\n{channel}");
         messageBytes[0] = (byte) ServerPacket.ChatMessage;
 
         if (client is null)
@@ -442,42 +661,125 @@ public sealed partial class SocketServer
         
         return width * height;
     }
-    
+
     /// <summary>
     /// Bans a player from the current server instance, kicking them and preventing them from reconnecting for the duration
-    /// of this instance running (is not persistent between server restarts unless implemented by a server software).
+    /// defined in timeSpecifier.
     /// </summary>
-    /// <param name="client">The client who is to be banned from reconnecting to the game</param>
-    public async Task BanPlayer(ClientMetadata client)
+    /// <param name="identifier">The client who is to be banned from reconnecting to the game, either ip or ClientMetadata</param>
+    /// <param name="timeSpecifier">Either long unixTimeMs for ban end or a DateTimeOffset</param>
+    public async Task BanPlayer<TPlayer, TDuration>(TPlayer identifier, TDuration timeSpecifier)
     {
-        gameData.Bans.Add(GetRealIp(client));
-        await File.AppendAllTextAsync("bans.txt", "\n" + GetRealIp(client));
-        await app.DisconnectClientAsync(client, "You have been banned from this instance");
+        var clientIp = identifier switch
+        {
+            string ip => ip,
+            ClientMetadata client => GetRealIp(client),
+            _ => null
+        };
+        if (clientIp is null)
+        {
+            return;
+        }
+
+        var endTime = timeSpecifier switch
+        {
+            long unixTimeMs => unixTimeMs,
+            DateTimeOffset offset => (long?) offset.ToUnixTimeMilliseconds(),
+            _ => null
+        };
+        if (endTime is null)
+        {
+            return;
+        }
+
+        gameData.Bans.Add(clientIp, (long) endTime);
+        await File.AppendAllTextAsync(Path.Join(gameData.SaveDataFolder, "bans.txt"), "\n" + clientIp);
+        foreach (var client in app.Clients.Where(client => GetRealIp(client) == clientIp))
+        {
+            await app.DisconnectClientAsync(client, "You have been banned from this instance");
+        }
     }
 
     /// <summary>
-    /// Kicks a player from the current server instance, disconnecting them from the game immediately. For a more
-    /// permanent solution, see BanPlayer(ClientMetadata client).
+    /// Bans a player from the current server instance, preventing them from sending messages in chat for the duration
+    /// defined in timeSpecifier.
     /// </summary>
-    /// <param name="client">The client who is to be kicked (disconnected) from the socket server.</param>
-    public async Task KickPlayer(ClientMetadata client)
+    /// <param name="identifier">The client who is to be muted, either ip or ClientMetadata</param>
+    /// <param name="timeSpecifier">Either long unixTimeMs for mute end or a DateTimeOffset</param>
+    public async Task MutePlayer<TPlayer, TDuration>(TPlayer identifier, TDuration timeSpecifier)
     {
-        await app.DisconnectClientAsync(client, "You have been kicked from this instance");
+        var clientIp = identifier switch
+        {
+            string ip => ip,
+            ClientMetadata client => GetRealIp(client),
+            _ => null
+        };
+        if (clientIp is null)
+        {
+            return;
+        }
+
+        var endTime = timeSpecifier switch
+        {
+            long unixTimeMs => unixTimeMs,
+            DateTimeOffset offset => (long?) offset.ToUnixTimeMilliseconds(),
+            _ => null
+        };
+        if (endTime is null)
+        {
+            return;
+        }
+        
+        gameData.Mutes.Add(clientIp, (long) endTime);
+        await File.AppendAllTextAsync(Path.Join(gameData.SaveDataFolder, "mutes.txt"), "\n" + clientIp);
     }
-    
-    public static string CensorText(string text)
+
+    /// <summary>
+    /// Kicks a player from the current server instance, disconnecting them from the game immediately.
+    /// </summary>
+    /// <param name="identifier">The client who is to be kicked, either ip or ClientMetadata</param>
+    public async Task KickPlayer<T>(T identifier)
     {
-        var censoredText = CensoredWordsRegex().Replace(text, match => new string('*', match.Length));
-        censoredText = BlockedDomainsRegex().Replace(censoredText, match =>
+        switch (identifier)
+        {
+            case ClientMetadata clientIdentifier:
+            {
+                await app.DisconnectClientAsync(clientIdentifier, "You have been kicked from this instance");
+                break;
+            }
+            case string ip:
+            {
+                foreach (var client in app.Clients.Where(client => GetRealIp(client) == ip))
+                {
+                    await app.DisconnectClientAsync(client, "You have been kicked from this instance");
+                }
+                break;
+            }
+        }
+    }
+
+    private string CensorText(string text)
+    {
+        // Censored words regex
+        var censoredText = blockedWordsRegex
+            .Replace(text, match => new string('*', match.Length));
+        
+        censoredText = blockedDomainsRegex.Replace(censoredText, match =>
         {
             var url = match.ToString();
             var domain = url.Replace("http://", "").Replace("https://", "");
-            return AllowedDomains.Contains(domain) ? url : new string('*', url.Length);
+            return allowedDomains.Any(allowed => allowed.StartsWith(domain)) ? url : new string('*', url.Length);
         });
 
         return censoredText.Trim();
     }
 
+    private static string HashSha256String(string text)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
+        return bytes.Aggregate("", (current, b) => current + b.ToString("x2"));
+    }
+    
     public async Task StopAsync()
     {
         foreach (var client in app.Clients)
@@ -489,12 +791,12 @@ public sealed partial class SocketServer
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public string GetRealIpPort(ClientMetadata client)
+    private string GetRealIpPort(ClientMetadata client)
     {
         return gameData.Clients.GetValueOrDefault(client)?.IdIpPort ?? client.IpPort;
     }
 
-    public string GetRealIp(ClientMetadata client)
+    private string GetRealIp(ClientMetadata client)
     {
         var readAddress = GetRealIpPort(client);
         return readAddress.Split(":").FirstOrDefault() ?? readAddress;

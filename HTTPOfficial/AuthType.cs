@@ -2,6 +2,7 @@ namespace HTTPOfficial;
 
 public enum AuthType
 {
-    Normal,
+    NameEmail,
+    NormalToken,
     Reddit
 }

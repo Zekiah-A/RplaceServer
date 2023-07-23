@@ -1,16 +1,12 @@
-using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using PlaceHttpsServer;
 using RplaceServer.Events;
-using RplaceServer.Types;
-using UnbloatDB;
-using UnbloatDB.Serialisers;
 using System.Diagnostics;
-using System.Runtime.InteropServices.ComTypes;
-using System.Timers;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Hosting;
 
 namespace RplaceServer;
 
@@ -23,7 +19,7 @@ public sealed class WebServer
     
     private double cpuUsagePercentage;
     private long backupsSize;
-    public int backupsCount;
+    private int backupsCount;
     
     public event EventHandler<CanvasBackupCreatedEventArgs>? CanvasBackupCreated;
 
@@ -32,7 +28,7 @@ public sealed class WebServer
         gameData = data;
         timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriod));
 
-        var pagesRoot = Path.Join(Directory.GetCurrentDirectory(), @"Pages");
+        var pagesRoot = Path.Join(gameData.StaticResourcesFolder, @"Pages");
         if (!Directory.Exists(pagesRoot))
         {
             Logger?.Invoke("Could not find Pages root in current working directory. Regenerating.");
@@ -47,51 +43,67 @@ public sealed class WebServer
 
         builder.Services.AddCors(options =>
         {
-            options.AddDefaultPolicy(policy => policy.WithOrigins(origin, "*"));
+            // We allow CORS on any endpoint except place, which will respect only from the origin so that we can ensure
+            // legitimate clients.
+            options.AddDefaultPolicy(policy => policy
+                .AllowAnyOrigin()
+                .AllowAnyMethod()
+                .AllowAnyHeader());
+            options.AddPolicy("PlacePolicy", policy => policy
+                .WithOrigins(origin)
+                .AllowAnyMethod()
+                .AllowAnyHeader());
         });
-
-        builder.Configuration["Kestrel:Certificates:Default:Path"] = certPath;
-        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = keyPath;
+        
+        builder.WebHost.UseKestrel(options =>
+        {
+            options.ListenAnyIP(port, listenOptions =>
+            {
+                if (ssl)
+                {
+                    var certificate = new X509Certificate2(certPath, keyPath);
+                    listenOptions.UseHttps(certificate);
+                }
+            });
+        });
         
         app = builder.Build();
         app.UseStaticFiles(new StaticFileOptions
         {
             ServeUnknownFileTypes = true,
-            FileProvider = new PhysicalFileProvider(pagesRoot),
+            FileProvider = new PhysicalFileProvider(Path.GetFullPath(pagesRoot)),
             RequestPath = ""
         });
         
         app.UseDirectoryBrowser(new DirectoryBrowserOptions
         {
-            FileProvider = new PhysicalFileProvider(pagesRoot),
+            FileProvider = new PhysicalFileProvider(Path.GetFullPath(pagesRoot)),
             RequestPath = ""
         });
-        app.Urls.Add($"{(ssl ? "https" : "http")}://*:{port}");
-        app.UseCors(policy =>
-        {
-            policy.AllowAnyMethod()
-                .AllowAnyHeader()
-                .SetIsOriginAllowed(_ => true) // TODO: Add origin block/check
-                .AllowCredentials();
-        });
-
+        
+        // More fine grained CORS policy than global server
+        app.UseCors(policy => policy
+            .WithOrigins(origin)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials());
+        
         var cpuUsageTimer = new System.Timers.Timer(TimeSpan.FromSeconds(2))
         {
             Enabled = true,
             AutoReset = true
         };
+        var startTime = DateTime.UtcNow;
+        var startCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         cpuUsageTimer.Elapsed += (_, _) =>
         {
-            var startTime = DateTime.UtcNow;
-            var startCpuUsage = Process.GetCurrentProcess().TotalProcessorTime;
-            // As this method is asynchronous, the total processor time will increase even though we wait on this thread
-            // due to all the rest of the server processes occuring in the background.
-            Thread.Sleep(1000);
-            
-            var cpuUsedMs = (Process.GetCurrentProcess().TotalProcessorTime - startCpuUsage).TotalMilliseconds;
+            var cpuUsedMs = (Process.GetCurrentProcess().TotalProcessorTime - startCpuTime).TotalMilliseconds;
             var totalMsPassed = (DateTime.UtcNow - startTime).TotalMilliseconds;
             var cpuUsageTotal = cpuUsedMs / (Environment.ProcessorCount * totalMsPassed);
             cpuUsagePercentage = cpuUsageTotal * 100;
+
+            startTime = DateTime.UtcNow;
+            startCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         };
         
         var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
@@ -102,11 +114,11 @@ public sealed class WebServer
     public async Task StartAsync()
     {
         //Serve absolute latest board from memory.
-        app.MapGet("/place", () =>
+        app.MapGet("/place",() =>
         {
             var board = BoardPacker.RunLengthCompressBoard(gameData.Board);
             return Results.Bytes(board);
-        });
+        }).RequireCors("PlacePolicy");
         
         // To download a specific backup.
         app.MapGet("/backups/{placeFile}", (string placeFile) =>

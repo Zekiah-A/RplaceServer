@@ -5,7 +5,7 @@ namespace HTTPOfficial;
 public record AccountData (
     string Username, // [MustBeUnique]
     string Email, // [MustBeUnique]
-    int AccountTier,
+    AccountTier Tier,
     List<int> Instances,
     string DiscordHandle,
     string TwitterHandle,

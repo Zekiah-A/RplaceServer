@@ -5,7 +5,7 @@ namespace RplaceServer;
 
 public static class BoardPacker
 {
-    public static byte[] PackBoard(byte[] board, List<uint>? palette, int boardWidth)
+    public static byte[] PackBoard(byte[] board, List<uint>? palette, uint boardWidth)
     {
         
         var metadataLength = 4 + (palette?.Count ?? 0) * 4 + 2;
@@ -45,7 +45,7 @@ public static class BoardPacker
             palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
         }
         
-        return new UnpackedBoard(packedBoard[..boardLength].ToArray(), (int) boardWidth, palette);
+        return new UnpackedBoard(packedBoard[..boardLength].ToArray(), boardWidth, palette);
     }
 
     public static byte[] RunLengthCompressBoard(byte[] board)

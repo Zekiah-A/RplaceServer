@@ -13,10 +13,7 @@
 
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-using System.Net;
 using RplaceServer;
-using RplaceServer.Exceptions;
 
 public sealed class ServerInstance
 {
@@ -30,44 +27,54 @@ public sealed class ServerInstance
         GameData = gameData;
         SocketServer = new SocketServer(gameData, certPath, keyPath, origin, ssl, socketPort);
         WebServer = new WebServer(gameData, certPath, keyPath, origin, ssl, webPort);
-        
-        try
-        {
-            var boardBytes = File.ReadAllBytes(Path.Join(gameData.CanvasFolder, "place"));
-            if (boardBytes.Length == 0)
-            {
-                throw new NoCanvasFileFoundException(
-                    "Could not read canvas file at", Path.Join(gameData.CanvasFolder, "place"));
-            }
-            
-            gameData.Board = boardBytes;
-        }
-        catch (Exception exception)
-        {
-            Logger?.Invoke(exception.Message);
-            gameData.Board = new byte[gameData.BoardWidth * gameData.BoardHeight];
+    }
 
-            if (!Directory.Exists(gameData.CanvasFolder))
-            {
-                Directory.CreateDirectory(gameData.CanvasFolder);
-                Logger?.Invoke("Created new canvas folder.");
-            }
-            
-            File.WriteAllBytes(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
-        }
+    private async Task CreateNewBoardAsync()
+    {
+        GameData.Board = new byte[GameData.BoardWidth * GameData.BoardHeight];
 
-        if (File.Exists("bans.txt"))
+        if (!Directory.Exists(GameData.CanvasFolder))
         {
-            GameData.Bans.AddRange(File.ReadAllLines("bans.txt"));
+            Directory.CreateDirectory(GameData.CanvasFolder);
+            Logger?.Invoke("Could not find canvas folder. Regenerating");
         }
-        else
-        {
-            Logger?.Invoke($"Could not find bans file at {Path.Join(gameData.CanvasFolder, "bans.txt")}. Will be regenerated when a player is banned");
-        }
+            
+        await File.WriteAllBytesAsync(Path.Join(GameData.CanvasFolder, "place"), GameData.Board);
     }
     
     public async Task StartAsync()
     {
+        var boardPath = Path.Join(GameData.CanvasFolder, "place");
+        if (!File.Exists(boardPath))
+        {
+            Logger?.Invoke($"Could not find board. Regenerating with width: {GameData.BoardWidth}, height: {GameData.BoardHeight}");
+        }
+        else
+        {
+            var boardBytes = await File.ReadAllBytesAsync(boardPath);
+            if (boardBytes.Length == 0)
+            {
+                Logger?.Invoke("Board had invalid length (0). Regenerating.");
+                await CreateNewBoardAsync();
+            }
+            else
+            {
+                GameData.Board = boardBytes;
+            }
+        }
+
+        if (!Directory.Exists(GameData.StaticResourcesFolder))
+        {
+            Directory.CreateDirectory(GameData.StaticResourcesFolder);
+            Logger?.Invoke($"Could not Static resources folder at {GameData.StaticResourcesFolder}. Regenerating");
+        }
+        
+        if (!Directory.Exists(GameData.SaveDataFolder))
+        {
+            Directory.CreateDirectory(GameData.SaveDataFolder);
+            Logger?.Invoke($"Could not find Save Data folder at {GameData.SaveDataFolder}. Regenerating.");
+        }
+
         await Task.WhenAll(SocketServer.StartAsync(), WebServer.StartAsync());
     }
 

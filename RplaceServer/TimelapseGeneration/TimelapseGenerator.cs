@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using FFMpegCore;
 using FFMpegCore.Pipes;
 using RplaceServer;
@@ -36,45 +37,53 @@ internal static class TimelapseGenerator
         {
             Array.Reverse(backups);
         }
+        
+        // TODO: Move to libpng - Much faster
+        var frames = new SKBitmapFrame[backups.Length];
 
-        var frames = new List<SKBitmapFrame>();
-
-        foreach (var path in backups)
+        await Parallel.ForAsync(0, backups.Length, async (i, token) =>
         {
+            var path = backups[i];
             if (!File.Exists(path))
             {
-                continue;
+                return;
             }
 
             using var bitmap = new SKBitmap(info.EndX - info.StartX, info.EndY - info.StartY);
-            var unpacked = BoardPacker.UnpackBoard(await File.ReadAllBytesAsync(path));
+            var unpacked = BoardPacker.UnpackBoard(await File.ReadAllBytesAsync(path, token));
 
-            var i = unpacked.Width * info.StartY + info.StartX;
-            while (i < unpacked.Board.Length)
+            var pixelIndex = unpacked.Width * info.StartY + info.StartX;
+            while (pixelIndex < unpacked.Board.Length)
             {
-                bitmap.SetPixel(i % unpacked.Width - info.StartX, i / unpacked.Width - info.StartY, Colours[unpacked.Board[i]]);
-                i++;
+                bitmap.SetPixel((int)(pixelIndex % unpacked.Width - info.StartX),
+                    (int)(pixelIndex / unpacked.Width - info.StartY),
+                    Colours[unpacked.Board[pixelIndex]]);
+                pixelIndex++;
 
                 // If we exceed width, go to next row, otherwise continue
-                if (i % unpacked.Width < info.EndX)
+                if (pixelIndex % unpacked.Width < info.EndX)
                 {
-                    continue; 
+                    continue;
                 }
 
                 // If we exceed end bottom, we are done drawing this
-                if (i / unpacked.Width == info.EndY - 1)
+                if (pixelIndex / unpacked.Width == info.EndY - 1)
                 {
-                    break; 
+                    break;
                 }
-                
-                i += unpacked.Width - (info.EndX - info.StartX);
+
+                pixelIndex += unpacked.Width - (info.EndX - info.StartX);
             }
 
-            frames.Add(new SKBitmapFrame(bitmap));
-        }
-        
+            frames[i] = new SKBitmapFrame(bitmap);
+        });
+
         using var stream = new MemoryStream();
-        var framesSource = new RawVideoPipeSource(frames) { FrameRate = info.Fps };
+        var framesSource = new RawVideoPipeSource(frames)
+        {
+            FrameRate = info.Fps
+        };
+        
         var outSink = new StreamPipeSink(stream);
         await FFMpegArguments
             .FromPipeInput(framesSource)

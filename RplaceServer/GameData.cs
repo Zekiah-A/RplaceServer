@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -7,49 +8,65 @@ namespace RplaceServer;
 /// </summary>
 public record GameData
 (
-    int Cooldown, // Milliseconds
+    uint Cooldown, // Milliseconds
     int ChatCooldown, // Milliseconds
     bool CaptchaEnabled,
     bool CreateBackups,
-    List<string> Vips,
-    List<string> Bans,
-    List<string> Muted,
-    int BoardWidth,
-    int BoardHeight,
+    uint BoardWidth,
+    uint BoardHeight,
     int BackupFrequency, // Milliseconds
     bool UseCloudflare,
     string CanvasFolder,
     int TimelapseLimitPeriod, // Milliseconds
     bool CensorChatMessages,
-    int ChatHistoryLength,
-    string? WebhookUrl = null,
-    List<uint>? Palette = null
+    string StaticResourcesFolder,
+    string SaveDataFolder,
+    bool SaveChatMessageHistory,
+    string WebhookUrl,
+    string ModWebhookUrl,
+    List<uint>? Palette
 )
 {
-    // These will be accessed & changed frequently, but are not saved in configs, 
+    // These will be accessed & changed frequently, but are not saved in main configs, 
     // and are instead managed by the server instance itself.
-    public byte[] Board = { };
     public int PlayerCount = 0;
+    public byte[] Board = Array.Empty<byte>();
     public Dictionary<ClientMetadata, ClientData> Clients = new();
     public Dictionary<string, string> PendingCaptchas = new();
-    public List<byte[]> ChatHistory = new();
+    public Dictionary<string, long> Bans = new();
+    public Dictionary<string, long> Mutes = new();
+    public List<string> VipKeys = new();
 
     // These are persistent & saved in configs + can be changed at runtime
-    public int Cooldown { get; set; } = Cooldown; // Milliseconds
-    public int ChatCooldown { get; set; } = ChatCooldown; // Milliseconds
+    // Milliseconds
+    public uint Cooldown { get; set; } = Cooldown;
+    // Milliseconds
+    public int ChatCooldown { get; set; } = ChatCooldown;
     public bool CaptchaEnabled { get; set; } = CaptchaEnabled;
-    public List<string> Vips { get; set; } = Vips;
-    public List<string> Bans { get; set; } = Bans;
-    public List<string> Muted { get; set; } = Muted;
-    public int BoardWidth { get; set; } = BoardWidth; // Pixels
-    public int BoardHeight { get; set; } = BoardHeight; // Pixels
-    public int BackupFrequency { get; set; } = BackupFrequency; // Milliseconds
+    // Pixels
+    public uint BoardWidth { get; set; } = BoardWidth;
+    // Pixels
+    public uint BoardHeight { get; set; } = BoardHeight;
+    // Milliseconds
+    public int BackupFrequency { get; set; } = BackupFrequency;
+    // Will perform cloudflare cf-clearance headers checks if present to allow only cloudflare validated clients
     public bool UseCloudflare { get; set; } = UseCloudflare;
+    // By default will use regexes provided in SocketServer.cs, however these can be changed
     public bool CensorChatMessages { get; set; } = CensorChatMessages;
-    public int ChatHistoryLength { get; set; } = ChatHistoryLength;
-
+    // Directory where resources, such as Pages and Captcha Generation assets will be stored,
+    // multiple instances can technically share a resources directory as their content is static.
+    public string StaticResourcesFolder { get; set; } = StaticResourcesFolder;
+    // Will contain save data produced by this instance, excluding canvas data, such as log records, bans, mutes and other
+    // such instance data.
+    public string SaveDataFolder { get; set;  } = SaveDataFolder;
+    // Will dictate whether chat message history is saved and sent to clients upon connection. Chat messages are saved in
+    // a LiteDB SQL-like database within the instance save data directory for easy queries. 
+    public bool SaveChatMessageHistory { get; set; } = SaveChatMessageHistory;
+    
+    
     // These are config-settable, and live changeable, but not necessary (nullable)
-    public string? WebhookUrl { get; set; } = WebhookUrl;
+    public string WebhookUrl { get; set; } = WebhookUrl;
+    public string ModWebhookUrl { get; set; } = ModWebhookUrl;
     public List<uint>? Palette { get; set; } = Palette;
     public bool CreateBackups { get; set; } = CreateBackups;
 }

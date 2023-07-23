@@ -8,6 +8,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
+        <ProjectReference Include="..\Natron\Natron.Library\Natron.Library.csproj" />
         <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
     </ItemGroup>
 

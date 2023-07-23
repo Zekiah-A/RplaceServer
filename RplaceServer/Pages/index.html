@@ -6,14 +6,13 @@
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script>
-        async function fetchStatistics() {
-            let stats = await(await fetch("./statistics")).json()
+        setInterval(async function() {
+            let stats = await(await fetch("/statistics")).json()
             memUsage.textContent = (stats.memoryUsage / 1e6).toFixed(2) + "MB"
             cpuUsage.textContent = (stats.cpuUsage).toFixed(2) + "%"
             backupCount.textContent = stats.backupCount + " backups"
             backupsSize.textContent = (stats.backupDirectorySize / 1e6).toFixed(2) + "MB"
-        }
-        fetchStatistics()
+        }, 1000)
     </script>
 </head>
 <body>
