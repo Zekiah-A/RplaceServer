@@ -68,15 +68,12 @@ public sealed class WebServer
         });
         
         app = builder.Build();
+        
+        // Static page hosting
+        app.UseDefaultFiles(new DefaultFilesOptions());
         app.UseStaticFiles(new StaticFileOptions
         {
             ServeUnknownFileTypes = true,
-            FileProvider = new PhysicalFileProvider(Path.GetFullPath(pagesRoot)),
-            RequestPath = ""
-        });
-        
-        app.UseDirectoryBrowser(new DirectoryBrowserOptions
-        {
             FileProvider = new PhysicalFileProvider(Path.GetFullPath(pagesRoot)),
             RequestPath = ""
         });

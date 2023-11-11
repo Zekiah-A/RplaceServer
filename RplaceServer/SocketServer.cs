@@ -18,7 +18,6 @@ namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
-    private string ipEncryptionKey;
     private readonly MessagesDbService? messagesDb;
     private readonly HttpClient httpClient;
     private readonly CaptchaGenerator captchaGenerator;
@@ -171,29 +170,6 @@ public sealed partial class SocketServer
         else
         {
             Logger?.Invoke($"Could not find game VIPs file. Generating new VIP key file at '{vipPath}'");
-        }
-        
-        // Used for non-account senderUid generation
-        var ipEncryptPath = Path.Join(gameData.SaveDataFolder, "ipkey.txt");
-        if (File.Exists(ipEncryptPath))
-        {
-            var encrypted = File.ReadAllText(ipEncryptPath);
-            if (string.IsNullOrEmpty(encrypted) || encrypted.Length < 16)
-            {
-                Logger?.Invoke($"SERIOUS SECURITY RISK - Encrypted IP encryption key at '{ipEncryptPath
-                    }' was found to be invalid or empty. Please delete the encryption key file to generate new or use a valid key");
-            }
-
-            ipEncryptionKey = encrypted;
-        }
-        else
-        {
-            var keyBytes = RandomNumberGenerator.GetBytes(32);
-            var secureKey = Convert.ToBase64String(keyBytes);
-            ipEncryptionKey = secureKey;
-            await File.WriteAllTextAsync(ipEncryptPath, secureKey);
-            
-            Logger?.Invoke($"Could not find ip encryption key. Generating new IP encryption key at '{ipEncryptPath}'");
         }
         
         app.ClientConnected += ClientConnected;

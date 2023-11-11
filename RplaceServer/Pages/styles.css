@@ -41,4 +41,5 @@ header h1 {
     flex-direction: column;
     display: flex;
     padding: 4px;
+    flex-grow: 1;
 }
