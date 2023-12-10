@@ -72,7 +72,7 @@ public sealed partial class SocketServer
         gameData = data;
         origin = originHeader;
         httpClient = new HttpClient();
-        emojiCaptchaGenerator = new EmojiCaptchaGenerator();
+        emojiCaptchaGenerator = new EmojiCaptchaGenerator(Path.Join(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
         blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|dyke|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
         blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";

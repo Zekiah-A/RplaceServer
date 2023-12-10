@@ -14,10 +14,8 @@ public class TextCaptchaGenerator : ICaptchaGenerator
     };
     private static SKPaint Font;
 
-    static TextCaptchaGenerator()
+    public TextCaptchaGenerator(string fontPath)
     {
-        // TODO: Figure out how to resolve font file using GameData
-        //SKTypeface.FromFile(Path.Join(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf")),
         Font = new SKPaint
         {
             Typeface = SKTypeface.FromFile(FontFile),

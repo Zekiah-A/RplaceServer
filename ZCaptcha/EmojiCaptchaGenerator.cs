@@ -1,4 +1,3 @@
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SkiaSharp;
 
 namespace RplaceServer.CaptchaGeneration;
@@ -7,7 +6,6 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
 {
     private static int entropy = 0;
     private static readonly Random Random = new Random();
-    private static readonly SKTypeface captchaFont;
     private static readonly string[] Emojis =
     {
         "😎", "🤖", "🔥", "🏠", "🤡", "👋", "💩", "⚽", "👅", "🧠", "🕶", "🌳", "🌍", "🌈", "🎅", "👶", "👼",
@@ -25,11 +23,12 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
     private static readonly float Noise1Opacity = 0.35f;
     private static readonly float TextShift = 32;
     private static readonly float TextRotateRad = 0.4f;
-    private static readonly string FontFile = "NotoColorEmoji-Regular.ttf";
+    
+    private readonly SKTypeface captchaFont;
 
-    static EmojiCaptchaGenerator()
+    public EmojiCaptchaGenerator(string fontPath)
     {
-        captchaFont = SKTypeface.FromFile(FontFile);
+        captchaFont = SKTypeface.FromFile(fontPath);
     }
     
     private static SKColor RandomColor()

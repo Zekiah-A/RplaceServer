@@ -13,19 +13,12 @@
     <ItemGroup>
       <ProjectReference Include="..\WatsonWebsocketPlus\src\WatsonWebsocket\WatsonWebsocket.csproj" />
         <ProjectReference Include="..\UnbloatDB\UnbloatDB\UnbloatDB.csproj" />
+        <ProjectReference Include="..\ZCaptcha\ZCaptcha.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <Content Include="Pages\*">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-            <CopyToPublishDirectory></CopyToPublishDirectory>
-        </Content>
-        <Content Include="CaptchaGeneration\NotoColorEmoji-Regular.ttf">
-          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-        </Content>
-        <None Remove="CaptchaGeneration\OFL.txt" />
-        <Content Include="CaptchaGeneration\OFL.txt">
-          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
     </ItemGroup>
 
@@ -37,5 +30,12 @@
       <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.3" />
       <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="2.88.3" />
       <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="2.88.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="CaptchaGeneration\**">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Link>Data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        </Content>
     </ItemGroup>
 </Project>
