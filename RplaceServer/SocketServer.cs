@@ -20,7 +20,7 @@ public sealed partial class SocketServer
 {
     private readonly MessagesDbService? messagesDb;
     private readonly HttpClient httpClient;
-    private readonly CaptchaGenerator captchaGenerator;
+    private readonly EmojiCaptchaGenerator emojiCaptchaGenerator;
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
@@ -72,7 +72,7 @@ public sealed partial class SocketServer
         gameData = data;
         origin = originHeader;
         httpClient = new HttpClient();
-        captchaGenerator = new CaptchaGenerator(gameData);
+        emojiCaptchaGenerator = new EmojiCaptchaGenerator();
         blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|dyke|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
         blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
@@ -281,7 +281,7 @@ public sealed partial class SocketServer
         
         if (gameData.CaptchaEnabled)
         {
-            var result = captchaGenerator.Generate(CaptchaType.Emoji);
+            var result = emojiCaptchaGenerator.Generate();
             gameData.PendingCaptchas[realIp] = result.Answer;
 
             var dummiesSize = Encoding.UTF8.GetByteCount(result.Dummies);

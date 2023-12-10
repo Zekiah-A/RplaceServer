@@ -19,7 +19,11 @@ using System.IO.Compression;
 
 var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
 var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
-var accountsPath = Path.Combine(Directory.GetCurrentDirectory(), "Accounts");
+var dataPath = Path.Combine(Directory.GetCurrentDirectory(), "SaveData");
+var instanceInfoPath = Path.Combine(instancesPath, "instance_info.json");
+
+using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
+ILogger logger = factory.CreateLogger("Program");
 
 async Task CreateConfig()
 {
@@ -44,7 +48,7 @@ async Task CreateConfig()
             true,
             "Posts",
             60,
-            "https://rplace.tk",
+            "https://rplace.live",
             8080,
             new Dictionary<AccountTier, int>
             {
@@ -82,36 +86,49 @@ if (!File.Exists(configPath))
 {
     await CreateConfig();
 }
-
-var instancesInfo = new InstancesInfo(new List<int>(), new Dictionary<string, string>());
-var defaultGameData = new GameData(
-    5000, 2500, false, true, new List<string>(), new Dictionary<string, long>(),
-    new Dictionary<string, long>(), 1000, 1000, 600000,  false, "Canvases",
-    300000, true, "", "");
-
-async Task SaveInstancesInfo()
-{
-    await using var infoCreateStream = File.OpenWrite(Path.Combine(instancesPath, "instance_info.json"));
-    await JsonSerializer.SerializeAsync(infoCreateStream, instancesInfo);
-    await infoCreateStream.FlushAsync();
-}
-
 if (!Directory.Exists(instancesPath))
 {
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.Write("[Warning]: Could not find server instance replication directory, at " + instancesPath);
-
     Directory.CreateDirectory(instancesPath);
-    await SaveInstancesInfo();
-    
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"[INFO]: Config files instance replication directory created @{Directory.GetCurrentDirectory()}");
-    Console.ResetColor();
+}
+if (!Directory.Exists(dataPath))
+{
+    Directory.CreateDirectory(dataPath);
 }
 
-await using var infoReadStream = File.OpenRead(Path.Combine(instancesPath, "instance_info.json"));
-instancesInfo = await JsonSerializer.DeserializeAsync<InstancesInfo>(infoReadStream);
-await infoReadStream.FlushAsync();
+var defaultGameData = new GameData(
+    5000,
+    2500,
+    false,
+    true,
+    1000,
+    1000,
+    600000, 
+    false,
+    "Canvases",
+    300000,
+    true,
+    "Resources",
+    "SaveData",
+    true,
+    "",
+    "",
+    null);
+
+InstancesInfo? instancesInfo;
+if (!File.Exists(instanceInfoPath))
+{
+    instancesInfo = new InstancesInfo();
+    File.WriteAllText(instanceInfoPath, JsonSerializer.Serialize<InstancesInfo>(instancesInfo));
+}
+else
+{
+    instancesInfo = JsonSerializer.Deserialize<InstancesInfo>(File.ReadAllText(instanceInfoPath));
+}
+if (instancesInfo == null)
+{
+    logger.LogError("Server fail - Error loading instances info");
+    Environment.Exit(0);
+}
 
 // Email and trusted domains
 var emailAttributes = new EmailAddressAttribute();
@@ -119,8 +136,8 @@ var trustedEmailDomains = File.ReadAllLines("trusted_domains.txt")
     .Where(entry => !string.IsNullOrWhiteSpace(entry) && entry.TrimStart().First() != '#').ToList();
 
 var config = await JsonSerializer.DeserializeAsync<HTTPOfficial.Configuration>(File.OpenRead(configPath));
-var server = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
-var accountsDb = new Database(new UnbloatDB.Configuration(accountsPath, new UnbloatDB.Serialisers.JsonSerialiser()));
+var wsServer = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
+var accountsDb = new Database(new UnbloatDB.Configuration(dataPath, new UnbloatDB.Serialisers.JsonSerialiser()));
 
 // Post server & database
 var postsServer = new PostsServer(config);
@@ -165,14 +182,6 @@ var emojis = new[]
     "🌱", "🏀", "🛠", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
 };
 
-void InvokeLogger(string message)
-{
-    if (config.Logger)
-    {
-        Console.WriteLine("[WebServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-    }
-}
-
 var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
 // Either accountToken is valid, which allows immediate authentication, or if accountToken is null/invalid, while name and email
 // are valid, the user will be prompted to use slower email authentication with an email code.
@@ -194,7 +203,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, str
     var accountData = (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Username), name)).FirstOrDefault();
     if (accountData is null || !accountData.Data.Email.Equals(email))
     {
-        InvokeLogger("Account data was null or email provided was invalid, could not authenticate account login.");
+        logger.LogWarning("Account data was null or email provided was invalid, could not authenticate account login.");
         return null;
     }
     
@@ -211,7 +220,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, str
     var message = new MimeMessage();
     message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
     message.To.Add(new MailboxAddress(email, email));
-    message.Subject = "rplace.tk Account Code";
+    message.Subject = "rplace.live Account Code";
     message.Body = new TextPart("html")
     {
         Text = $"""
@@ -223,7 +232,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, str
                     <p>Be quick, this code will expire in 10 minutes!</p>
                     <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
                     <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
-                    <a href="https://rplace.tk" style="text-decoration: none;">https://rplace.tk</a></p>
+                    <a href="https://rplace.live" style="text-decoration: none;">https://rplace.live</a></p>
                 </div>
             </div>
             """
@@ -238,7 +247,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, str
     }
     catch (Exception exception)
     {
-        InvokeLogger("Could not send email message: " + exception);
+        logger.LogWarning("Could not send email message: " + exception);
         return null;
     }
 
@@ -258,7 +267,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateReddit(string refreshToken
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (!meResponse.IsSuccessStatusCode || meData is null)
     {
-        InvokeLogger("Could not request me data for authentication (reason " + meResponse.ReasonPhrase + ")");
+        logger.LogWarning("Could not request me data for authentication (reason " + meResponse.ReasonPhrase + ")");
         return null;
     }
 
@@ -287,8 +296,8 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (!tokenResponse.IsSuccessStatusCode || tokenData is null)
     {
-        InvokeLogger("Could not get or update access token, token response was non-positive (reason " 
-            + tokenResponse.ReasonPhrase + ")");
+        logger.LogWarning("Could not get or update access token, token response was non-positive (reason " 
+                          + tokenResponse.ReasonPhrase + ")");
         return null;
     }
     
@@ -323,7 +332,7 @@ async Task<bool> CheckValidEmail(string email)
     return (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Email), email)).Length == 0;
 }
 
-server.MessageReceived += (_, args) =>
+wsServer.MessageReceived += (_, args) =>
 {
     var data = args.Data.ToArray();
     var readableData = new ReadablePacket(data);
@@ -336,7 +345,7 @@ server.MessageReceived += (_, args) =>
             var email = readableData.ReadString();
             if (username.Length > 32 || email.Length > 320)
             {
-                InvokeLogger($"Rejected client create account for too long packet length (client {args.Client.IpPort})");
+                logger.LogInformation($"Rejected client create account for too long packet length (client {args.Client.IpPort})");
                 return;
             }
 
@@ -362,20 +371,20 @@ server.MessageReceived += (_, args) =>
                 var message = new MimeMessage();
                 message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
                 message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "rplace.tk Account Creation Code";
+                message.Subject = "rplace.live Account Creation Code";
                 message.Body = new TextPart("html")
                 {
                     Text = $"""
                         <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
                             <h1 style="background: orangered;color: white;">Hello </h1>
                             <div style="margin: 8px;">
-                                <p>Someone used your email to register a new rplace.tk account.</p>
+                                <p>Someone used your email to register a new rplace.live account.</p>
                                 <p>If that's you, then cool, your code is:</p>
                                 <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
                                 <p>Otherwise, you can ignore this email, who cares anyway??</p>
                                 <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
                                 <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
-                                <a href="https://rplace.tk" style="text-decoration: none;">https://rplace.tk</a></p>
+                                <a href="https://rplace.live" style="text-decoration: none;">https://rplace.live</a></p>
                             <div>
                         </div>
                         """
@@ -391,7 +400,7 @@ server.MessageReceived += (_, args) =>
                 }
                 catch (Exception exception)
                 {
-                    InvokeLogger("Could not send email message: " + exception);
+                    logger.LogWarning("Could not send email message: " + exception);
                 }
 
                 // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode
@@ -408,7 +417,7 @@ server.MessageReceived += (_, args) =>
                     var accountToken = RandomNumberGenerator.GetHexString(64);
                     accountTokenAccountKeys.Add(accountToken, accountData.Username);
                     
-                    await server.SendAsync(args.Client, CreateTokenPacket(accountToken));
+                    await wsServer.SendAsync(args.Client, CreateTokenPacket(accountToken));
                 }
             }
 
@@ -417,7 +426,7 @@ server.MessageReceived += (_, args) =>
                 var tokenPacket = new WriteablePacket();
                 tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
                 tokenPacket.WriteString(accountToken);
-                server.SendAsync(args.Client, tokenPacket);
+                wsServer.SendAsync(args.Client, tokenPacket);
                 return tokenPacket.ToArray();
             }
 
@@ -455,7 +464,7 @@ server.MessageReceived += (_, args) =>
                 var dataPacket = new WriteablePacket();
                 dataPacket.WriteByte((byte) ServerPackets.AccountInfo);
                 dataPacket.WriteString(JsonSerializer.Serialize(accountData));
-                server.SendAsync(args.Client, dataPacket);
+                wsServer.SendAsync(args.Client, dataPacket);
             }
             break;
         }
@@ -483,7 +492,7 @@ server.MessageReceived += (_, args) =>
                         var tokenPacket = new WriteablePacket();
                         tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
                         tokenPacket.WriteString(newToken);
-                        server.SendAsync(args.Client, tokenPacket);
+                        wsServer.SendAsync(args.Client, tokenPacket);
                     }
                     break;
                 }
@@ -508,7 +517,7 @@ server.MessageReceived += (_, args) =>
                         var tokenPacket = new WriteablePacket();
                         tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
                         tokenPacket.WriteString(newToken);
-                        server.SendAsync(args.Client, tokenPacket);
+                        wsServer.SendAsync(args.Client, tokenPacket);
                     }
                     break;
                 }
@@ -536,7 +545,7 @@ server.MessageReceived += (_, args) =>
             {
                 var buffer = Encoding.UTF8.GetBytes("X" + urlResult);
                 buffer[0] = (byte) ServerPackets.VanityLocation;
-                server.SendAsync(args.Client, urlResult);
+                wsServer.SendAsync(args.Client, urlResult);
             }
             break;
         }
@@ -547,7 +556,7 @@ server.MessageReceived += (_, args) =>
                 (byte) ServerPackets.AvailableVanity,
                 (byte) (registeredVanities.ContainsKey(readableData.ReadString()) ? 0 : 1)
             };
-            server.SendAsync(args.Client, buffer);
+            wsServer.SendAsync(args.Client, buffer);
             break;
         }
         // Will create an account if doesn't exist, or allow a user to get the refresh token of their account & authenticate
@@ -568,7 +577,7 @@ server.MessageReceived += (_, args) =>
                 {
                     { "grant_type", "authorization_code" },
                     { "code", accountCode },
-                    { "redirect_uri", "https://rplace.tk/" }
+                    { "redirect_uri", "https://rplace.live/" }
                 });
                 var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
                 var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
@@ -576,7 +585,7 @@ server.MessageReceived += (_, args) =>
                 httpClient.DefaultRequestHeaders.Authorization = null;
                 if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
                 {
-                    InvokeLogger("Client create account rejected for failed access taken retrieval (reason" + tokenResponse.ReasonPhrase + ")");
+                    logger.LogWarning("Client create account rejected for failed access taken retrieval (reason" + tokenResponse.ReasonPhrase + ")");
                     return;
                 }
                 
@@ -586,7 +595,7 @@ server.MessageReceived += (_, args) =>
                 httpClient.DefaultRequestHeaders.Authorization = null;
                 if (!meResponse.IsSuccessStatusCode || meData is null)
                 {
-                    InvokeLogger("Client create account rejected for null me API response (reason " + tokenResponse.ReasonPhrase + ")");
+                    logger.LogWarning("Client create account rejected for null me API response (reason " + tokenResponse.ReasonPhrase + ")");
                     return;
                 }
 
@@ -616,11 +625,11 @@ server.MessageReceived += (_, args) =>
                         // Send them their token so that they can quickly login again without having to reauthenticate
                         var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
                         tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
-                        await server.SendAsync(args.Client, tokenBuffer);
-                        InvokeLogger($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
+                        await wsServer.SendAsync(args.Client, tokenBuffer);
+                        logger.LogInformation($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
                     }
                     
-                    InvokeLogger($"Client create account for {meData.Name} succeeded (client {args.Client.IpPort})");
+                    logger.LogTrace($"Client create account for {meData.Name} succeeded (client {args.Client.IpPort})");
                 }
             }
 
@@ -750,13 +759,17 @@ server.MessageReceived += (_, args) =>
             var cooldown = readableData.ReadUInt();
             var width = readableData.ReadUInt();
             var height = readableData.ReadUInt();
-            var fromImage = readableData.ReadByteArray(); // TODO: Decode into default board
+            var hasImage = readableData.ReadBool();
+            if (hasImage)
+            {
+                var fromImage = readableData.ReadByteArray(); // TODO: Decode into default board
+            }
 
             
             // Generate ID for this instance, save it so auth server knows about this instance
             var id = instancesInfo.Ids.Count == 0 ? 0 : instancesInfo.Ids.Max() + 1;
             instancesInfo.Ids.Add(id);
-            SaveInstancesInfo();
+            //SaveInstancesInfo();
 
             // Set up directory that will be used to hold replication instance data + it's configuration
             var instanceDirectory = Path.Join(instancesPath, id.ToString());
@@ -781,7 +794,7 @@ server.MessageReceived += (_, args) =>
                 query.WriteUInt((uint) queryReqId);
                 
                 workerRequestQueue.TryAdd(queryReqId, requestCompletionSource);
-                server.SendAsync(workerPair.Key, query);  // Blocking, v
+                wsServer.SendAsync(workerPair.Key, query);  // Blocking, v
                 var queryResponse = new ReadablePacket(requestCompletionSource.Task.GetAwaiter().GetResult());
                 workerRequestQueue.TryRemove(queryReqId, out var _);
                 
@@ -795,7 +808,7 @@ server.MessageReceived += (_, args) =>
 
                     var zipSyncDirectory = Path.Join(instancesPath, id.ToString(), ".tmp.zip");
                     ZipFile.CreateFromDirectory(instanceDirectory, zipSyncDirectory);
-                    packet.WriteBytes(File.ReadAllBytes(zipSyncDirectory));
+                    //packet.WriteBytes(File.ReadAllBytes(zipSyncDirectory));
                 }
             }
             break;
@@ -957,19 +970,19 @@ server.MessageReceived += (_, args) =>
         */
     }
 };
-server.ClientDisconnected += (_, args) =>
+wsServer.ClientDisconnected += (_, args) =>
 {
     authorisedClients.Remove(args.Client);
 };
 
 Console.CancelKeyPress += async (_, _) =>
 {
-    await server.StopAsync();
+    await wsServer.StopAsync();
     Environment.Exit(0);
 };
 AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
 {
-    InvokeLogger("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
+    logger.LogError("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
 };
 var expiredAccountCodeTimer = new System.Timers.Timer(TimeSpan.FromMinutes(10))
 {
@@ -987,10 +1000,10 @@ expiredAccountCodeTimer.Elapsed += (_, _) =>
     }
 };
     
-InvokeLogger("Server listening on port " + config.Port);
-server.Logger = message => Console.WriteLine("[AuthServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-postsServer.Logger = message => Console.WriteLine("[PostsServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-await Task.WhenAll(postsServer.StartAsync(), server.StartAsync());
+logger.LogInformation("Server listening on port {config}", config.Port);
+wsServer.Logger = message => logger.LogInformation(message);
+postsServer.Logger = message => logger.LogInformation("PostsServer: {message}", message);
+await Task.WhenAll(postsServer.StartAsync(), wsServer.StartAsync());
 await Task.Delay(-1);
 
 internal partial class Program

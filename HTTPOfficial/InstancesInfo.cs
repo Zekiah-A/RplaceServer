@@ -10,4 +10,10 @@ public class InstancesInfo
         Ids = ids;
         VanityMap = vanityMap;
     }
+
+    public InstancesInfo()
+    {
+        Ids = new List<int>();
+        VanityMap = new Dictionary<string, string>();
+    }
 }
