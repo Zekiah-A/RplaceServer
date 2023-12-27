@@ -118,7 +118,7 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
         data.SaveTo(stream);
         stream.Flush();
 
-        var responseDummies = string.Join("", dummies);
+        var responseDummies = string.Join('\n', dummies);
         var generationResponse = new CaptchaGenerationResult(answer, responseDummies, stream.ToArray());
         return generationResponse;
     }
