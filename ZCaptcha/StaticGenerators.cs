@@ -63,5 +63,19 @@ public static unsafe class StaticGenerators
         var result = textGenerator.Generate();
         return UnmanagedNativeResultFrom(ref result);
     }
+
+    [UnmanagedCallersOnly(EntryPoint = "dispose_result")]
+    public static void DisposeResult(NativeGenerationResult* result)
+    {
+        if (result == null)
+        {
+            return;
+        }
+
+        NativeMemory.Free(result->Dummies);
+        NativeMemory.Free(result->Answer);
+        NativeMemory.Free(result->ImageData);
+        NativeMemory.Free(result);
+    }
 }
 #pragma warning restore CS8500

@@ -87,7 +87,7 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
             paint.IsStroke = false;
             paint.Typeface = captchaFont;
 
-            using (SKAutoCanvasRestore autoRestore = new SKAutoCanvasRestore(canvas, true))
+            using (var autoRestore = new SKAutoCanvasRestore(canvas, true))
             {
                 canvas.Translate(Width / 2, Height / 2);
                 canvas.RotateDegrees(textR);
