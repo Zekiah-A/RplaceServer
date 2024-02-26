@@ -17,7 +17,7 @@ public record Config
     bool CensorChatMessages,
     string StaticResourcesFolder,
     string SaveDataFolder,
-    bool SaveChatMessageHistory,
+    bool UseDatabase,
     bool LogToConsole,
     string CertPath,
     string KeyPath,
@@ -29,5 +29,5 @@ public record Config
     string ModWebhookUrl,
     List<uint>? Palette = null
 ) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
-    CanvasFolder, TimelapseLimitPeriod, CensorChatMessages, StaticResourcesFolder, SaveDataFolder, SaveChatMessageHistory,
+    CanvasFolder, TimelapseLimitPeriod, CensorChatMessages, StaticResourcesFolder, SaveDataFolder, UseDatabase,
     WebhookUrl, ModWebhookUrl, Palette);

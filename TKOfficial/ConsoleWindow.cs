@@ -42,16 +42,17 @@ public class ConsoleWindow : Window
             Text = "Expand canvas",
             Y = Pos.Top(serverActionsContainer) + 1
         };
-        expandCanvasButton.Clicked += () =>
+        expandCanvasButton.Clicked += (_, _) =>
         {
-            var expandCanvasWizard = new Wizard("")
+            var expandCanvasWizard = new Wizard()
             {
+                Title = "Expand canvas",
                 Modal = false,
                 Width = 32,
                 Height = 9
             };
 
-            var firstStep = new Wizard.WizardStep("Edit chat message cooldown");
+            var firstStep = new WizardStep();
             var expandXField = new TextField("0")
             {
                 Width = Dim.Fill(),
@@ -73,19 +74,19 @@ public class ConsoleWindow : Window
                 new Label { Y = 4, Text = "Expand colour index" }, colourIndexField);
 
             expandCanvasWizard.AddStep(firstStep);
-            expandCanvasWizard.Finished += _ =>
+            expandCanvasWizard.Finished += (_, _) =>
             {
-                if (!int.TryParse(expandXField.Text.ToString(), out var expandWidth))
+                if (!int.TryParse(expandXField.Text, out var expandWidth))
                 {
                     Logger?.Invoke("Failed to expand, invalid Expand X Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(expandYField.Text.ToString(), out var expandHeight))
+                if (!int.TryParse(expandYField.Text, out var expandHeight))
                 {
                     Logger?.Invoke("Failed to expand, invalid Expand Y Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
+                if (!int.TryParse(colourIndexField.Text, out var colourIndex) ||
                     colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
                 {
                     Logger?.Invoke("Failed to expand, invalid Colour Index Parameter");
@@ -118,16 +119,19 @@ closeWizard:
             Text = "Fill canvas area",
             Y = Pos.Top(serverActionsContainer) + 2
         };
-        fillCanvasButton.Clicked += () =>
+        fillCanvasButton.Clicked += (_, _) =>
         {
-            var fillCanvasWizard = new Wizard("")
+            var fillCanvasWizard = new Wizard()
             {
                 Modal = false,
                 Width = 32,
                 Height = 13,
             };
 
-            var firstStep = new Wizard.WizardStep("Fill canvas area");
+            var firstStep = new WizardStep()
+            {
+                Title = "Fill canvas area"
+            };
             var xStartField = new TextField("0")
             {
                 Width = Dim.Fill(),
@@ -160,7 +164,7 @@ closeWizard:
                 colourIndexField);
 
             fillCanvasWizard.AddStep(firstStep);
-            fillCanvasWizard.Finished += _ =>
+            fillCanvasWizard.Finished += (_, _) =>
             {
                 if (!int.TryParse(xStartField.Text.ToString(), out var startX) || startX < 0)
                 {
@@ -212,16 +216,19 @@ closeWizard:
             Text = "Edit chat cooldown",
             Y = Pos.Top(serverActionsContainer) + 3
         };
-        chatCooldownButton.Clicked += () =>
+        chatCooldownButton.Clicked += (_, _) =>
         {
-            var cooldownWizard = new Wizard("")
+            var cooldownWizard = new Wizard()
             {
                 Modal = false,
                 Width = 32,
                 Height = 4,
             };
 
-            var firstStep = new Wizard.WizardStep("Edit chat message cooldown");
+            var firstStep = new WizardStep()
+            {
+                Title = "Edit chat message cooldown"
+            };
             var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
             {
                 Width = Dim.Fill(),
@@ -229,7 +236,7 @@ closeWizard:
             firstStep.Add(cooldownField);
 
             cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += _ =>
+            cooldownWizard.Finished += (_, _) =>
             {
                 if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
                 {
@@ -251,16 +258,19 @@ closeWizard:
             Text = "Broadcast chat message",
             Y = Pos.Top(serverActionsContainer) + 4
         };
-        broadcastChatButton.Clicked += () =>
+        broadcastChatButton.Clicked += (_, _) =>
         {
-            var chatWizard = new Wizard("")
+            var chatWizard = new Wizard()
             {
                 Modal = false,
                 Width = 32,
                 Height = 7,
             };
             
-            var firstStep = new Wizard.WizardStep("Broadcast chat message");
+            var firstStep = new WizardStep()
+            {
+                Title = "Broadcast chat message"
+            };
             var textInput = new TextField("Message from the server")
             {
                 Width = Dim.Fill(),
@@ -274,7 +284,7 @@ closeWizard:
             firstStep.Add(new Label { Text = "Message:" }, textInput, new Label { Text = "Channel:", Y = 2 }, channelInput);
 
             chatWizard.AddStep(firstStep);
-            chatWizard.Finished += _ =>
+            chatWizard.Finished += (_, _) =>
             {
                 Program.Server.SocketServer.BroadcastChatMessage(textInput.Text.ToString(), channelInput.Text.ToString());
                 Logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
@@ -292,16 +302,19 @@ closeWizard:
             Text = "Edit place cooldown",
             Y = Pos.Top(serverActionsContainer) + 5
         };
-        changeGameCooldownButton.Clicked += () =>
+        changeGameCooldownButton.Clicked += (_, _) =>
         {
-            var cooldownWizard = new Wizard("")
+            var cooldownWizard = new Wizard()
             {
                 Modal = false,
                 Width = 32,
                 Height = 4,
             };
             
-            var firstStep = new Wizard.WizardStep("Edit pixel place cooldown");
+            var firstStep = new WizardStep()
+            {
+                Title = "Edit pixel place cooldown"
+            };
             var cooldownField = new TextField(Program.Server.GameData.Cooldown.ToString())
             {
                 Width = Dim.Fill(),
@@ -309,9 +322,9 @@ closeWizard:
             firstStep.Add(cooldownField);
 
             cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += _ =>
+            cooldownWizard.Finished += (_, _) =>
             {
-                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                if (int.TryParse(cooldownField.Text, out var cooldown))
                 {
                     Program.Server.GameData.Cooldown = (uint) cooldown;
                 }
@@ -331,16 +344,19 @@ closeWizard:
             Text = "Edit colour palette",
             Y = Pos.Top(serverActionsContainer) + 6
         };
-        editPaletteButton.Clicked += () =>
+        editPaletteButton.Clicked += (_, _) =>
         {
-            var paletteWizard = new Wizard("")
+            var paletteWizard = new Wizard()
             {
                 Modal = false,
                 Width = 64,
                 Height = 5,
             };
             
-            var firstStep = new Wizard.WizardStep("Edit colour palette"); 
+            var firstStep = new WizardStep()
+            {
+                Title = "Edit colour palette"
+            }; 
             var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette))
             {
                 Width = Dim.Fill(),
@@ -349,7 +365,7 @@ closeWizard:
             firstStep.Add(new Label { Text = "Comma separated integer palette colours" }, paletteField);
 
             paletteWizard.AddStep(firstStep);
-            paletteWizard.Finished += _ =>
+            paletteWizard.Finished += (_, _) =>
             {
                 var newPalette = new List<uint>();
                 var split = paletteField.Text.ToString().Split(',');
@@ -393,16 +409,19 @@ closeWizard:
             Text = "Restore canvas from backup",
             Y = Pos.Top(serverActionsContainer) + 7
         };
-        restoreBackupButton.Clicked += () =>
+        restoreBackupButton.Clicked += (_, _) =>
         {
-            var restoreWizard = new Wizard("")
+            var restoreWizard = new Wizard()
             {
                 Modal = false,
                 Width = 64,
                 Height = 5,
             };
             
-            var firstStep = new Wizard.WizardStep("Restore canvas from backup"); 
+            var firstStep = new WizardStep()
+            {
+                Title = "Restore canvas from backup"
+            }; 
             var restoreField = new TextField(Program.Server.GameData.CanvasFolder)
             {
                 Width = Dim.Fill(),
@@ -411,7 +430,7 @@ closeWizard:
             firstStep.Add(new Label { Text = "Enter the path to the canvas backup to restore from" }, restoreField);
 
             restoreWizard.AddStep(firstStep);
-            restoreWizard.Finished += _ =>
+            restoreWizard.Finished += (_, _) =>
             {
                 if (RestoreFromBackup(restoreField.Text.ToString()) is { } unpackedInfo)
                 {
@@ -438,7 +457,7 @@ closeWizard:
             Text = "Save canvas to disk",
             Y = Pos.Top(serverActionsContainer) + 8
         };
-        saveCanvasButton.Clicked += async () =>
+        saveCanvasButton.Clicked += async (_, _) =>
         {
             Logger?.Invoke("Canvas saved to disk");
             await Program.Server.WebServer.SaveCanvasBackupAsync();
@@ -449,14 +468,14 @@ closeWizard:
             Text = "Prune backup list",
             Y = Pos.Top(serverActionsContainer) + 9
         };
-        pruneBackupsButton.Clicked += () => Task.Run(PruneBackupList);
+        pruneBackupsButton.Clicked += (_, _) => Task.Run(PruneBackupList);
 
         var stopServerButton = new Button
         {
             Text = "Gracefully stop server",
             Y = Pos.Top(serverActionsContainer) + 10
         };
-        stopServerButton.Clicked += async () =>
+        stopServerButton.Clicked += async (_, _) =>
         {
             Logger?.Invoke("Server shutdown request received");
             await Program.Server.WebServer.SaveCanvasBackupAsync();
@@ -471,7 +490,12 @@ closeWizard:
         // End server actions stack panel container
         
         // Server actions panel, provides nice border around container
-        var serverActionsPanel = new PanelView
+        // TODO: Stand-in
+        var serverActionsPanel = new FrameView()
+        {
+            Title = "Server actions"
+        };
+        /*var serverActionsPanel = new PanelView
         {
             Border = new Border
             {
@@ -481,7 +505,7 @@ closeWizard:
             },
             ColorScheme = Colors.Base,
             Child = serverActionsContainer
-        };
+        };*/
         
         // Clients panel
         var clientsListView = new ListView(new Rect(0, 0, 64, 16),
@@ -489,14 +513,14 @@ closeWizard:
         {
             Width = Dim.Fill(),
         };
-        clientsListView.SelectedItemChanged += (args) =>
+        clientsListView.SelectedItemChanged += (_, args) =>
         {
-            var clientWizard = new Wizard("")
+            var clientWizard = new Wizard()
             {
                 Modal = false,
                 Width = 64,
                 Height = 8,
-                Border = new Border { Background = Color.White }
+                //Border = new Border { Background = Color.White }
             };
 
             var selectedClientPair = Program.Server.GameData.Clients
@@ -507,7 +531,10 @@ closeWizard:
                 return;
             }
             
-            var firstStep = new Wizard.WizardStep("Player info");
+            var firstStep = new WizardStep()
+            {
+                Title = "Player info"
+            };
             var ipLabel = new Label
             {
                 Text = "Player IP/Port: " + args.Value,
@@ -529,7 +556,7 @@ closeWizard:
                 Text = "Kick player",
                 Y = 3
             };
-            kickButton.Clicked += async () =>
+            kickButton.Clicked += async (_, _) =>
             {
                 Logger?.Invoke($"Disconnected player {selectedClientPair.Value.IdIpPort}");
                 await Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
@@ -539,7 +566,7 @@ closeWizard:
                 Text = "Ban player",
                 Y = 4
             };
-            banButton.Clicked += () =>
+            banButton.Clicked += (_, _) =>
             {
                 Logger?.Invoke($"Banned player {selectedClientPair.Value.IdIpPort}");
                 Program.Server.SocketServer.BanPlayer(selectedClientPair.Key, 1000); //TODO: Add ban duration
@@ -547,7 +574,7 @@ closeWizard:
             firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
 
             clientWizard.AddStep(firstStep);
-            clientWizard.Finished += _ =>
+            clientWizard.Finished += (_, _) =>
             {
                 Application.Top.Remove(clientWizard);
                 Application.RequestStop();
@@ -557,7 +584,16 @@ closeWizard:
             Application.Top.Add(clientWizard);
             Application.Run(Application.Top);
         };
-        var clientsPanel = new PanelView
+        var clientsPanel = new FrameView()
+        {
+            X = Pos.Right(serverActionsPanel) + 2,
+            Height = 16,
+            Title = "Connected clients",
+            ColorScheme = Colors.Base,
+        };
+        clientsPanel.Add(clientsListView);
+        // TODO: Stand-in
+        /*var clientsPanel = new PanelView
         {
             X = Pos.Right(serverActionsPanel) + 2,
             Height = 16,
@@ -569,7 +605,7 @@ closeWizard:
             },
             ColorScheme = Colors.Base,
             Child = clientsListView
-        };
+        };*/
         
         var statisticLogLabel = new Label
         {
@@ -605,9 +641,22 @@ closeWizard:
         };
 
         // Statistics log panel
-        PanelView serverBottomPrimary = null!;
+        // TODO: Stand-in
+        //PanelView serverBottomPrimary = null!;
+        FrameView serverBottomPrimary = null!;
         var serverLogs = new List<string>();
-        var serverLogPanel = new PanelView
+        var serverLogPanel = new FrameView
+        {
+            Y = Pos.AnchorEnd() - 13,
+            Height = 8,
+            Title = "Server logs",
+            ColorScheme = Colors.Base
+        };
+        serverLogPanel.Add(new ListView(new Rect(0, 0, 128, 8), serverLogs)
+        {
+            Width = Dim.Fill()
+        });
+        /*var serverLogPanel = new PanelView
         {
             Y = Pos.AnchorEnd() - 13,
             Height = 8,
@@ -619,12 +668,20 @@ closeWizard:
             },
             ColorScheme = Colors.Base,
         };
-        serverLogPanel.Child = new ListView(new Rect(0, 0, 128, 8), serverLogs)
+        serverLogPanel.Add = new ListView(new Rect(0, 0, 128, 8), serverLogs)
         {
             Width = Dim.Fill()
-        };
+        };*/
         
-        var serverReplPanel = new PanelView
+        // TODO: Stand-in
+        var serverReplPanel = new FrameView
+        {
+            Y = Pos.AnchorEnd() - 3,
+            Height = 2,
+            Title = "Command line repl",
+            ColorScheme = Colors.Base
+        };
+        /*var serverReplPanel = new PanelView
         {
             Y = Pos.AnchorEnd() - 3,
             Height = 2,
@@ -635,13 +692,13 @@ closeWizard:
                 Title = "Command line repl"
             },
             ColorScheme = Colors.Base,
-        };
+        };*/
         var replTextField = new TextView()
         {
             Width = Dim.Fill(),
             Height = Dim.Fill()
         };
-        replTextField.KeyDown += args =>
+        replTextField.KeyDown += (_, args) =>
         {
             if (serverBottomPrimary == serverLogPanel && args.KeyEvent.Key == Key.Enter)
             {
@@ -649,7 +706,8 @@ closeWizard:
                 ExecuteServerRepl();
             }
         };
-        serverReplPanel.Child = replTextField;
+        /*serverReplPanel.Child = replTextField;*/
+        serverReplPanel.Add(replTextField);
 
         void ExecuteServerRepl()
         {
@@ -680,7 +738,7 @@ closeWizard:
             Y = Pos.AnchorEnd() - 13,
             X = Pos.AnchorEnd() - 10
         };
-        serverBottomAction.Clicked += () =>
+        serverBottomAction.Clicked += (_, _) =>
         {
             if (serverBottomPrimary == serverLogPanel)
             {
@@ -696,7 +754,7 @@ closeWizard:
             Y = Pos.AnchorEnd() - 13,
             X = Pos.AnchorEnd() - 26
         };
-        serverBottomSwapPrimary.Clicked += () =>
+        serverBottomSwapPrimary.Clicked += (_, _) =>
         {
             var logsX = CloneObject(serverLogPanel.X);
             var logsY = CloneObject(serverLogPanel.Y);

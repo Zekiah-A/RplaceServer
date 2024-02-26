@@ -35,12 +35,3 @@ msbuild.wrn
 
 # Visual Studio 2015
 .vs/
-
-# Custom ignores
-TKOfficial/server_config.json
-TKOfficial/Canvases/
-TKOfficial/Posts/
-TKOfficial/Content/
-TKOfficial/Pages/
-TKOfficial/SaveData/
-TKOfficial/Resources/

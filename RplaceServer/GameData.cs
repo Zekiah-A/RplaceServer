@@ -21,7 +21,7 @@ public record GameData
     bool CensorChatMessages,
     string StaticResourcesFolder,
     string SaveDataFolder,
-    bool SaveChatMessageHistory,
+    bool UseDatabase,
     string WebhookUrl,
     string ModWebhookUrl,
     List<uint>? Palette
@@ -61,7 +61,7 @@ public record GameData
     public string SaveDataFolder { get; set;  } = SaveDataFolder;
     // Will dictate whether chat message history is saved and sent to clients upon connection. Chat messages are saved in
     // a LiteDB SQL-like database within the instance save data directory for easy queries. 
-    public bool SaveChatMessageHistory { get; set; } = SaveChatMessageHistory;
+    public bool UseDatabase { get; set; } = UseDatabase;
     
     
     // These are config-settable, and live changeable, but not necessary (nullable)

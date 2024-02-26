@@ -1,30 +1,29 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-    <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
-        <Nullable>enable</Nullable>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <LangVersion>preview</LangVersion>
-    </PropertyGroup>
-
-    <ItemGroup>
-        <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
-        <ProjectReference Include="..\Natron\Natron.Library\Natron.Library.csproj" />
-        <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="MailKit" Version="4.0.0" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <None Remove="trusted_domains.txt" />
-      <Resource Include="trusted_domains.txt">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </Resource>
-    </ItemGroup>
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
+    <ProjectReference Include="..\Natron\Natron.Library\Natron.Library.csproj" />
+    <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="efcore" Version="1.1.2" />
+    <PackageReference Include="MailKit" Version="4.3.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0-preview.1.24081.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="trusted_domains.txt" />
+    <Resource Include="trusted_domains.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
 </Project>

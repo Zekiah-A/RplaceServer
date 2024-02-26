@@ -48,11 +48,12 @@ public sealed class ServerInstance
         if (!File.Exists(boardPath))
         {
             Logger?.Invoke($"Could not find board. Regenerating with width: {GameData.BoardWidth}, height: {GameData.BoardHeight}");
+            await CreateNewBoardAsync();
         }
         else
         {
             var boardBytes = await File.ReadAllBytesAsync(boardPath);
-            if (boardBytes.Length == 0)
+            if (boardBytes.Length != GameData.BoardWidth * GameData.BoardHeight)
             {
                 Logger?.Invoke("Board had invalid length (0). Regenerating.");
                 await CreateNewBoardAsync();
@@ -66,7 +67,7 @@ public sealed class ServerInstance
         if (!Directory.Exists(GameData.StaticResourcesFolder))
         {
             Directory.CreateDirectory(GameData.StaticResourcesFolder);
-            Logger?.Invoke($"Could not Static resources folder at {GameData.StaticResourcesFolder}. Regenerating");
+            Logger?.Invoke($"Could not find Static resources folder at {GameData.StaticResourcesFolder}. Regenerating");
         }
         
         if (!Directory.Exists(GameData.SaveDataFolder))
@@ -80,7 +81,6 @@ public sealed class ServerInstance
 
     public async Task StopAsync()
     {
-        await SocketServer.StopAsync();
-        await WebServer.StopAsync();
+        await Task.WhenAll(SocketServer.StopAsync(), WebServer.StopAsync());
     }
 }

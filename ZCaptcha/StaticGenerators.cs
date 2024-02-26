@@ -4,7 +4,7 @@ using System.Text;
 namespace RplaceServer.CaptchaGeneration;
 
 #pragma warning disable CS8500
-// dotnet publish /p:NativeLib=Shared --use-current-runtime -p:PublishAot=true
+// dotnet publish /p:NativeLib=Shared --use-current-runtime -p:PublishAot=true,StripSymbols=true
 // TEST: readelf -Ws --dyn-syms ZCaptcha.so
 public static unsafe class StaticGenerators
 {

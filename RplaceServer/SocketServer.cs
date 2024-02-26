@@ -18,7 +18,7 @@ namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
-    private readonly MessagesDbService? messagesDb;
+    private readonly ServerDbService? serverDb;
     private readonly HttpClient httpClient;
     private readonly EmojiCaptchaGenerator emojiCaptchaGenerator;
     private readonly WatsonWsServer app;
@@ -78,9 +78,9 @@ public sealed partial class SocketServer
         blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
         blockedDomainsRegex = new Regex(blockedDomainsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         
-        if (gameData.SaveChatMessageHistory)
+        if (gameData.UseDatabase)
         {
-            messagesDb = new MessagesDbService(Path.Join(gameData.SaveDataFolder, "messages.db"));
+            serverDb = new ServerDbService(Path.Join(gameData.SaveDataFolder, "Server.db"));
         }
     }
     
@@ -209,7 +209,7 @@ public sealed partial class SocketServer
         }
         
         // Reject
-        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers["Origin"].First() != origin)
+        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers.Origin.First() != origin)
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks");
             _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
@@ -241,6 +241,7 @@ public sealed partial class SocketServer
         
         // Accept - Create a player instance
         // false, false, UidType.EncryptedIp,
+        // TODO: Implement this
         /*if (url) {
             let codeHash = sha256(url)
             if (!VIP.has(codeHash)) {
@@ -313,8 +314,6 @@ public sealed partial class SocketServer
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], gameData.BoardWidth);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
-        
-        // TODO: Send player all chat message history until they joined
         
         DistributePlayerCount();
         PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(args.Client));
@@ -680,7 +679,7 @@ public sealed partial class SocketServer
     }
 
     /// <summary>
-    /// Bans a player from the current server instance, preventing them from sending messages in chat for the duration
+    /// Mutes a player from the current server instance, preventing them from sending messages in chat for the duration
     /// defined in timeSpecifier.
     /// </summary>
     /// <param name="identifier">The client who is to be muted, either ip or ClientMetadata</param>

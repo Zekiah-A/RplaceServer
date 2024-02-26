@@ -1,2 +1,4 @@
 server_config.json
-ServerData/
+ServerData/*
+Posts/*
+Instances/*

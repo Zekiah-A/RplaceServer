@@ -2,16 +2,22 @@ using System.Text.Json.Serialization;
 
 namespace HTTPOfficial;
 
-public record Post
-(
-    string Username,
-    string Title,
-    string Description
-)
+
+public class Post
 {
-    [JsonInclude] public int? Upvotes;
-    [JsonInclude] public int? Downvotes;
-    [JsonInclude] public string? ContentPath;
-    [JsonInclude] public DateTime? CreationDate;
-    [JsonInclude] public int UploadId;
-};
+    public int Id { get; set; }
+    public string Username { get; set; }
+    public string Title { get; set; }
+    public string Description;
+    public int Upvotes { get; set; }
+    public int Downvotes { get; set; }
+    public string ContentPath { get; set; } = null!;
+    public DateTime CreationDate { get; set; }
+
+    public Post(string username, string title, string description)
+    {
+        Username = username;
+        Title = title;
+        Description = description;
+    }
+}

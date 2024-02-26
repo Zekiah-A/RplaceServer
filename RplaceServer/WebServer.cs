@@ -103,13 +103,17 @@ public sealed class WebServer
             startCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
         };
         
-        var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
-        backupsCount = backups.Length;
-        backupsSize = backups.Sum(file => file.Length);
+        backupsCount = 0;
+        backupsSize = 0;
     }
     
     public async Task StartAsync()
     {
+        // Load backups from file
+        var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
+        backupsCount = backups.Length;
+        backupsSize = backups.Sum(file => file.Length);
+        
         //Serve absolute latest board from memory.
         app.MapGet("/place",() =>
         {

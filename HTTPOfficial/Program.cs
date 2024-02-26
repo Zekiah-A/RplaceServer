@@ -14,8 +14,8 @@ using MailKit.Security;
 using MimeKit;
 using RplaceServer;
 using WatsonWebsocket;
-using UnbloatDB;
 using System.IO.Compression;
+using Microsoft.EntityFrameworkCore;
 
 var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
 var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
@@ -32,7 +32,7 @@ async Task CreateConfig()
 
     await using var configFile = File.OpenWrite(configPath);
     var defaultConfiguration =
-        new HTTPOfficial.Configuration(
+        new Configuration(
             1234,
             false,
             "",
@@ -134,13 +134,17 @@ if (instancesInfo == null)
 var emailAttributes = new EmailAddressAttribute();
 var trustedEmailDomains = File.ReadAllLines("trusted_domains.txt")
     .Where(entry => !string.IsNullOrWhiteSpace(entry) && entry.TrimStart().First() != '#').ToList();
+var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 
-var config = await JsonSerializer.DeserializeAsync<HTTPOfficial.Configuration>(File.OpenRead(configPath));
+// EFCore Sqlite3 Database
+using var database = new DatabaseContext();        
+database.Database.EnsureCreated();
+
+// Main server
 var wsServer = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
-var accountsDb = new Database(new UnbloatDB.Configuration(dataPath, new UnbloatDB.Serialisers.JsonSerialiser()));
 
-// Post server & database
-var postsServer = new PostsServer(config);
+// Post server
+var postsServer = new PostsServer(config, database);
 
 // Vanity -> URL of actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
@@ -159,8 +163,7 @@ var authorisedClients = new Dictionary<ClientMetadata, string>();
 var refreshTokenAuthDates = new Dictionary<string, DateTime>();
 var refreshTokenAccessTokens = new Dictionary<string, string>();
 
-// Used by normal normal accounts
-var accountTokenAccountKeys = new Dictionary<string, string>();
+// Used by normal accounts
 var redditSerialiserOptions = new JsonSerializerOptions
 {
     PropertyNameCaseInsensitive = true, 
@@ -173,35 +176,21 @@ var emojis = new[]
     "🤗", "🤔", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
     "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨",
     "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴", "😷", "🤕", "🤒", "🤮", "🤢", "🥳", "🥺", "👋",
-    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👍", "👎", "✊", "👊",
+    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👍", "👎", "✊",
     "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🦷", "🦴",
     "👀", "👁️", "👅", "👄", "💋", "🩸", "😎", "🤖", "🗣", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶",
-    "🌳", "🌍", "🌈", "🎅", "👶", "👼", "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "ඞ", "📱", "🔑", "❤", "👺", "🤯", "🤬",
-    "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪", "🕋", "🎉", "📋", "🚦", "🔇", "🥶", "💼", "🎩", "🎒", "🦅", "🧊", "★", "✅",
-    "😂", "😍", "🚀", "😈", "👟", "🍷", "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "🖱", "😷",
-    "🌱", "🏀", "🛠", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
+    "🌳", "🌍", "🌈", "🎅", "👶", "👼", "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "📱", "🔑", "❤", "👺", "🤯", "🤬", "📱",
+    "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪", "🕋", "🎉", "📋", "🚦", "🔇", "🥶", "💼", "🎩", "🎒", "🦅", "🧊", "✅", "🌱", 
+    "😂", "😍", "🚀", "😈", "👟", "🍷", "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "😷", "🏀",
+    "🏀", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "🍷", "🎁", "🩸", "👊", 
 };
-
 var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
-// Either accountToken is valid, which allows immediate authentication, or if accountToken is null/invalid, while name and email
-// are valid, the user will be prompted to use slower email authentication with an email code.
-async Task<RecordStructure<AccountData>?> AuthenticateToken(string accountToken) // , string? name, string? email
-{
-    // If they already have a valid token, we can do a quick and simple auth
-    if (accountTokenAccountKeys.TryGetValue(accountToken, out var accountKey)
-        && await accountsDb.GetRecord<AccountData>(accountKey) is { } accountData)
-    {
-        return accountData;
-    }
 
-    return null;
-}
-
-async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, string email)
+async Task<AccountData?> AuthenticateNameEmail(string name, string email)
 {
     // We get their account data using their name to prove that the email they provided is actually for this account
-    var accountData = (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Username), name)).FirstOrDefault();
-    if (accountData is null || !accountData.Data.Email.Equals(email))
+    var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.Username == name && account.Email == email);
+    if (accountData is null)
     {
         logger.LogWarning("Account data was null or email provided was invalid, could not authenticate account login.");
         return null;
@@ -258,7 +247,7 @@ async Task<RecordStructure<AccountData>?> AuthenticateNameEmail(string name, str
     return success ? accountData : null;
 }
 
-async Task<RecordStructure<AccountData>?> AuthenticateReddit(string refreshToken)
+async Task<AccountData?> AuthenticateReddit(string refreshToken)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -270,8 +259,9 @@ async Task<RecordStructure<AccountData>?> AuthenticateReddit(string refreshToken
         logger.LogWarning("Could not request me data for authentication (reason " + meResponse.ReasonPhrase + ")");
         return null;
     }
-
-    return (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.RedditId), meData.Id)).FirstOrDefault();
+    
+    var accountData = database.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
+    return accountData;
 }
 
 async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
@@ -306,20 +296,25 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     return tokenData.AccessToken;
 }
 
-async Task RunPostAuthentication(RecordStructure<AccountData> accountData)
+async Task RunPostAuthentication(AccountData accountData)
 {
+    var badge = new AccountBadge(Badge.Newbie, DateTime.Now);
+
     // If they have been on the site for 20+ days, we remove their noob badge
-    if (accountData.Data.Badges.Contains(Badge.Newbie) && DateTime.Now - accountData.Data.JoinDate >= TimeSpan.FromDays(20))
+    var noobBadge = await database.Badges.FirstOrDefaultAsync(badge => badge.OwnerId == accountData.Id);
+    if (noobBadge is not null && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(20))
     {
-        accountData.Data.Badges.Remove(Badge.Newbie);
+        database.Badges.Remove(noobBadge);
         await accountsDb.UpdateRecord(accountData);
     }
     if (!accountData.Data.Badges.Contains(Badge.Veteran) &&
-        DateTime.Now - accountData.Data.JoinDate >= TimeSpan.FromDays(365))
+        DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
     {
-        accountData.Data.Badges.Add(Badge.Veteran);
+        accountData.Badges.Add(Badge.Veteran);
         await accountsDb.UpdateRecord(accountData);
     }
+
+    await database.SaveChangessAsync();
 }
 
 async Task<bool> CheckValidEmail(string email)
@@ -356,8 +351,8 @@ wsServer.MessageReceived += (_, args) =>
                     return;
                 }
 
-                var codeChars = new string[10];
-                for (var i = 0; i < 10; i++)
+                var codeChars = new string[3];
+                for (var i = 0; i < 3; i++)
                 {
                     codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
                 }
@@ -717,7 +712,7 @@ wsServer.MessageReceived += (_, args) =>
         }
         case ClientPackets.ProfileInfo:
         {
-            async Task<RecordStructure<AccountData>?> GetProfileInfoAsync(string accountKey)
+            async Task<AccountData?> GetProfileInfoAsync(string accountKey)
             {
                 return await accountsDb.GetRecord<AccountData>(accountKey);
             }
@@ -732,7 +727,7 @@ wsServer.MessageReceived += (_, args) =>
         }
         case ClientPackets.CreateInstance:
         {
-            async Task<RecordStructure<AccountData>?> AuthenticateClientAsync()
+            async Task<AccountData?> AuthenticateClientAsync()
             {
                 if (!authorisedClients.TryGetValue(args.Client, out var accountKey))
                 {
@@ -1001,8 +996,8 @@ expiredAccountCodeTimer.Elapsed += (_, _) =>
 };
     
 logger.LogInformation("Server listening on port {config}", config.Port);
-wsServer.Logger = message => logger.LogInformation(message);
-postsServer.Logger = message => logger.LogInformation("PostsServer: {message}", message);
+wsServer.Logger = message => logger.LogInformation("[SocketServer]: {message}", message);
+postsServer.Logger = message => logger.LogInformation("[PostsServer]: {message}", message);
 await Task.WhenAll(postsServer.StartAsync(), wsServer.StartAsync());
 await Task.Delay(-1);
 
