@@ -1,33 +1,13 @@
 using RplaceServer;
 
 namespace TKOfficial;
-
-public record Config
-(
-    uint Cooldown,
-    int ChatCooldown,
-    bool CaptchaEnabled,
-    bool CreateBackups,
-    uint BoardWidth,
-    uint BoardHeight,
-    int BackupFrequency,
-    bool UseCloudflare,
-    string CanvasFolder,
-    int TimelapseLimitPeriod,
-    bool CensorChatMessages,
-    string StaticResourcesFolder,
-    string SaveDataFolder,
-    bool UseDatabase,
-    bool LogToConsole,
-    string CertPath,
-    string KeyPath,
-    string Origin,
-    int SocketPort,
-    int HttpPort,
-    bool Ssl,
-    string WebhookUrl,
-    string ModWebhookUrl,
-    List<uint>? Palette = null
-) : GameData(Cooldown, ChatCooldown, CaptchaEnabled, CreateBackups, BoardWidth, BoardHeight, BackupFrequency, UseCloudflare, 
-    CanvasFolder, TimelapseLimitPeriod, CensorChatMessages, StaticResourcesFolder, SaveDataFolder, UseDatabase,
-    WebhookUrl, ModWebhookUrl, Palette);
+public class Config : GameData
+{
+    public string? CertPath { get; init; }
+    public string? KeyPath { get; init; }
+    public bool LogToConsole { get; init; } = true;
+    public string Origin { get; init; } = "https://rplace.live";
+    public int SocketPort { get; init; } = 8080;
+    public int HttpPort { get; init; } = 8081;
+    public bool Ssl { get; init; } = false;
+}

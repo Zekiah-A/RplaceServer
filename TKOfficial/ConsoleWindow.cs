@@ -229,7 +229,7 @@ closeWizard:
             {
                 Title = "Edit chat message cooldown"
             };
-            var cooldownField = new TextField(Program.Server.GameData.ChatCooldown.ToString())
+            var cooldownField = new TextField(Program.Server.GameData.ChatCooldownMs.ToString())
             {
                 Width = Dim.Fill(),
             };
@@ -240,10 +240,10 @@ closeWizard:
             {
                 if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
                 {
-                    Program.Server.GameData.ChatCooldown = cooldown;
+                    Program.Server.GameData.ChatCooldownMs = cooldown;
                 }
                 
-                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldown}ms");
+                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldownMs}ms");
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -315,7 +315,7 @@ closeWizard:
             {
                 Title = "Edit pixel place cooldown"
             };
-            var cooldownField = new TextField(Program.Server.GameData.Cooldown.ToString())
+            var cooldownField = new TextField(Program.Server.GameData.CooldownMs.ToString())
             {
                 Width = Dim.Fill(),
             };
@@ -326,10 +326,10 @@ closeWizard:
             {
                 if (int.TryParse(cooldownField.Text, out var cooldown))
                 {
-                    Program.Server.GameData.Cooldown = (uint) cooldown;
+                    Program.Server.GameData.CooldownMs = (uint) cooldown;
                 }
 
-                Logger?.Invoke($"Updated game pixel place cooldown to {Program.Server.GameData.Cooldown} ms");
+                Logger?.Invoke($"Updated game pixel place cooldown to {Program.Server.GameData.CooldownMs} ms");
                 Application.Top.Remove(cooldownWizard);
                 Application.RequestStop();
                 Application.Run(Application.Top);
@@ -633,9 +633,10 @@ closeWizard:
             Y = Pos.Bottom(serverIpPortLabel),
             X = Pos.Center()
         };
+        var webhookUrl = Program.Config.WebhookService.Url;
         var serverWebhookUrlLabel = new Label
         {
-            Text = "Game chat webhook URL: " + (string.IsNullOrEmpty(Program.Config.WebhookUrl) ? "No webhook URL set" : Program.Config.WebhookUrl),
+            Text = "Game chat webhook URL: " + (string.IsNullOrEmpty(webhookUrl) ? "No webhook URL set" : webhookUrl),
             Y = Pos.Bottom(serverBackupPathLabel),
             X = Pos.Center()
         };
@@ -711,7 +712,7 @@ closeWizard:
 
         void ExecuteServerRepl()
         {
-            var codeText = replTextField.Text.ToString();
+            var codeText = replTextField.Text;
             replTextField.Text = "";
             
             _ = Task.Run(async () =>

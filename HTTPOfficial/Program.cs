@@ -772,7 +772,7 @@ wsServer.MessageReceived += (_, args) =>
 
             // Set up the new instance server software data files
             var instanceInfo = new InstanceInfo(id, DateTime.Now);
-            var gameData = defaultGameData with { BoardWidth = width, BoardHeight = height, Cooldown = cooldown };
+            var gameData = defaultGameData with { BoardWidth = width, BoardHeight = height, CooldownMs = cooldown };
             File.WriteAllText(Path.Combine(instanceDirectory, "game_data.json"), JsonSerializer.Serialize(defaultGameData));
             File.WriteAllText(Path.Combine(instanceDirectory, "server_data.json"), JsonSerializer.Serialize(instanceInfo));
             Directory.CreateDirectory(Path.Combine(instanceDirectory, "Canvases"));

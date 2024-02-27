@@ -1,20 +1,21 @@
 // TKOfficial/RplaceServer
 //Copyright (C) 2022 Zekiah-A (https://github.com/Zekiah-A)
-
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using System.Text.Json;
+using RplaceServer;
 using Terminal.Gui;
 
 namespace TKOfficial;
@@ -34,12 +35,12 @@ public static class Program
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("[Warning]: Could not game config file, at " + ConfigPath);
 
-            var defaultConfig = new Config(
-                5000, 2500, false, true, 1000, 
-                1000, 600000,  false, "Canvases", 300000,
-                true, "Resources", "SaveData", true, true,
-                "", "", "", 8080, 8081, false, "", "");
-            
+            var defaultData = GameData.CreateGameData()
+                .ConfigureCanvas()
+                .ConfigureModeration()
+                .ConfigureServices()
+                .ConfigureStorage();
+            var defaultConfig = (Config) defaultData;
             await File.WriteAllTextAsync(ConfigPath, JsonSerializer.Serialize(defaultConfig, JsonOptions));
 
             Console.ForegroundColor = ConsoleColor.Green;

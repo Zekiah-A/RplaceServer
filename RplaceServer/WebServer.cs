@@ -26,7 +26,7 @@ public sealed class WebServer
     public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
     {
         gameData = data;
-        timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriod));
+        timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriodS));
 
         var pagesRoot = Path.Join(gameData.StaticResourcesFolder, @"Pages");
         if (!Directory.Exists(pagesRoot))
@@ -174,7 +174,7 @@ public sealed class WebServer
         {
             AutoReset = true,
             Enabled = true,
-            Interval = gameData.BackupFrequency
+            Interval = gameData.BackupFrequencyMs
         };
 
         timer.Elapsed += async (_, _) =>
@@ -184,7 +184,7 @@ public sealed class WebServer
                 return;
             }
             
-            timer.Interval = gameData.BackupFrequency;
+            timer.Interval = gameData.BackupFrequencyMs;
             await SaveCanvasBackupAsync();
         };
     }

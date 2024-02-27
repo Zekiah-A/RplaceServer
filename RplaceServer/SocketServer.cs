@@ -24,13 +24,11 @@ public sealed partial class SocketServer
     private readonly WatsonWsServer app;
     private readonly GameData gameData;
     private readonly string origin;
-    private readonly JsonSerializerOptions defaultJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
     private readonly List<string> allowedDomains = new()
     {
-        "https://rplace.tk", "https://discord.com", "https://twitter.com", "https://google.com", "https://reddit.com", "https://github.com"
+        "https://rplace.tk", "https://discord.com",
+        "https://twitter.com", "https://google.com",
+        "https://reddit.com", "https://github.com"
     };
 
     public Action<string>? Logger;
@@ -310,7 +308,7 @@ public sealed partial class SocketServer
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
         // TODO: Previous cooldown that they may have had before disconnect
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[1..], 1);
-        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], gameData.Cooldown);
+        BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[5..], gameData.CooldownMs);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[9..], gameData.BoardWidth);
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
@@ -375,7 +373,7 @@ public sealed partial class SocketServer
 
                 // Accept
                 gameData.Board[index] = colour;
-                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.Cooldown);
+                gameData.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.CooldownMs);
                 var serverPixel = data[..6];
                 serverPixel[0] = (byte) ServerPacket.PixelPlace;
                 foreach (var client in app.Clients)
@@ -387,7 +385,7 @@ public sealed partial class SocketServer
             case ClientPacket.ChatMessage:
             {
                 // Reject
-                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldown) > DateTimeOffset.Now || data.Length > 400)
+                if (gameData.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldownMs) > DateTimeOffset.Now || data.Length > 400)
                 {
                     Logger?.Invoke($"Chat from client {GetRealIpPort(args.Client)} rejected for breaching length/cooldown rules");
                     return;
@@ -466,11 +464,8 @@ public sealed partial class SocketServer
                     app.SendAsync(client, packet);
                 }
 
-                if (!string.IsNullOrEmpty(gameData.WebhookUrl))
-                {
-                    var hookBody = new WebhookBody($"[{channel}] {name}@rplace.tk", message);
-                    httpClient.PostAsJsonAsync(gameData.WebhookUrl + "?wait=true", hookBody, defaultJsonOptions);
-                }
+                gameData.WebhookService?.SendWebhook(
+                    new WebhookBody($"[{channel}] {name}@rplace.tk", message), httpClient);
                 break;
             }
             case ClientPacket.CaptchaSubmit:
