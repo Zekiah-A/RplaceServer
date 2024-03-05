@@ -13,4 +13,12 @@ public class DatabaseContext : DbContext
     {
         optionsBuilder.UseSqlite("Data Source = Server.db");
     }
+
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Primary key for Account
+        modelBuilder.Entity<AccountData>()
+            .HasKey(account => account.Id);
+    }
 }

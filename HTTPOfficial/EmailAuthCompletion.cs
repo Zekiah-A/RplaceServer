@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace HTTPOfficial;
 
-public record EmailAuthCompletion(TaskCompletionSource<bool> TaskSource, DateTime StartDate);
+public record EmailAuthCompletion(string AuthCode, IPAddress Address, DateTime StartDate);

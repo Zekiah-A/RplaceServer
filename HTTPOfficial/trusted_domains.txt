@@ -1,7 +1,7 @@
 # All credits for the following domains go to https://raw.githubusercontent.com/derhuerst/emailproviders/master/generate/domains.txt.
 # Some domains, such as those related to short-time email services like 10minutemail are discouraged and therefore have been omitted from
 # this list. This list has fortunately been sorted for us so binary search will be possible. Domains added in are denoted with a following
-# "# rplace specific domain" tag. 
+# "# rplace-specific domain" tag. 
 001.igg.biz
 027168.com
 0815.ru
@@ -2951,7 +2951,7 @@ hecat.es
 heerschap.com
 heesun.net
 hehe.com
-# rplace specific domain
+# rplace-specific domain
 helium.email
 hello.hu
 hello.net.au
@@ -6407,7 +6407,7 @@ pochta.ru
 poczta.fm
 podam.pl
 poehali-otdihat.ru
-# rplace specific domain
+# rplace-specific domain
 poemanthology.org
 poetic.com
 poh.pp.ua
@@ -6800,7 +6800,7 @@ royalmarket.club
 royalmarket.life
 royalmarket.online
 royalweb.email
-# rplace specific domain
+# rplace-specific domain
 rplace.tk
 rppkn.com
 rq6668f.com

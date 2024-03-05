@@ -11,7 +11,7 @@ public class Post
     public string Description;
     public int Upvotes { get; set; }
     public int Downvotes { get; set; }
-    public string ContentPath { get; set; } = null!;
+    public string? ContentPath { get; set; }
     public DateTime CreationDate { get; set; }
 
     public Post(string username, string title, string description)

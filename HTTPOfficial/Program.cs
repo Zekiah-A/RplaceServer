@@ -1,5 +1,5 @@
 ﻿// An rplace server software that is intended to be used completely remotely, being accessible fully through a web interface
-using System.Buffers.Binary;
+
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
@@ -12,9 +12,9 @@ using HTTPOfficial;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
-using RplaceServer;
 using WatsonWebsocket;
-using System.IO.Compression;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
@@ -22,14 +22,25 @@ var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
 var dataPath = Path.Combine(Directory.GetCurrentDirectory(), "SaveData");
 var instanceInfoPath = Path.Combine(instancesPath, "instance_info.json");
 
-using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
-ILogger logger = factory.CreateLogger("Program");
+using var factory = LoggerFactory.Create(builder => builder.AddConsole());
+var logger = factory.CreateLogger("Program");
 
-async Task CreateConfig()
+static string HashSha256String(string rawData)
 {
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine("[Warning]: Could not find server config file, at " + configPath);
+    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
+    var builder = new StringBuilder();
+    foreach (var @byte in bytes)
+    {
+        builder.Append(@byte.ToString("x2"));
+    }
 
+    return builder.ToString();
+}
+
+if (!File.Exists(configPath))
+{
+    // Create config
+    logger.LogWarning("Could not find server config file, at {configPath}", configPath);
     await using var configFile = File.OpenWrite(configPath);
     var defaultConfiguration =
         new Configuration(
@@ -56,7 +67,7 @@ async Task CreateConfig()
                 { AccountTier.Bronze, 5 },
                 { AccountTier.Silver, 10 },
                 { AccountTier.Gold, 25 },
-                { AccountTier.Administrator, 512 }
+                { AccountTier.Administrator, 50 }
             });
     await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions
     {
@@ -64,55 +75,20 @@ async Task CreateConfig()
     });
     await configFile.FlushAsync();
     
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"[INFO]: Config files recreated. Please check {Directory.GetCurrentDirectory()} and run this program again.");
-    Console.ResetColor();
+    logger.LogWarning("Config files recreated. Please check {currentDirectory} and run this program again.",
+        Directory.GetCurrentDirectory());
     Environment.Exit(0);
 }
 
-static string HashSha256String(string rawData)
-{
-    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
-    var builder = new StringBuilder();
-    foreach (var @byte in bytes)
-    {
-        builder.Append(@byte.ToString("x2"));
-    }
-
-    return builder.ToString();
-}
-
-if (!File.Exists(configPath))
-{
-    await CreateConfig();
-}
 if (!Directory.Exists(instancesPath))
 {
     Directory.CreateDirectory(instancesPath);
 }
+
 if (!Directory.Exists(dataPath))
 {
     Directory.CreateDirectory(dataPath);
 }
-
-var defaultGameData = new GameData(
-    5000,
-    2500,
-    false,
-    true,
-    1000,
-    1000,
-    600000, 
-    false,
-    "Canvases",
-    300000,
-    true,
-    "Resources",
-    "SaveData",
-    true,
-    "",
-    "",
-    null);
 
 InstancesInfo? instancesInfo;
 if (!File.Exists(instanceInfoPath))
@@ -130,21 +106,50 @@ if (instancesInfo == null)
     Environment.Exit(0);
 }
 
+List<string> ReadTxtListFile(string path)
+{
+    return File.ReadAllLines(path)
+        .Where(entry => !string.IsNullOrWhiteSpace(entry) && entry.TrimStart().First() != '#').ToList();
+}
+
 // Email and trusted domains
 var emailAttributes = new EmailAddressAttribute();
-var trustedEmailDomains = File.ReadAllLines("trusted_domains.txt")
-    .Where(entry => !string.IsNullOrWhiteSpace(entry) && entry.TrimStart().First() != '#').ToList();
+var trustedEmailDomains = ReadTxtListFile("trusted_domains.txt");
 var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 
-// EFCore Sqlite3 Database
-using var database = new DatabaseContext();        
-database.Database.EnsureCreated();
-
 // Main server
+var builder = WebApplication.CreateBuilder();
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy.WithOrigins(config.Origin, "*"));
+});
+// EFCore Sqlite3 Database
+builder.Services.AddDbContext<DatabaseContext>(options =>
+{
+    options.UseSqlite("Data Source=Server.db");
+});
+
+builder.Configuration["Kestrel:Certificates:Default:Path"] = config.CertPath;
+builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = config.KeyPath;
+        
+var app = builder.Build();
+app.Urls.Add($"{(config.UseHttps ? "https" : "http")}://*:{config.HttpPort}");
+app.UseCors(policy =>
+{
+    policy.AllowAnyMethod()
+        .AllowAnyHeader()
+        .SetIsOriginAllowed(_ => true)
+        .AllowCredentials();
+});
+        
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 var wsServer = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 
 // Post server
-var postsServer = new PostsServer(config, database);
+var postsServer = new PostsServer(config, app);
 
 // Vanity -> URL of actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
@@ -156,8 +161,8 @@ var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
 var workerRequestQueue = new ConcurrentDictionary<int, TaskCompletionSource<byte[]>>(); // ID, Data callback
 var workerRequestId = 0;
 
-// Auth
-var authorisedClients = new Dictionary<ClientMetadata, string>();
+// Auth - Used when transitioning client from open to message handlers, periodic routines, etc
+var authorisedClients = new Dictionary<ClientMetadata, int>();
 
 // Used by reddit auth
 var refreshTokenAuthDates = new Dictionary<string, DateTime>();
@@ -170,84 +175,10 @@ var redditSerialiserOptions = new JsonSerializerOptions
     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
 };
 var random = new Random();
-var emojis = new[]
-{
-    "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "😍", "😘", "😗", "😙", "😚", "☺️", "🙂",
-    "🤗", "🤔", "😐", "😑", "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
-    "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨",
-    "😩", "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴", "😷", "🤕", "🤒", "🤮", "🤢", "🥳", "🥺", "👋",
-    "🤚", "🖐️", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👍", "👎", "✊",
-    "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🦷", "🦴",
-    "👀", "👁️", "👅", "👄", "💋", "🩸", "😎", "🤖", "🗣", "🔥", "🏠", "🤡", "👾", "👋", "💩", "⚽", "👅", "🧠", "🕶",
-    "🌳", "🌍", "🌈", "🎅", "👶", "👼", "🥖", "🍆", "🎮", "🎳", "🚢", "🗿", "📱", "🔑", "❤", "👺", "🤯", "🤬", "📱",
-    "🦩", "🍔", "🎬", "🚨", "⚡️", "🍪", "🕋", "🎉", "📋", "🚦", "🔇", "🥶", "💼", "🎩", "🎒", "🦅", "🧊", "✅", "🌱", 
-    "😂", "😍", "🚀", "😈", "👟", "🍷", "🚜", "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "😷", "🏀",
-    "🏀", "🤮", "💂", "📎", "🎄", "🕯️", "🔔", "⛪", "🍷", "🎁", "🩸", "👊", 
-};
-var emailAuthCompletions = new Dictionary<string, EmailAuthCompletion>();
+var emailCodes = ReadTxtListFile("email_codes.txt");
+var emailAuthCompletions = new Dictionary<int, EmailAuthCompletion>();
 
-async Task<AccountData?> AuthenticateNameEmail(string name, string email)
-{
-    // We get their account data using their name to prove that the email they provided is actually for this account
-    var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.Username == name && account.Email == email);
-    if (accountData is null)
-    {
-        logger.LogWarning("Account data was null or email provided was invalid, could not authenticate account login.");
-        return null;
-    }
-    
-    // Otherwise, we have to send them an email so that they can reverify their account and get a new account token
-    var codeChars = new string[10];
-    for (var i = 0; i < 10; i++)
-    {
-        codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
-    }
-    var authCode = string.Join("", codeChars);
-    var emailCompletionSource = new TaskCompletionSource<bool>();
-    emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
-    
-    var message = new MimeMessage();
-    message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
-    message.To.Add(new MailboxAddress(email, email));
-    message.Subject = "rplace.live Account Code";
-    message.Body = new TextPart("html")
-    {
-        Text = $"""
-            <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
-                <h1 style="background: orangered;color: white;">Hello </h1>
-                <div style="margin: 8px;">
-                    <p>Here's your rplace authentication code. Enter it on the site to finish logging in.</p>
-                    <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;">{authCode}</h1>
-                    <p>Be quick, this code will expire in 10 minutes!</p>
-                    <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
-                    <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
-                    <a href="https://rplace.live" style="text-decoration: none;">https://rplace.live</a></p>
-                </div>
-            </div>
-            """
-    };
-    try
-    {
-        using var smtpClient = new SmtpClient();
-        await smtpClient.ConnectAsync(config.SmtpHost, config.SmtpPort, SecureSocketOptions.StartTlsWhenAvailable);
-        await smtpClient.AuthenticateAsync(config.EmailUsername, config.EmailPassword);
-        await smtpClient.SendAsync(message);
-        await smtpClient.DisconnectAsync(true);
-    }
-    catch (Exception exception)
-    {
-        logger.LogWarning("Could not send email message: " + exception);
-        return null;
-    }
-
-    // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode,
-    // once a correct email auth code is provided, we will finally allow them to access their account data.
-    var success = await emailCompletionSource.Task;
-    emailAuthCompletions.Remove(authCode);
-    return success ? accountData : null;
-}
-
-async Task<AccountData?> AuthenticateReddit(string refreshToken)
+async Task<AccountData?> AuthenticateReddit(string refreshToken, DatabaseContext database)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -256,11 +187,11 @@ async Task<AccountData?> AuthenticateReddit(string refreshToken)
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (!meResponse.IsSuccessStatusCode || meData is null)
     {
-        logger.LogWarning("Could not request me data for authentication (reason " + meResponse.ReasonPhrase + ")");
+        logger.LogWarning("Could not request me data for authentication (reason {ReasonPhrase})", meResponse.ReasonPhrase);
         return null;
     }
     
-    var accountData = database.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
+    var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
     return accountData;
 }
 
@@ -286,8 +217,8 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     httpClient.DefaultRequestHeaders.Authorization = null;
     if (!tokenResponse.IsSuccessStatusCode || tokenData is null)
     {
-        logger.LogWarning("Could not get or update access token, token response was non-positive (reason " 
-                          + tokenResponse.ReasonPhrase + ")");
+        logger.LogWarning("Could not get or update access token, token response was non-positive ({ReasonPhrase}) ",
+            tokenResponse.ReasonPhrase);
         return null;
     }
     
@@ -296,36 +227,544 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     return tokenData.AccessToken;
 }
 
-async Task RunPostAuthentication(AccountData accountData)
+async Task RunPostAuthentication(AccountData accountData, DatabaseContext database)
 {
-    var badge = new AccountBadge(Badge.Newbie, DateTime.Now);
-
     // If they have been on the site for 20+ days, we remove their noob badge
-    var noobBadge = await database.Badges.FirstOrDefaultAsync(badge => badge.OwnerId == accountData.Id);
+    var noobBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
+        accountBadge.OwnerId == accountData.Id && accountBadge.Type == Badge.Newbie);
     if (noobBadge is not null && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(20))
     {
         database.Badges.Remove(noobBadge);
-        await accountsDb.UpdateRecord(accountData);
     }
-    if (!accountData.Data.Badges.Contains(Badge.Veteran) &&
-        DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
+    // If they have been on the site for more than a year, they get awarded a veteran badge
+    var veteranBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
+        accountBadge.OwnerId == accountData.Id && accountBadge.Type == Badge.Veteran);
+    if (veteranBadge is not null && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
     {
-        accountData.Badges.Add(Badge.Veteran);
-        await accountsDb.UpdateRecord(accountData);
+        database.Badges.Add(new AccountBadge(Badge.Veteran, DateTime.Now));
     }
 
-    await database.SaveChangessAsync();
+    await database.SaveChangesAsync();
 }
 
-async Task<bool> CheckValidEmail(string email)
+app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext context, DatabaseContext database) =>
 {
-    if (!emailAttributes.IsValid(email) || trustedEmailDomains.BinarySearch(email.Split("@").Last()) < 0)
+    if (context.Connection.RemoteIpAddress is not { } ipAddress)
     {
-        return false;
+        return Results.Unauthorized();
+    }
+    
+    if (request.Username.Length is < 4 or > 32 || !UsernameRegex().IsMatch(request.Username))
+    {
+        return Results.BadRequest(new { Message = "Invalid username format" });
+    }
+    
+    if (request.Email.Length is > 320 or < 4 ||  !emailAttributes.IsValid(request.Email)
+        || trustedEmailDomains.BinarySearch(request.Email.Split('@').Last()) < 0)
+    {
+        return Results.BadRequest(new { Message = "Invalid email format" });
+    }
+    
+    var emailExists = await database.Accounts.AnyAsync(account => account.Email == request.Email);
+    if (emailExists)
+    {
+        return Results.BadRequest(new { Message = "Account with specified email already exists" });
     }
 
-    return (await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.Email), email)).Length == 0;
-}
+    var usernameExists = await database.Accounts.AnyAsync(accountKey => accountKey.Email == request.Email);
+    if (usernameExists)
+    {
+        return Results.BadRequest(new { Message = "Account with specified username already exists" });
+    }
+    
+    var accountData = new AccountData(request.Username, request.Email, AccountTier.Free, DateTime.Now);
+    var authCode = emailCodes[random.Next(0, emailCodes.Count - 1)];
+    var completion = new EmailAuthCompletion(authCode, ipAddress, DateTime.Now);
+    emailAuthCompletions.Add(accountData.Id, completion);
+
+    var message = new MimeMessage();
+    message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
+    message.To.Add(new MailboxAddress(request.Username, request.Email));
+    message.Subject = "rplace.live Account Creation Code";
+    message.Body = new TextPart("html")
+    {
+       Text = $"""
+           <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;border-radius: 8px 8px 0px 0px;overflow: clip;">
+               <h1 style="background: orangered;color: white;padding: 8px;box-shadow: 0px 2px 4px #0000002b;">👋 Hello there!</h1>
+               <div style="margin: 8px;">
+                   <p>Someone used your email to register a new <a href="https://rplace.live" style="text-decoration: none;">rplace.live</a> account.</p>
+                   <p>If that's you, then cool, your code is:</p>
+                   <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
+                   <p>Otherwise, you can ignore this email, who cares anyway??</p>
+                   <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
+                   <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply | Contact
+                   <a href="mailto:admin@rplace.live" style="text-decoration: none;">admin@rplace.live</a></p>
+               <div>
+           </div>
+           """
+    };
+
+    try
+    {
+       using var smtpClient = new SmtpClient();
+       await smtpClient.ConnectAsync(config.SmtpHost, config.SmtpPort, SecureSocketOptions.StartTlsWhenAvailable);
+       await smtpClient.AuthenticateAsync(config.EmailUsername, config.EmailPassword);
+       await smtpClient.SendAsync(message);
+       await smtpClient.DisconnectAsync(true);
+    }
+    catch (Exception exception)
+    {
+       logger.LogError("Could not send email message: {exception}", exception);
+    }
+    
+    return Results.Ok(new { Id  = accountData.Id });
+});
+
+app.MapPost("accounts/{id}/verify", async (int id, HttpContext context, DatabaseContext database) =>
+{
+    if (await database.Accounts.FindAsync(id) is not AccountData account)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Problem();
+    // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode
+    // once they have given the correct email authentication code, we finally commit saving and creating the account to disk.
+    /*if (await emailCompletionSource.Task)
+    {
+        emailAuthCompletions.Remove(authCode);
+
+        database.Badges.Add(new AccountBadge(Badge.Newbie, DateTime.Now));
+        await database.SaveChangesAsync();
+        authorisedClients.TryAdd(args.Client, accountKey);
+
+        // Send them their token and sign them in
+        var accountToken = RandomNumberGenerator.GetHexString(64);
+        accountTokenAccountKeys.Add(accountToken, accountData.Username);
+
+        await wsServer.SendAsync(args.Client, CreateTokenPacket(accountToken));
+    }*/
+});
+
+app.MapPost("/accounts/login", ([FromBody] EmailUsernameRequest request) =>
+{
+
+});
+
+app.MapPost("/accounts/login/code", ([FromBody] string code) =>
+{
+
+});
+
+app.MapPost("/accounts/login/token", ([FromBody] string code) =>
+{
+
+});
+
+app.MapPost("/accounts/login/reddit", ([FromBody] string code) =>
+{
+
+});
+
+app.MapDelete("/accounts/{id}", (int id) =>
+{
+
+});
+
+app.MapGet("/accounts/{id}/profile", (int id) =>
+{
+
+});
+
+/*
+
+   case ClientPackets.CreateAccount:
+   {
+       var username = readableData.ReadString();
+       var email = readableData.ReadString();
+       break;
+   }
+   case  ClientPackets.AccountCode:
+   {
+       var code = readableData.ReadString();
+       if (emailAuthCompletions.TryGetValue(code, out var completion))
+       {
+           completion.TaskSource.SetResult(completion.StartDate - DateTime.Now <= TimeSpan.FromMinutes(10));
+       }
+       break;
+   }
+   case ClientPackets.DeleteAccount:
+   {
+       async Task DeleteAccountAsync()
+       {
+           if (authorisedClients.TryGetValue(args.Client, out var accountKey))
+           {
+               // TODO: Tell worker servers to delete all their instances belonging to this account
+               authorisedClients.Remove(args.Client);
+               await accountsDb.DeleteRecord<AccountData>(accountKey);
+           }
+       }
+
+       Task.Run(DeleteAccountAsync);
+       break;
+   }
+   case ClientPackets.AccountInfo:
+   {
+       if (authorisedClients.TryGetValue(args.Client, out var accountData))
+       {
+           var dataPacket = new WriteablePacket();
+           dataPacket.WriteByte((byte) ServerPackets.AccountInfo);
+           dataPacket.WriteString(JsonSerializer.Serialize(accountData));
+           wsServer.SendAsync(args.Client, dataPacket);
+       }
+       break;
+   }
+   case ClientPackets.Authenticate:
+   {
+       switch ((AuthType) readableData.ReadByte())
+       {
+           // Name email will cause them to have to email reauthenticate
+           case AuthType.NameEmail:
+           {
+               var name = readableData.ReadString();
+               var email = readableData.ReadString();
+           
+               var accountData = AuthenticateNameEmail(name, email).GetAwaiter().GetResult();
+               if (accountData is not null)
+               {
+                   _ = RunPostAuthentication(accountData);
+
+                   // We give them a new token to use next time that they want to log in, so that they do not need to
+                   // reauthenticate their email.
+                   authorisedClients.TryAdd(args.Client, accountData.MasterKey);
+                   var newToken = RandomNumberGenerator.GetHexString(64);
+                   accountTokenAccountKeys.Add(newToken, accountData.MasterKey);
+
+                   var tokenPacket = new WriteablePacket();
+                   tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
+                   tokenPacket.WriteString(newToken);
+                   wsServer.SendAsync(args.Client, tokenPacket);
+               }
+               break;
+           }
+           // If they have a normal account token in localstorage, then they can login without email revalidation
+           case AuthType.NormalToken:
+           {
+               var normalToken = readableData.ReadString();
+               // Either text will be invalid, or name and email
+               var accountData = AuthenticateToken(normalToken).GetAwaiter().GetResult();
+               if (accountData is not null)
+               {
+                   _ = RunPostAuthentication(accountData);
+
+                   // Regardless of if they are automatically logging in with account token, or logging in for the first
+                   // time on that device with an email code, we make sure to invalidate their previous token and give 
+                   // them a new one after every authentication. 
+                   accountTokenAccountKeys.Remove(normalToken);
+                   authorisedClients.TryAdd(args.Client, accountData.MasterKey);
+                   var newToken = RandomNumberGenerator.GetHexString(64);
+                   accountTokenAccountKeys.Add(newToken, accountData.MasterKey);
+                   
+                   var tokenPacket = new WriteablePacket();
+                   tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
+                   tokenPacket.WriteString(newToken);
+                   wsServer.SendAsync(args.Client, tokenPacket);
+               }
+               break;
+           }
+           // If they already have a RefreshToken in localstorage, then they can simply authenticate and login
+           case AuthType.Reddit:
+           {
+               var refreshToken = readableData.ReadString();
+               var accountData = AuthenticateReddit(refreshToken).GetAwaiter().GetResult();
+               if (accountData is not null)
+               {
+                   _ = RunPostAuthentication(accountData);
+               
+                   // Add them to server authenticated client memory so they do not have to authenticate each server API call
+                   authorisedClients.TryAdd(args.Client, accountData.MasterKey);
+               }
+               break;
+           }
+       }
+       break;
+   }
+   case ClientPackets.ResolveVanity:
+   {
+       var vanity = readableData.ReadString();
+       if (registeredVanities.TryGetValue(vanity, out var urlResult))
+       {
+           var buffer = Encoding.UTF8.GetBytes("X" + urlResult);
+           buffer[0] = (byte) ServerPackets.VanityLocation;
+           wsServer.SendAsync(args.Client, urlResult);
+       }
+       break;
+   }
+   case ClientPackets.VanityAvailable:
+   {
+       var buffer = new[]
+       {
+           (byte) ServerPackets.AvailableVanity,
+           (byte) (registeredVanities.ContainsKey(readableData.ReadString()) ? 0 : 1)
+       };
+       wsServer.SendAsync(args.Client, buffer);
+       break;
+   }
+   // Will create an account if doesn't exist, or allow a user to get the refresh token of their account & authenticate
+   // if they already had an account, but were not OAuthed on that specific device (did not have RefreshToken in localStorage).
+   case ClientPackets.RedditCreateAccount:
+   {
+       var accountCode = readableData.ReadString();
+       
+       // We to exchange this with an access token so we can execute API calls with this user, such as fetching their
+       // unique ID (/me) endpoint, anc checking if we already have it saved (then they already have an account,// and we can fetch account data, else, we create account data for this user with data we can scrape from the API).
+       async Task ExchangeAccessTokenAsync()
+       {
+           httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
+               Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
+           
+           var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
+           {
+               { "grant_type", "authorization_code" },
+               { "code", accountCode },
+               { "redirect_uri", "https://rplace.live/" }
+           });
+           var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
+           var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
+           // We need to make ultra sure this auth will never be sent to someone else
+           httpClient.DefaultRequestHeaders.Authorization = null;
+           if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
+           {
+               logger.LogWarning("Client create account rejected for failed access taken retrieval (reason" + tokenResponse.ReasonPhrase + ")");
+               return;
+           }
+           
+           httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
+           var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
+           var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
+           httpClient.DefaultRequestHeaders.Authorization = null;
+           if (!meResponse.IsSuccessStatusCode || meData is null)
+           {
+               logger.LogWarning("Client create account rejected for null me API response (reason " + tokenResponse.ReasonPhrase + ")");
+               return;
+           }
+
+           // Create their account, first check no other account with that ID is signed up
+           var existingAccount = await database.Accounts.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
+           if (existingAccount is null)
+           {
+               // Create new accountData for this client
+               var accountData = new AccountData()
+               //var accountData = new AccountData(meData.Name, "", 0, new List<int>(),
+               //    "", "", meData.Name, 0, DateTime.Now, new List<Badge>(), true, meData.Id);
+               //accountData.Badges.Add(Badge.Newbie);
+
+               var accountKey = await accountsDb.CreateRecord(accountData);
+               authorisedClients.TryAdd(args.Client, accountKey);
+               refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
+               refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
+           }
+           
+           {
+               // If they already have an account, we can simply authenticate them
+               var accountData = await AuthenticateReddit(tokenData.RefreshToken);
+               if (accountData is not null)
+               {
+                   await RunPostAuthentication(accountData);
+                   authorisedClients.TryAdd(args.Client, accountData.MasterKey);
+                   
+                   // Send them their token so that they can quickly login again without having to reauthenticate
+                   var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
+                   tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
+                   await wsServer.SendAsync(args.Client, tokenBuffer);
+                   logger.LogInformation($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
+               }
+               
+               logger.LogTrace($"Client create account for {meData.Name} succeeded (client {args.Client.IpPort})");
+           }
+       }
+
+       Task.Run(ExchangeAccessTokenAsync);
+       break;
+   }
+   case ClientPackets.UpdateProfile:
+   {
+       async Task UpdateProfileAsync()
+       {
+           if (!authorisedClients.TryGetValue(args.Client, out var accountKey)
+               || await accountsDb.GetRecord<AccountData>(accountKey) is not { } accountData)
+           {
+               return;
+           }
+
+           switch (data[0])
+           {
+               case (byte)PublicEditableData.Username:
+               {
+                   var input = Encoding.UTF8.GetString(data[1..]);
+                   if (input.Length is < 0 or > 32)
+                   {
+                       return;
+                   }
+
+                   accountData.Data.Username = input;
+                   break;
+               }
+               case (byte)PublicEditableData.DiscordId:
+               {
+                   //TODO: Validate
+                   var snowflake = BinaryPrimitives.ReadInt64BigEndian(data[1..]);
+                   accountData.Data.DiscordId = snowflake.ToString();
+                   break;
+               }
+               case (byte)PublicEditableData.TwitterHandle:
+               {
+                   var input = Encoding.UTF8.GetString(data[1..]);
+                   if (!TwitterHandleRegex().IsMatch(input))
+                   {
+                       return;
+                   }
+
+                   accountData.Data.TwitterHandle = input;
+                   break;
+               }
+               case (byte)PublicEditableData.RedditHandle:
+               {
+                   var input = Encoding.UTF8.GetString(data[1..]);
+                   if (!RedditHandleRegex().IsMatch(input) || accountData.Data.UsesRedditAuthentication)
+                   {
+                       return;
+                   }
+
+                   accountData.Data.RedditHandle = input;
+                   break;
+               }
+               case (byte)PublicEditableData.Badges:
+               {
+                   if ((Badge)data[1] != Badge.EthicalBotter || (Badge)data[1] != Badge.Gay
+                                                             || (Badge)data[1] != Badge.ScriptKiddie)
+                   {
+                       return;
+                   }
+
+                   if (data[0] == 1)
+                   {
+                       accountData.Data.Badges.Add((Badge)data[1]);
+                   }
+                   else
+                   {
+                       accountData.Data.Badges.Remove((Badge)data[1]);
+                   }
+
+                   break;
+               }
+           }
+
+           await accountsDb.UpdateRecord(accountData);
+       }
+
+       Task.Run(UpdateProfileAsync);
+       break;
+   }
+   case ClientPackets.ProfileInfo:
+   {
+       async Task<AccountData?> GetProfileInfoAsync(string accountKey)
+       {
+           return await accountsDb.GetRecord<AccountData>(accountKey);
+       }
+       
+       if (GetProfileInfoAsync(readableData.ReadString()).GetAwaiter().GetResult() is {} accountData)
+       {
+           var responsePacket = new WriteablePacket();
+           responsePacket.WriteByte((byte) ServerPackets.AccountProfile);
+           responsePacket.WriteString(JsonSerializer.Serialize<AccountProfile>(accountData.Data));
+       }
+       break;
+   }
+   case ClientPackets.CreateInstance:
+   {
+       async Task<AccountData?> AuthenticateClientAsync()
+       {
+           if (!authorisedClients.TryGetValue(args.Client, out var accountKey))
+           {
+               return null;
+           }
+
+           return await accountsDb.GetRecord<AccountData>(accountKey);
+       }
+
+       var accountData = AuthenticateClientAsync().GetAwaiter().GetResult();
+       if (accountData is null)
+       {
+           return;
+       }
+
+       if (!config.AccountTierInstanceLimits.TryGetValue(accountData.Data.Tier, out var limit)
+           || accountData.Data.Instances.Count > limit)
+       {
+           return;
+       }
+
+       // We hold onto this as it will be needed to be hooked up to an actual ip/location once a hoster is found
+       var vanityName = readableData.ReadString();
+       var cooldown = readableData.ReadUInt();
+       var width = readableData.ReadUInt();
+       var height = readableData.ReadUInt();
+       var hasImage = readableData.ReadBool();
+       if (hasImage)
+       {
+           var fromImage = readableData.ReadByteArray(); // TODO: Decode into default board
+       }
+
+       
+       // Generate ID for this instance, save it so auth server knows about this instance
+       var id = instancesInfo.Ids.Count == 0 ? 0 : instancesInfo.Ids.Max() + 1;
+       instancesInfo.Ids.Add(id);
+       //SaveInstancesInfo();
+
+       // Set up directory that will be used to hold replication instance data + it's configuration
+       var instanceDirectory = Path.Join(instancesPath, id.ToString());
+       Directory.CreateDirectory(instanceDirectory);
+
+       // Set up the new instance server software data files
+       var instanceInfo = new InstanceInfo(id, DateTime.Now);
+       var gameData = defaultGameData with { BoardWidth = width, BoardHeight = height, CooldownMs = cooldown };
+       File.WriteAllText(Path.Combine(instanceDirectory, "game_data.json"), JsonSerializer.Serialize(defaultGameData));
+       File.WriteAllText(Path.Combine(instanceDirectory, "server_data.json"), JsonSerializer.Serialize(instanceInfo));
+       Directory.CreateDirectory(Path.Combine(instanceDirectory, "Canvases"));
+       File.Create(Path.Combine(instanceDirectory, "Canvases", "backuplist.txt"));
+       
+       // We need to find a worker server capable of hosting, then replicate to it, and tell it to start
+       var responseSuccess = false;
+       foreach (var workerPair in workerClients)
+       {
+           var queryReqId = workerRequestId++;
+           var query = new WriteablePacket();
+           var requestCompletionSource = new TaskCompletionSource<byte[]>();
+           query.WriteByte((byte) ServerPackets.QueryCanCreate);
+           query.WriteUInt((uint) queryReqId);
+           
+           workerRequestQueue.TryAdd(queryReqId, requestCompletionSource);
+           wsServer.SendAsync(workerPair.Key, query);  // Blocking, v
+           var queryResponse = new ReadablePacket(requestCompletionSource.Task.GetAwaiter().GetResult());
+           workerRequestQueue.TryRemove(queryReqId, out var _);
+           
+           
+           if (!responseSuccess && queryResponse.ReadBool())
+           {
+               responseSuccess = true;
+               var packet = new WriteablePacket();
+               packet.WriteByte((byte) ServerPackets.SyncInstance);
+               packet.WriteInt(id);
+
+               var zipSyncDirectory = Path.Join(instancesPath, id.ToString(), ".tmp.zip");
+               ZipFile.CreateFromDirectory(instanceDirectory, zipSyncDirectory);
+               //packet.WriteBytes(File.ReadAllBytes(zipSyncDirectory));
+           }
+       }
+       break;
+   }
+ */
 
 wsServer.MessageReceived += (_, args) =>
 {
@@ -334,481 +773,6 @@ wsServer.MessageReceived += (_, args) =>
 
     switch ((ClientPackets) readableData.ReadByte())
     {
-        case ClientPackets.CreateAccount:
-        {
-            var username = readableData.ReadString();
-            var email = readableData.ReadString();
-            if (username.Length > 32 || email.Length > 320)
-            {
-                logger.LogInformation($"Rejected client create account for too long packet length (client {args.Client.IpPort})");
-                return;
-            }
-
-            async Task CreateAccountAsync()
-            {
-                if (username.Length <= 4 || !await CheckValidEmail(email))
-                {
-                    return;
-                }
-
-                var codeChars = new string[3];
-                for (var i = 0; i < 3; i++)
-                {
-                    codeChars[i] = emojis[random.Next(0, emojis.Length - 1)];
-                }
-                var authCode = string.Join("", codeChars);
-                var emailCompletionSource = new TaskCompletionSource<bool>();
-                emailAuthCompletions.Add(authCode, new EmailAuthCompletion(emailCompletionSource, DateTime.Now));
-                var accountData = new AccountData(username, email, 0, new List<int>(),
-                    "", "", "", 0, DateTime.Now, new List<Badge>(),
-                    false, "");
-
-                var message = new MimeMessage();
-                message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
-                message.To.Add(new MailboxAddress(email, email));
-                message.Subject = "rplace.live Account Creation Code";
-                message.Body = new TextPart("html")
-                {
-                    Text = $"""
-                        <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;">
-                            <h1 style="background: orangered;color: white;">Hello </h1>
-                            <div style="margin: 8px;">
-                                <p>Someone used your email to register a new rplace.live account.</p>
-                                <p>If that's you, then cool, your code is:</p>
-                                <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
-                                <p>Otherwise, you can ignore this email, who cares anyway??</p>
-                                <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
-                                <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply |
-                                <a href="https://rplace.live" style="text-decoration: none;">https://rplace.live</a></p>
-                            <div>
-                        </div>
-                        """
-                };
-                
-                try
-                {
-                    using var smtpClient = new SmtpClient();
-                    await smtpClient.ConnectAsync(config.SmtpHost, config.SmtpPort, SecureSocketOptions.StartTlsWhenAvailable);
-                    await smtpClient.AuthenticateAsync(config.EmailUsername, config.EmailPassword);
-                    await smtpClient.SendAsync(message);
-                    await smtpClient.DisconnectAsync(true);
-                }
-                catch (Exception exception)
-                {
-                    logger.LogWarning("Could not send email message: " + exception);
-                }
-
-                // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode
-                // once they have given the correct email authentication code, we finally commit saving and creating the account to disk.
-                if (await emailCompletionSource.Task)
-                {
-                    emailAuthCompletions.Remove(authCode);
-                    
-                    accountData.Badges.Add(Badge.Newbie);
-                    var accountKey = await accountsDb.CreateRecord(accountData);
-                    authorisedClients.TryAdd(args.Client, accountKey);
-
-                    // Send them their token and sign them in
-                    var accountToken = RandomNumberGenerator.GetHexString(64);
-                    accountTokenAccountKeys.Add(accountToken, accountData.Username);
-                    
-                    await wsServer.SendAsync(args.Client, CreateTokenPacket(accountToken));
-                }
-            }
-
-            byte[] CreateTokenPacket(string accountToken)
-            {
-                var tokenPacket = new WriteablePacket();
-                tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
-                tokenPacket.WriteString(accountToken);
-                wsServer.SendAsync(args.Client, tokenPacket);
-                return tokenPacket.ToArray();
-            }
-
-            Task.Run(CreateAccountAsync);
-            break;
-        }
-        case  ClientPackets.AccountCode:
-        {
-            var code = readableData.ReadString();
-            if (emailAuthCompletions.TryGetValue(code, out var completion))
-            {
-                completion.TaskSource.SetResult(completion.StartDate - DateTime.Now <= TimeSpan.FromMinutes(10));
-            }
-            break;
-        }
-        case ClientPackets.DeleteAccount:
-        {
-            async Task DeleteAccountAsync()
-            {
-                if (authorisedClients.TryGetValue(args.Client, out var accountKey))
-                {
-                    // TODO: Tell worker servers to delete all their instances belonging to this account
-                    authorisedClients.Remove(args.Client);
-                    await accountsDb.DeleteRecord<AccountData>(accountKey);
-                }
-            }
-
-            Task.Run(DeleteAccountAsync);
-            break;
-        }
-        case ClientPackets.AccountInfo:
-        {
-            if (authorisedClients.TryGetValue(args.Client, out var accountData))
-            {
-                var dataPacket = new WriteablePacket();
-                dataPacket.WriteByte((byte) ServerPackets.AccountInfo);
-                dataPacket.WriteString(JsonSerializer.Serialize(accountData));
-                wsServer.SendAsync(args.Client, dataPacket);
-            }
-            break;
-        }
-        case ClientPackets.Authenticate:
-        {
-            switch ((AuthType) readableData.ReadByte())
-            {
-                // Name email will cause them to have to email reauthenticate
-                case AuthType.NameEmail:
-                {
-                    var name = readableData.ReadString();
-                    var email = readableData.ReadString();
-                
-                    var accountData = AuthenticateNameEmail(name, email).GetAwaiter().GetResult();
-                    if (accountData is not null)
-                    {
-                        _ = RunPostAuthentication(accountData);
-
-                        // We give them a new token to use next time that they want to log in, so that they do not need to
-                        // reauthenticate their email.
-                        authorisedClients.TryAdd(args.Client, accountData.MasterKey);
-                        var newToken = RandomNumberGenerator.GetHexString(64);
-                        accountTokenAccountKeys.Add(newToken, accountData.MasterKey);
-
-                        var tokenPacket = new WriteablePacket();
-                        tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
-                        tokenPacket.WriteString(newToken);
-                        wsServer.SendAsync(args.Client, tokenPacket);
-                    }
-                    break;
-                }
-                // If they have a normal account token in localstorage, then they can login without email revalidation
-                case AuthType.NormalToken:
-                {
-                    var normalToken = readableData.ReadString();
-                    // Either text will be invalid, or name and email
-                    var accountData = AuthenticateToken(normalToken).GetAwaiter().GetResult();
-                    if (accountData is not null)
-                    {
-                        _ = RunPostAuthentication(accountData);
-
-                        // Regardless of if they are automatically logging in with account token, or logging in for the first
-                        // time on that device with an email code, we make sure to invalidate their previous token and give 
-                        // them a new one after every authentication. 
-                        accountTokenAccountKeys.Remove(normalToken);
-                        authorisedClients.TryAdd(args.Client, accountData.MasterKey);
-                        var newToken = RandomNumberGenerator.GetHexString(64);
-                        accountTokenAccountKeys.Add(newToken, accountData.MasterKey);
-                        
-                        var tokenPacket = new WriteablePacket();
-                        tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
-                        tokenPacket.WriteString(newToken);
-                        wsServer.SendAsync(args.Client, tokenPacket);
-                    }
-                    break;
-                }
-                // If they already have a RefreshToken in localstorage, then they can simply authenticate and login
-                case AuthType.Reddit:
-                {
-                    var refreshToken = readableData.ReadString();
-                    var accountData = AuthenticateReddit(refreshToken).GetAwaiter().GetResult();
-                    if (accountData is not null)
-                    {
-                        _ = RunPostAuthentication(accountData);
-                    
-                        // Add them to server authenticated client memory so they do not have to authenticate each server API call
-                        authorisedClients.TryAdd(args.Client, accountData.MasterKey);
-                    }
-                    break;
-                }
-            }
-            break;
-        }
-        case ClientPackets.ResolveVanity:
-        {
-            var vanity = readableData.ReadString();
-            if (registeredVanities.TryGetValue(vanity, out var urlResult))
-            {
-                var buffer = Encoding.UTF8.GetBytes("X" + urlResult);
-                buffer[0] = (byte) ServerPackets.VanityLocation;
-                wsServer.SendAsync(args.Client, urlResult);
-            }
-            break;
-        }
-        case ClientPackets.VanityAvailable:
-        {
-            var buffer = new[]
-            {
-                (byte) ServerPackets.AvailableVanity,
-                (byte) (registeredVanities.ContainsKey(readableData.ReadString()) ? 0 : 1)
-            };
-            wsServer.SendAsync(args.Client, buffer);
-            break;
-        }
-        // Will create an account if doesn't exist, or allow a user to get the refresh token of their account & authenticate
-        // if they already had an account, but were not OAuthed on that specific device (did not have RefreshToken in localStorage).
-        case ClientPackets.RedditCreateAccount:
-        {
-            var accountCode = readableData.ReadString();
-            
-            // We to exchange this with an access token so we can execute API calls with this user, such as fetching their
-            // unique ID (/me) endpoint, anc checking if we already have it saved (then they already have an account,
-            // and we can fetch account data, else, we create account data for this user with data we can scrape from the API).
-            async Task ExchangeAccessTokenAsync()
-            {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
-                    Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
-                
-                var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    { "grant_type", "authorization_code" },
-                    { "code", accountCode },
-                    { "redirect_uri", "https://rplace.live/" }
-                });
-                var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
-                var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
-                // We need to make ultra sure this auth will never be sent to someone else
-                httpClient.DefaultRequestHeaders.Authorization = null;
-                if (!tokenResponse.IsSuccessStatusCode || tokenData is null )
-                {
-                    logger.LogWarning("Client create account rejected for failed access taken retrieval (reason" + tokenResponse.ReasonPhrase + ")");
-                    return;
-                }
-                
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
-                var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
-                var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
-                httpClient.DefaultRequestHeaders.Authorization = null;
-                if (!meResponse.IsSuccessStatusCode || meData is null)
-                {
-                    logger.LogWarning("Client create account rejected for null me API response (reason " + tokenResponse.ReasonPhrase + ")");
-                    return;
-                }
-
-                
-                // Create their account, first check no other account with that ID is signed up
-                if ((await accountsDb.FindRecords<AccountData, string>(nameof(AccountData.RedditId), meData.Id)).Length == 0)
-                {
-                    // Create new accountData for this client
-                    var accountData = new AccountData(meData.Name, "", 0, new List<int>(),
-                        "", "", meData.Name, 0, DateTime.Now, new List<Badge>(), true, meData.Id);
-                    accountData.Badges.Add(Badge.Newbie);
-
-                    var accountKey = await accountsDb.CreateRecord(accountData);
-                    authorisedClients.TryAdd(args.Client, accountKey);
-                    refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
-                    refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
-                }
-                
-                {
-                    // If they already have an account, we can simply authenticate them
-                    var accountData = await AuthenticateReddit(tokenData.RefreshToken);
-                    if (accountData is not null)
-                    {
-                        await RunPostAuthentication(accountData);
-                        authorisedClients.TryAdd(args.Client, accountData.MasterKey);
-                        
-                        // Send them their token so that they can quickly login again without having to reauthenticate
-                        var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
-                        tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
-                        await wsServer.SendAsync(args.Client, tokenBuffer);
-                        logger.LogInformation($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
-                    }
-                    
-                    logger.LogTrace($"Client create account for {meData.Name} succeeded (client {args.Client.IpPort})");
-                }
-            }
-
-            Task.Run(ExchangeAccessTokenAsync);
-            break;
-        }
-        case ClientPackets.UpdateProfile:
-        {
-            async Task UpdateProfileAsync()
-            {
-                if (!authorisedClients.TryGetValue(args.Client, out var accountKey)
-                    || await accountsDb.GetRecord<AccountData>(accountKey) is not { } accountData)
-                {
-                    return;
-                }
-
-                switch (data[0])
-                {
-                    case (byte)PublicEditableData.Username:
-                    {
-                        var input = Encoding.UTF8.GetString(data[1..]);
-                        if (input.Length is < 0 or > 32)
-                        {
-                            return;
-                        }
-
-                        accountData.Data.Username = input;
-                        break;
-                    }
-                    case (byte)PublicEditableData.DiscordId:
-                    {
-                        //TODO: Validate
-                        var snowflake = BinaryPrimitives.ReadInt64BigEndian(data[1..]);
-                        accountData.Data.DiscordId = snowflake.ToString();
-                        break;
-                    }
-                    case (byte)PublicEditableData.TwitterHandle:
-                    {
-                        var input = Encoding.UTF8.GetString(data[1..]);
-                        if (!TwitterHandleRegex().IsMatch(input))
-                        {
-                            return;
-                        }
-
-                        accountData.Data.TwitterHandle = input;
-                        break;
-                    }
-                    case (byte)PublicEditableData.RedditHandle:
-                    {
-                        var input = Encoding.UTF8.GetString(data[1..]);
-                        if (!RedditHandleRegex().IsMatch(input) || accountData.Data.UsesRedditAuthentication)
-                        {
-                            return;
-                        }
-
-                        accountData.Data.RedditHandle = input;
-                        break;
-                    }
-                    case (byte)PublicEditableData.Badges:
-                    {
-                        if ((Badge)data[1] != Badge.EthicalBotter || (Badge)data[1] != Badge.Gay
-                                                                  || (Badge)data[1] != Badge.ScriptKiddie)
-                        {
-                            return;
-                        }
-
-                        if (data[0] == 1)
-                        {
-                            accountData.Data.Badges.Add((Badge)data[1]);
-                        }
-                        else
-                        {
-                            accountData.Data.Badges.Remove((Badge)data[1]);
-                        }
-
-                        break;
-                    }
-                }
-
-                await accountsDb.UpdateRecord(accountData);
-            }
-
-            Task.Run(UpdateProfileAsync);
-            break;
-        }
-        case ClientPackets.ProfileInfo:
-        {
-            async Task<AccountData?> GetProfileInfoAsync(string accountKey)
-            {
-                return await accountsDb.GetRecord<AccountData>(accountKey);
-            }
-            
-            if (GetProfileInfoAsync(readableData.ReadString()).GetAwaiter().GetResult() is {} accountData)
-            {
-                var responsePacket = new WriteablePacket();
-                responsePacket.WriteByte((byte) ServerPackets.AccountProfile);
-                responsePacket.WriteString(JsonSerializer.Serialize<AccountProfile>(accountData.Data));
-            }
-            break;
-        }
-        case ClientPackets.CreateInstance:
-        {
-            async Task<AccountData?> AuthenticateClientAsync()
-            {
-                if (!authorisedClients.TryGetValue(args.Client, out var accountKey))
-                {
-                    return null;
-                }
-
-                return await accountsDb.GetRecord<AccountData>(accountKey);
-            }
-
-            var accountData = AuthenticateClientAsync().GetAwaiter().GetResult();
-            if (accountData is null)
-            {
-                return;
-            }
-
-            if (!config.AccountTierInstanceLimits.TryGetValue(accountData.Data.Tier, out var limit)
-                || accountData.Data.Instances.Count > limit)
-            {
-                return;
-            }
-
-            // We hold onto this as it will be needed to be hooked up to an actual ip/location once a hoster is found
-            var vanityName = readableData.ReadString();
-            var cooldown = readableData.ReadUInt();
-            var width = readableData.ReadUInt();
-            var height = readableData.ReadUInt();
-            var hasImage = readableData.ReadBool();
-            if (hasImage)
-            {
-                var fromImage = readableData.ReadByteArray(); // TODO: Decode into default board
-            }
-
-            
-            // Generate ID for this instance, save it so auth server knows about this instance
-            var id = instancesInfo.Ids.Count == 0 ? 0 : instancesInfo.Ids.Max() + 1;
-            instancesInfo.Ids.Add(id);
-            //SaveInstancesInfo();
-
-            // Set up directory that will be used to hold replication instance data + it's configuration
-            var instanceDirectory = Path.Join(instancesPath, id.ToString());
-            Directory.CreateDirectory(instanceDirectory);
-
-            // Set up the new instance server software data files
-            var instanceInfo = new InstanceInfo(id, DateTime.Now);
-            var gameData = defaultGameData with { BoardWidth = width, BoardHeight = height, CooldownMs = cooldown };
-            File.WriteAllText(Path.Combine(instanceDirectory, "game_data.json"), JsonSerializer.Serialize(defaultGameData));
-            File.WriteAllText(Path.Combine(instanceDirectory, "server_data.json"), JsonSerializer.Serialize(instanceInfo));
-            Directory.CreateDirectory(Path.Combine(instanceDirectory, "Canvases"));
-            File.Create(Path.Combine(instanceDirectory, "Canvases", "backuplist.txt"));
-            
-            // We need to find a worker server capable of hosting, then replicate to it, and tell it to start
-            var responseSuccess = false;
-            foreach (var workerPair in workerClients)
-            {
-                var queryReqId = workerRequestId++;
-                var query = new WriteablePacket();
-                var requestCompletionSource = new TaskCompletionSource<byte[]>();
-                query.WriteByte((byte) ServerPackets.QueryCanCreate);
-                query.WriteUInt((uint) queryReqId);
-                
-                workerRequestQueue.TryAdd(queryReqId, requestCompletionSource);
-                wsServer.SendAsync(workerPair.Key, query);  // Blocking, v
-                var queryResponse = new ReadablePacket(requestCompletionSource.Task.GetAwaiter().GetResult());
-                workerRequestQueue.TryRemove(queryReqId, out var _);
-                
-                
-                if (!responseSuccess && queryResponse.ReadBool())
-                {
-                    responseSuccess = true;
-                    var packet = new WriteablePacket();
-                    packet.WriteByte((byte) ServerPackets.SyncInstance);
-                    packet.WriteInt(id);
-
-                    var zipSyncDirectory = Path.Join(instancesPath, id.ToString(), ".tmp.zip");
-                    ZipFile.CreateFromDirectory(instanceDirectory, zipSyncDirectory);
-                    //packet.WriteBytes(File.ReadAllBytes(zipSyncDirectory));
-                }
-            }
-            break;
-        }
-
         /*
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
         // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
@@ -970,36 +934,58 @@ wsServer.ClientDisconnected += (_, args) =>
     authorisedClients.Remove(args.Client);
 };
 
+var serverShutdownToken = new CancellationTokenSource();
+
 Console.CancelKeyPress += async (_, _) =>
 {
     await wsServer.StopAsync();
+    await serverShutdownToken.CancelAsync();
     Environment.Exit(0);
 };
-AppDomain.CurrentDomain.UnhandledException += (_, exceptionEventArgs) =>
+
+AppDomain.CurrentDomain.UnhandledException += async (_, exceptionEventArgs) =>
 {
-    logger.LogError("Unhandled server exception: " + exceptionEventArgs.ExceptionObject);
+    logger.LogError("Unhandled server exception: {exception}",  exceptionEventArgs.ExceptionObject);
+    await wsServer.StopAsync();
+    await serverShutdownToken.CancelAsync();
+    Environment.Exit(1);
 };
+
+// Delete accounts that have not verified within the valid timespan
 var expiredAccountCodeTimer = new System.Timers.Timer(TimeSpan.FromMinutes(10))
 {
     Enabled = true,
     AutoReset = true
 };
-expiredAccountCodeTimer.Elapsed += (_, _) =>
+expiredAccountCodeTimer.Elapsed += async (_, _) =>
 {
+    using var scope = app.Services.CreateScope();
+    var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
+    
     foreach (var completion in emailAuthCompletions)
     {
-        if (DateTime.Now - completion.Value.StartDate >= TimeSpan.FromMinutes(10))
+        if (DateTime.Now - completion.Value.StartDate < TimeSpan.FromMinutes(10))
         {
-            emailAuthCompletions.Remove(completion.Key);
+            continue;
+        }
+
+        emailAuthCompletions.Remove(completion.Key);
+        var account = await database.Accounts.FindAsync(completion.Key);
+        if (account is not null)
+        {
+            database.Accounts.Remove(account);
         }
     }
+
+    await database.SaveChangesAsync();
 };
-    
+
+
 logger.LogInformation("Server listening on port {config}", config.Port);
 wsServer.Logger = message => logger.LogInformation("[SocketServer]: {message}", message);
 postsServer.Logger = message => logger.LogInformation("[PostsServer]: {message}", message);
 await Task.WhenAll(postsServer.StartAsync(), wsServer.StartAsync());
-await Task.Delay(-1);
+await Task.Delay(-1, serverShutdownToken.Token);
 
 internal partial class Program
 {
@@ -1007,4 +993,8 @@ internal partial class Program
     private static partial Regex TwitterHandleRegex();
     [GeneratedRegex(@"^(/ua/)?[A-Za-z0-9_-]+$")]
     private static partial Regex RedditHandleRegex();
+    [GeneratedRegex(@"^\w{4,16}$")]
+    private static partial Regex UsernameRegex();
+    [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
+    private static partial Regex EmailRegex();
 }
