@@ -1,15 +1,3 @@
-namespace HTTPOfficial;
+namespace HTTPOfficial.ApiModel;
 
-public class PostUploadRequest
-{
-    public string Username;
-    public string Title;
-    public string Description;
-
-    public PostUploadRequest(string username, string title, string description)
-    {
-        Username = username;
-        Title = title;
-        Description = description;
-    }
-}
+public record PostUploadRequest(string? Username, int? AccountId, string Title, string Description);

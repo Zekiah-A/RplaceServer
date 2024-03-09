@@ -1,28 +1,31 @@
+using System.Text.Json.Serialization;
 namespace HTTPOfficial.DataModel;
 
 public class Account : AccountProfile
 {
     // Must be unique
     public string Email { get; set; }
-    public string? Token { get; set; }
+    public string Token { get; set; }
 
     public AccountTier Tier { get; set; }
     public string? RedditId { get; set; }
 
     // Navigation property to account instances
+    [JsonIgnore]
     public List<Instance> Instances { get; set; } = [];
     // Navigation property to account posts
+    [JsonIgnore]
     public List<Post> Posts { get; set; } = [];
     // Navigation property to account linked users
     public List<LinkedUser> LinkedUsers { get; set; } = [];
 
     public Account() { }
 
-    public Account(string username, string email, AccountTier tier, DateTime joinDate)
+    public Account(string username, string email, string token, AccountTier tier, DateTime joinDate)
     {
         Email = email;
         Tier = tier;
-        Token = null;
+        Token = token;
 
         // Profile fields
         Username = username;

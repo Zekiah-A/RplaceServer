@@ -18,6 +18,7 @@ public record struct Configuration(
     bool Logger,
     string PostsFolder,
     int PostLimitSeconds,
+    int SignupLimitSeconds,
     string Origin,
     int HttpPort,
     Dictionary<AccountTier, int> AccountTierInstanceLimits);

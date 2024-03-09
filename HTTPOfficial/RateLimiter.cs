@@ -6,7 +6,7 @@ public class RateLimiter
 {
     private readonly Dictionary<IPAddress, DateTime> registeredIPs;
     private readonly TimeSpan limitPeriod;
-    
+
     public RateLimiter(TimeSpan limit)
     {
         limitPeriod = limit;
@@ -20,14 +20,14 @@ public class RateLimiter
             registeredIPs.Add(address, DateTime.Now);
             return true;
         }
-        
+
         foreach (var pair in registeredIPs)
         {
             if (pair.Key.Equals(address))
             {
                 continue;
             }
-            
+
             if (DateTime.Now - pair.Value > limitPeriod)
             {
                 registeredIPs.Remove(pair.Key);
@@ -40,7 +40,7 @@ public class RateLimiter
             {
                 registeredIPs[address] = DateTime.Now;
             }
-            
+
             return false;
         }
 

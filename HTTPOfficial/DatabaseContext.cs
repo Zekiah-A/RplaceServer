@@ -28,7 +28,7 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<LinkedUser>()
             .HasKey(user => user.Id);
 
-        // Unique username/email/token
+        // Unique record properties
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Username)
             .IsUnique();
@@ -41,7 +41,10 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<Instance>()
             .HasIndex(instance => instance.VanityName)
             .IsUnique();
-        
+        modelBuilder.Entity<Post>()
+            .HasIndex(post => post.ContentUploadKey)
+            .IsUnique();
+
         // Badges
         modelBuilder.Entity<Account>()
             .HasMany(account => account.Badges)

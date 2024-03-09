@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace HTTPOfficial.DataModel;
 
 public class Badge
@@ -8,6 +10,7 @@ public class Badge
 
     public int OwnerId { get; set; }
     // Navigation property to account owner
+    [JsonIgnore]
     public Account Owner { get; set; } = null!;
 
     public Badge() { }

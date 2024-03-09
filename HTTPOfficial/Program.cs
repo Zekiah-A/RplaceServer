@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using DataProto;
 using HTTPOfficial;
 using HTTPOfficial.DataModel;
+using HTTPOfficial.ApiModel;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -62,6 +63,7 @@ if (!File.Exists(configPath))
             true,
             "Posts",
             60,
+            120,
             "https://rplace.live",
             8080,
             new Dictionary<AccountTier, int>
@@ -77,7 +79,7 @@ if (!File.Exists(configPath))
         WriteIndented = true
     });
     await configFile.FlushAsync();
-    
+
     logger.LogWarning("Config files recreated. Please check {currentDirectory} and run this program again.",
         Directory.GetCurrentDirectory());
     Environment.Exit(0);
@@ -185,12 +187,14 @@ var refreshTokenAccessTokens = new Dictionary<string, string>();
 // Used by normal accounts
 var redditSerialiserOptions = new JsonSerializerOptions
 {
-    PropertyNameCaseInsensitive = true, 
+    PropertyNameCaseInsensitive = true,
     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
 };
 var random = new Random();
 var emailCodes = ReadTxtListFile("email_codes.txt");
 var emailAuthCompletions = new Dictionary<int, EmailAuthCompletion>();
+var signupLimiter = new RateLimiter(TimeSpan.FromSeconds(config.SignupLimitSeconds));
+
 
 async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)
 {
@@ -204,7 +208,7 @@ async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext dat
         logger.LogWarning("Could not request me data for authentication (reason {ReasonPhrase})", meResponse.ReasonPhrase);
         return null;
     }
-    
+
     var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
     return accountData;
 }
@@ -216,7 +220,7 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     {
         return refreshTokenAccessTokens[refreshToken];
     }
-    
+
     // Otherwise, we need to refresh their auth token and update our caches respectively
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
         Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
@@ -225,7 +229,7 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
         { "grant_type", "refresh_token" },
         { "refresh_token", refreshToken }
     });
-        
+
     var tokenResponse = await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
     var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
     httpClient.DefaultRequestHeaders.Authorization = null;
@@ -235,7 +239,7 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
             tokenResponse.ReasonPhrase);
         return null;
     }
-    
+
     refreshTokenAuthDates.Add(refreshToken, DateTime.Now);
     refreshTokenAccessTokens.Add(refreshToken, tokenData.AccessToken);
     return tokenData.AccessToken;
@@ -261,37 +265,42 @@ async Task RunPostAuthentication(Account accountData, DatabaseContext database)
     await database.SaveChangesAsync();
 }
 
-app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext context, DatabaseContext database) =>
+//
+app.MapPost("/accounts/create", async ([FromBody] EmailUsernameRequest request, HttpContext context, DatabaseContext database) =>
 {
-    if (context.Connection.RemoteIpAddress is not { } ipAddress)
+    if (context.Connection.RemoteIpAddress is not { } ipAddress || !signupLimiter.IsAuthorised(ipAddress))
     {
         return Results.Unauthorized();
     }
-    
+
     if (request.Username.Length is < 4 or > 32 || !UsernameRegex().IsMatch(request.Username))
     {
-        return Results.BadRequest(new { Message = "Invalid username format" });
+        return Results.BadRequest(new ErrorResponse("Invalid username format", "account.create.invalidUsername"));
     }
-    
+
     if (request.Email.Length is > 320 or < 4 || !emailAttributes.IsValid(request.Email)
         || trustedEmailDomains.BinarySearch(request.Email.Split('@').Last()) < 0)
     {
-        return Results.BadRequest(new { Message = "Invalid email format" });
+        return Results.BadRequest(new ErrorResponse("Invalid email format", "account.create.invalidEmail"));
     }
-    
+
     var emailExists = await database.Accounts.AnyAsync(account => account.Email == request.Email);
     if (emailExists)
     {
-        return Results.BadRequest(new { Message = "Account with specified email already exists" });
+        return Results.BadRequest(new ErrorResponse("Account with specified email already exists", "account.create.emailExists"));
     }
 
     var usernameExists = await database.Accounts.AnyAsync(accountKey => accountKey.Email == request.Email);
     if (usernameExists)
     {
-        return Results.BadRequest(new { Message = "Account with specified username already exists" });
+        return Results.BadRequest(new ErrorResponse("Account with specified username already exists", "account.create.usernameExists"));
     }
-    
-    var accountData = new Account(request.Username, request.Email, AccountTier.Free, DateTime.Now);
+
+    var newToken = RandomNumberGenerator.GetHexString(64);
+    var accountData = new Account(request.Username, request.Email, newToken, AccountTier.Free, DateTime.Now);
+    await database.Accounts.AddAsync(accountData);
+    await database.SaveChangesAsync();
+
     var authCode = emailCodes[random.Next(0, emailCodes.Count - 1)];
     var completion = new EmailAuthCompletion(authCode, ipAddress, DateTime.Now);
     emailAuthCompletions.Add(accountData.Id, completion);
@@ -328,69 +337,81 @@ app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext
     }
     catch (Exception exception)
     {
-       logger.LogError("Could not send email message: {exception}", exception);
-    }
-    
-    return Results.Ok(new { Id  = accountData.Id });
-});
-
-app.MapPost("accounts/{id}/verify", async (int id, HttpContext context, DatabaseContext database) =>
-{
-    if (await database.Accounts.FindAsync(id) is not Account account)
-    {
-        return Results.NotFound();
+        logger.LogError("Could not send email message: {exception}", exception);
+        var errorString = JsonSerializer.Serialize(new ErrorResponse("Failed to send email messge", "account.create.emailFailed"));
+        return Results.Problem(errorString);
     }
 
-    return Results.Problem();
-    // This task completes when the client provides the correct email account code, see ClientPackets.AccountCode
-    // once they have given the correct email authentication code, we finally commit saving and creating the account to disk.
-    /*if (await emailCompletionSource.Task)
-    {
-        emailAuthCompletions.Remove(authCode);
+    await RunPostAuthentication(accountData, database);
 
-        database.Badges.Add(new AccountBadge(Badge.Newbie, DateTime.Now));
-        await database.SaveChangesAsync();
-        authorisedClients.TryAdd(args.Client, accountKey);
-
-        // Send them their token and sign them in
-        var accountToken = RandomNumberGenerator.GetHexString(64);
-        accountTokenAccountKeys.Add(accountToken, accountData.Username);
-
-        await wsServer.SendAsync(args.Client, CreateTokenPacket(accountToken));
-    }*/
+    return Results.Ok(accountData);
 });
 
 app.MapPost("/accounts/login", ([FromBody] EmailUsernameRequest request) =>
 {
-
+    throw new NotImplementedException();
 });
 
 app.MapPost("/accounts/login/code", ([FromBody] string code) =>
 {
-
+    throw new NotImplementedException();
 });
 
 app.MapPost("/accounts/login/token", ([FromBody] string code) =>
 {
-
+    throw new NotImplementedException();
 });
 
 app.MapPost("/accounts/login/reddit", ([FromBody] string code) =>
 {
-
+    throw new NotImplementedException();
 });
 
-app.MapDelete("/accounts/{id}", (int id) =>
+app.MapPost("accounts/{id}/verify", async (int id, [FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
 {
+    var address = context.Connection.RemoteIpAddress;
+    if (address is null)
+    {
+        return Results.Unauthorized();
+    }
 
+    if (await database.Accounts.FindAsync(id) is not { } account)
+    {
+        return Results.NotFound(new ErrorResponse("Specified account does not exist", "accounts.verify.notFound"));
+    }
+
+    if (!emailAuthCompletions.TryGetValue(id, out var completion))
+    {
+        return Results.NotFound(new ErrorResponse("Specified account has no pending verification code", "accounts.verify.noCompletion"));
+    }
+
+    if (completion.Address != address || completion.AuthCode != request.VerificationCode)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok();
 });
 
-app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
+app.MapDelete("/accounts/{id}/delete", async (int id, DatabaseContext database) =>
 {
     var profile = await database.Accounts.FindAsync(id);
     if (profile is null)
     {
-        return Results.NotFound(new { Message = "Speficied account does not exist" });
+        return Results.NotFound(new ErrorResponse("Speficied account does not exist", "account.delete.notFound"));
+    }
+
+    database.Accounts.Remove(profile);
+    await database.SaveChangesAsync();
+    return Results.Ok();
+});
+
+app.MapGet("/profiles/{id}", async (int id, DatabaseContext database) =>
+{
+    var profile = (AccountProfile?) await database.Accounts.FindAsync(id);
+    if (profile is null)
+    {
+        return Results.NotFound(new ErrorResponse("Speficied profile does not exist", "account.profile.notFound"));
     }
 
     return Results.Ok(profile);
@@ -441,7 +462,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
            {
                var name = readableData.ReadString();
                var email = readableData.ReadString();
-           
+
                var accountData = AuthenticateNameEmail(name, email).GetAwaiter().GetResult();
                if (accountData is not null)
                {
@@ -471,13 +492,13 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
                    _ = RunPostAuthentication(accountData);
 
                    // Regardless of if they are automatically logging in with account token, or logging in for the first
-                   // time on that device with an email code, we make sure to invalidate their previous token and give 
-                   // them a new one after every authentication. 
+                   // time on that device with an email code, we make sure to invalidate their previous token and give
+                   // them a new one after every authentication.
                    accountTokenAccountKeys.Remove(normalToken);
                    authorisedClients.TryAdd(args.Client, accountData.MasterKey);
                    var newToken = RandomNumberGenerator.GetHexString(64);
                    accountTokenAccountKeys.Add(newToken, accountData.MasterKey);
-                   
+
                    var tokenPacket = new WriteablePacket();
                    tokenPacket.WriteByte((byte) ServerPackets.AccountToken);
                    tokenPacket.WriteString(newToken);
@@ -493,7 +514,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
                if (accountData is not null)
                {
                    _ = RunPostAuthentication(accountData);
-               
+
                    // Add them to server authenticated client memory so they do not have to authenticate each server API call
                    authorisedClients.TryAdd(args.Client, accountData.MasterKey);
                }
@@ -528,14 +549,14 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
    case ClientPackets.RedditCreateAccount:
    {
        var accountCode = readableData.ReadString();
-       
+
        // We to exchange this with an access token so we can execute API calls with this user, such as fetching their
        // unique ID (/me) endpoint, anc checking if we already have it saved (then they already have an account,// and we can fetch account data, else, we create account data for this user with data we can scrape from the API).
        async Task ExchangeAccessTokenAsync()
        {
            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
                Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
-           
+
            var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
            {
                { "grant_type", "authorization_code" },
@@ -551,7 +572,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
                logger.LogWarning("Client create account rejected for failed access taken retrieval (reason" + tokenResponse.ReasonPhrase + ")");
                return;
            }
-           
+
            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
            var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
            var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
@@ -577,7 +598,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
                refreshTokenAuthDates.Add(tokenData.RefreshToken, DateTime.Now);
                refreshTokenAccessTokens.Add(tokenData.RefreshToken, tokenData.AccessToken);
            }
-           
+
            {
                // If they already have an account, we can simply authenticate them
                var accountData = await AuthenticateReddit(tokenData.RefreshToken);
@@ -585,14 +606,14 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
                {
                    await RunPostAuthentication(accountData);
                    authorisedClients.TryAdd(args.Client, accountData.MasterKey);
-                   
+
                    // Send them their token so that they can quickly login again without having to reauthenticate
                    var tokenBuffer = Encoding.UTF8.GetBytes("X" + tokenData.RefreshToken);
                    tokenBuffer[0] = (byte) ServerPackets.RedditRefreshToken;
                    await wsServer.SendAsync(args.Client, tokenBuffer);
                    logger.LogInformation($"Successfully updated refresh token for {meData.Name} (client {args.Client.IpPort})");
                }
-               
+
                logger.LogTrace($"Client create account for {meData.Name} succeeded (client {args.Client.IpPort})");
            }
        }
@@ -685,7 +706,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
        {
            return await accountsDb.GetRecord<AccountData>(accountKey);
        }
-       
+
        if (GetProfileInfoAsync(readableData.ReadString()).GetAwaiter().GetResult() is {} accountData)
        {
            var responsePacket = new WriteablePacket();
@@ -729,7 +750,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
            var fromImage = readableData.ReadByteArray(); // TODO: Decode into default board
        }
 
-       
+
        // Generate ID for this instance, save it so auth server knows about this instance
        var id = instancesInfo.Ids.Count == 0 ? 0 : instancesInfo.Ids.Max() + 1;
        instancesInfo.Ids.Add(id);
@@ -746,7 +767,7 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
        File.WriteAllText(Path.Combine(instanceDirectory, "server_data.json"), JsonSerializer.Serialize(instanceInfo));
        Directory.CreateDirectory(Path.Combine(instanceDirectory, "Canvases"));
        File.Create(Path.Combine(instanceDirectory, "Canvases", "backuplist.txt"));
-       
+
        // We need to find a worker server capable of hosting, then replicate to it, and tell it to start
        var responseSuccess = false;
        foreach (var workerPair in workerClients)
@@ -756,13 +777,13 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
            var requestCompletionSource = new TaskCompletionSource<byte[]>();
            query.WriteByte((byte) ServerPackets.QueryCanCreate);
            query.WriteUInt((uint) queryReqId);
-           
+
            workerRequestQueue.TryAdd(queryReqId, requestCompletionSource);
            wsServer.SendAsync(workerPair.Key, query);  // Blocking, v
            var queryResponse = new ReadablePacket(requestCompletionSource.Task.GetAwaiter().GetResult());
            workerRequestQueue.TryRemove(queryReqId, out var _);
-           
-           
+
+
            if (!responseSuccess && queryResponse.ReadBool())
            {
                responseSuccess = true;
@@ -781,7 +802,6 @@ app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
 
 // Posts
 var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
-var contentUploadKeys = new Dictionary<string, int>(); // key : postId
 app.MapGet("/posts/since/{fromDate:datetime}", (DateTime fromDate, DatabaseContext database) =>
 {
     return Results.Ok(database.Posts.Where(post => post.CreationDate > fromDate).Take(10));
@@ -802,67 +822,84 @@ app.MapGet("/posts/{id}", async (int id, DatabaseContext database) =>
     return Results.Ok(post);
 });
 
-app.MapPost("/posts/upload", async (PostUploadRequest submission, HttpContext context, DatabaseContext database) =>
+app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, DatabaseContext database) =>
 {
     var address = context.Connection.RemoteIpAddress;
-
     if (address is null || !postLimiter.IsAuthorised(address))
     {
-        logger.LogInformation($"Client {address} denied post upload for breaching rate limit, or null address.");
         return Results.Unauthorized();
     }
 
-    var sanitised = new Post(submission.Username, submission.Title, submission.Description)
+    var sanitised = new Post(submission.Title, submission.Description)
     {
         Upvotes = 0,
         Downvotes = 0,
         CreationDate = DateTime.Now,
     };
 
-    await database.Posts.AddAsync(sanitised);
-    await database.SaveChangesAsync();
+    var postAccount = submission.AccountId is not null ? await database.Accounts.FindAsync(submission.AccountId) : null;
+
+    if (postAccount is not null && submission.Username is not null)
+    {
+        return Results.BadRequest(new ErrorResponse("Provided username and account are mutually exclusive", "post.upload.exclusive"));
+    }
+    else if (postAccount is not null)
+    {
+        sanitised.AuthorId = postAccount.Id;
+    }
+    else if (submission.Username is not null)
+    {
+        sanitised.Username = submission.Username;
+    }
+    else
+    {
+        return Results.BadRequest(new ErrorResponse("No username or account provided", "post.upload.noUsernameOrAccount"));
+    }
 
     // If client also wanted to upload content with this post, we give the post key, which gives them
     // temporary permission to upload the content to the CDN.
     var uploadKey = Guid.NewGuid().ToString();
-    contentUploadKeys.Add(uploadKey, sanitised.Id);
-    return Results.Ok(new { PostId = sanitised.Id, UploadKey = uploadKey });
+    sanitised.ContentUploadKey = uploadKey;
+
+    await database.Posts.AddAsync(sanitised);
+    await database.SaveChangesAsync();
+
+    return Results.Ok(new { PostId = sanitised.Id, ContentUploadKey = uploadKey });
 });
 
-app.MapGet("/content/{contentPath}", (string contentPath) =>
+// TODO: Move to ASP static file hosting
+app.MapGet("/posts/{id}/content", async (int id, DatabaseContext database) =>
 {
-    var path = Path.Join(config.PostsFolder, "Content", contentPath);
-    path = path.Replace("..", "");
-
-    if (!File.Exists(path))
+    if (await database.Posts.FindAsync(id) is not { } post)
     {
-        return Results.NotFound();
+        return Results.NotFound(new ErrorResponse("Speficied post could not be found",  "posts.content.notFound"));
     }
 
-    var stream = new FileStream(path, FileMode.Open);
+    if (post.ContentPath is null || !File.Exists(post.ContentPath))
+    {
+        return Results.NotFound(new ErrorResponse("Sprcified post content does not exist", "posts.content.noContent"));
+    }
+
+    var stream = File.OpenRead(post.ContentPath);
     return Results.File(stream);
 });
 
-app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string uploadKey, Stream body, DatabaseContext database) =>
+app.MapPost("/posts/{id}/content", async (int id, [FromBody] PostContentRequest request, HttpContext context, DatabaseContext database) =>
 {
-    var address = request.HttpContext.Connection.RemoteIpAddress;
-    if  (!contentUploadKeys.TryGetValue(uploadKey, out var pendingPostId)
-        || await database.Posts.FindAsync(1) is not Post pendingPost)
+    var address = context.Connection.RemoteIpAddress;
+    if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey) is not { } pendingPost)
     {
-        logger.LogInformation($"Client {address} denied content upload for invalid master key or post not found.");
         return Results.Unauthorized();
     }
-
-    if (pendingPost.ContentPath is not null)
+    if (pendingPost.ContentPath is not null || pendingPost.ContentUploadKey is null)
     {
         return Results.Unauthorized();
     }
 
     // Limit stream length to 5MB to prevent excessively large uploads
-    if (request.ContentLength > 5_000_000)
+    if (context.Request.ContentLength > 5_000_000)
     {
-        logger.LogInformation($"Client {address} denied content upload for too large stream file size.");
-        return Results.UnprocessableEntity();
+        return Results.UnprocessableEntity(new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)", "posts.content.upload"));
     }
 
     // Save data to CDN folder & create content key
@@ -871,7 +908,7 @@ app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string uplo
     {
         Directory.CreateDirectory(contentPath);
     }
-    var extension = request.ContentType switch
+    var extension = context.Request.ContentType switch
     {
         "image/gif" => ".gif",
         "image/jpeg" => ".jpg",
@@ -884,14 +921,15 @@ app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string uplo
         logger.LogInformation($"Client {address} denied content upload for invalid content type.");
         return Results.UnprocessableEntity();
     }
-    var contentKey = pendingPostId + extension;
+    var contentKey = pendingPost.Id + extension;
     await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
     fileStream.Seek(0, SeekOrigin.Begin);
     fileStream.SetLength(0);
-    await body.CopyToAsync(fileStream);
+    await context.Request.Body.CopyToAsync(fileStream);
 
     pendingPost.ContentPath = contentKey;
     await database.SaveChangesAsync();
+
     return Results.Ok();
 })
 .Accepts<IFormFile>("image/gif", "image/jpeg","image/png", "image/webp");
@@ -905,14 +943,14 @@ wsServer.MessageReceived += (_, args) =>
     {
         /*
         // A worker server has joined the network. It now has to tell the auth server it exists, and prove that it is
-        // a legitimate worker using the network instance key so that it will be allowed to carry out actions. 
+        // a legitimate worker using the network instance key so that it will be allowed to carry out actions.
         case (byte) WorkerPackets.AnnounceExistence:
         {
             if (data.Length < 8)
             {
                 return;
             }
-            
+
             var idRangeStart = BinaryPrimitives.ReadInt32BigEndian(data);
             var idRangeEnd = BinaryPrimitives.ReadInt32BigEndian(data[4..]);
             var instanceKeyAddress = Encoding.UTF8.GetString(data[8..]).Split("\n");
@@ -920,7 +958,7 @@ wsServer.MessageReceived += (_, args) =>
             {
                 return;
             }
-            
+
             // If it is a legitimate worker wanting to join the network, we include it so that it can be announced to clients
             if (instanceKeyAddress[0].Equals(config.InstanceKey))
             {
@@ -938,7 +976,7 @@ wsServer.MessageReceived += (_, args) =>
             {
                 return;
             }
-                    
+
             // Should be in the format "myvanityname\nserver=https://server.com:2304/place&board=wss://server.com:21314/ws"
             var text = Encoding.UTF8.GetString(data).Split("\n");
             registeredVanities.Add(text[0], text[1]);
@@ -953,7 +991,7 @@ wsServer.MessageReceived += (_, args) =>
             {
                 return;
             }
-            
+
             var responseBuffer = new byte[6];
             responseBuffer[0] = (byte) ServerPackets.Authorised; // Sign the packet with the correct auth
 
@@ -978,7 +1016,7 @@ wsServer.MessageReceived += (_, args) =>
                     await server.SendAsync(args.Client, responseBuffer);
                     return;
                 }
-                
+
                 var instanceId = BinaryPrimitives.ReadInt32BigEndian(marshalledData.AsSpan()[(authLength + 6)..]); // RequestID start (int) + 4
 
                 if (!accountData.Instances.Contains(instanceId))
@@ -1001,7 +1039,7 @@ wsServer.MessageReceived += (_, args) =>
                             await server.SendAsync(args.Client, responseBuffer);
                             return;
                         }
-                        
+
                         // Accept -  We add this instance to their account data, save the account data and send back the response
                         accountData.Instances.Add(instanceId);
                         responseBuffer[5] = 1; // Successfully authenticated
@@ -1046,7 +1084,7 @@ wsServer.MessageReceived += (_, args) =>
 
                         // Accept - Register vanity
                         registeredVanities.Add(text[0], text[1]);
-                        responseBuffer[5] = 1; 
+                        responseBuffer[5] = 1;
                         await server.SendAsync(args.Client, responseBuffer);
                         break;
                     }
@@ -1091,7 +1129,7 @@ expiredAccountCodeTimer.Elapsed += async (_, _) =>
 {
     using var scope = app.Services.CreateScope();
     var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-    
+
     foreach (var completion in emailAuthCompletions)
     {
         if (DateTime.Now - completion.Value.StartDate < TimeSpan.FromMinutes(10))
