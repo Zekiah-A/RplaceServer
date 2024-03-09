@@ -1,6 +1,6 @@
 using SkiaSharp;
 
-namespace RplaceServer.CaptchaGeneration;
+namespace ZCaptcha;
 
 public class TextCaptchaGenerator : ICaptchaGenerator
 {

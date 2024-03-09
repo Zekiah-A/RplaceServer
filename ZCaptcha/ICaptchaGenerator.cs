@@ -1,4 +1,4 @@
-namespace RplaceServer.CaptchaGeneration;
+namespace ZCaptcha;
 
 public interface ICaptchaGenerator
 {

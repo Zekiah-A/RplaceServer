@@ -1,3 +1,5 @@
+using HTTPOfficial.DataModel;
+
 namespace HTTPOfficial;
 
 public record struct Configuration(

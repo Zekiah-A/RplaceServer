@@ -1,4 +1,4 @@
-namespace HTTPOfficial;
+namespace HTTPOfficial.ApiModel;
 
 public enum AuthType
 {

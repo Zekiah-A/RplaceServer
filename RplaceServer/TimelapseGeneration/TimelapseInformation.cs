@@ -1,4 +1,4 @@
-namespace PlaceHttpsServer;
+namespace RplaceServer.TimelapseGeneration;
 
 internal sealed record TimelapseInformation
 (

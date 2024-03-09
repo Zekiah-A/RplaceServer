@@ -9,20 +9,34 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
-    <ProjectReference Include="..\Natron\Natron.Library\Natron.Library.csproj" />
     <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="efcore" Version="1.1.2" />
-    <PackageReference Include="MailKit" Version="4.3.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0-preview.1.24081.2" />
+    <PackageReference Include="MailKit" Version="4.4.0" />
+    <!--These code analysis packages are required in order to alleviate a dependency conflict-->
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.9.0-3.final" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.0-3.final" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="trusted_domains.txt" />
     <Resource Include="trusted_domains.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Resource>
+    <None Remove="email_codes.txt" />
+    <Resource Include="email_codes.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Resource>
   </ItemGroup>

@@ -1,4 +1,4 @@
-namespace HTTPOfficial;
+namespace HTTPOfficial.DataModel;
 
 public enum AccountTier
 {

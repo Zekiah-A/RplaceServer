@@ -1,16 +1,18 @@
-namespace HTTPOfficial;
+namespace HTTPOfficial.DataModel;
 
-public class AccountBadge
+public class Badge
 {
     public int Id { get; set; }
-    public Badge Type { get; set; }
+    public BadgeType Type { get; set; }
     public DateTime AwardDate { get; set; }
 
     public int OwnerId { get; set; }
     // Navigation property to account owner
-    public AccountData Owner { get; set; } = null!;
+    public Account Owner { get; set; } = null!;
 
-    public AccountBadge(Badge type, DateTime awardDate)
+    public Badge() { }
+
+    public Badge(BadgeType type, DateTime awardDate)
     {
         Type = type;
         AwardDate = awardDate;

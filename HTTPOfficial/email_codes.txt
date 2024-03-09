@@ -15,9 +15,12 @@ rp14@3
 rp1@c3
 rp14ce
 
-foss
-f0ss
-fo$$
+fossgame
+f0ssg4me
+fo$$g4m3
+f0ssg@me
+f0ssg@m3
+fossg@m3
 
 opensource
 0pensource

@@ -7,12 +7,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using RplaceServer.CaptchaGeneration;
-using RplaceServer.Enums;
 using RplaceServer.Events;
 using RplaceServer.Types;
 using WatsonWebsocket;
 using LiteDB;
+using ZCaptcha;
 
 namespace RplaceServer;
 

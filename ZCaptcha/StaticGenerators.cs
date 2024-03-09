@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace RplaceServer.CaptchaGeneration;
+namespace ZCaptcha;
 
 #pragma warning disable CS8500
 // dotnet publish /p:NativeLib=Shared --use-current-runtime -p:PublishAot=true,StripSymbols=true

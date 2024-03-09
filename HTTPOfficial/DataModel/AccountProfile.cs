@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-
-namespace HTTPOfficial;
+namespace HTTPOfficial.DataModel;
 
 public class AccountProfile
 {
@@ -18,5 +15,5 @@ public class AccountProfile
     public bool UsesRedditAuthentication { get; set; }
 
     // Navigation property to badges
-    public List<AccountBadge> Badges { get; set; } = [];
+    public List<Badge> Badges { get; set; } = [];
 }

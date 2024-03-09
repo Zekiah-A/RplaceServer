@@ -1,6 +1,6 @@
-namespace HTTPOfficial;
+namespace HTTPOfficial.DataModel;
 
-public enum Badge
+public enum BadgeType
 {
     Based,
     TroubleMaker,

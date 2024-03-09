@@ -1,4 +1,4 @@
-namespace RplaceServer.Enums;
+namespace RplaceServer.Types;
 
 public enum ChatMessageType : byte
 {

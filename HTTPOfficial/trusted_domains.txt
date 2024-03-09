@@ -6800,8 +6800,9 @@ royalmarket.club
 royalmarket.life
 royalmarket.online
 royalweb.email
-# rplace-specific domain
+# rplace-specific domains
 rplace.tk
+rplace.live
 rppkn.com
 rq6668f.com
 rr-0.cu.cc

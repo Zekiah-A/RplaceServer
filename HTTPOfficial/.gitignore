@@ -1,4 +1,9 @@
 server_config.json
+Server.db
+Server.db-shm
+Server.db-wal
+
 ServerData/*
 Posts/*
 Instances/*
+Migrations/*

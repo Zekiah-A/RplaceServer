@@ -1,6 +1,4 @@
-using System.Text.Json.Serialization;
-
-namespace HTTPOfficial;
+namespace HTTPOfficial.DataModel;
 
 
 public class Post
@@ -13,6 +11,12 @@ public class Post
     public int Downvotes { get; set; }
     public string? ContentPath { get; set; }
     public DateTime CreationDate { get; set; }
+    
+    public int AuthorId { get; set; }
+    // Navigation property to account owner
+    public Account? Author { get; set; }
+
+    public Post() { }
 
     public Post(string username, string title, string description)
     {

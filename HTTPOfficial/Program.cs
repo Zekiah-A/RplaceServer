@@ -9,13 +9,16 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using DataProto;
 using HTTPOfficial;
+using HTTPOfficial.DataModel;
 using MailKit.Net.Smtp;
 using MailKit.Security;
-using MimeKit;
-using WatsonWebsocket;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MimeKit;
+using WatsonWebsocket;
+
+// ASPNETCORE_ENVIRONMENT=development; dotnet run
 
 var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
 var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
@@ -90,22 +93,6 @@ if (!Directory.Exists(dataPath))
     Directory.CreateDirectory(dataPath);
 }
 
-InstancesInfo? instancesInfo;
-if (!File.Exists(instanceInfoPath))
-{
-    instancesInfo = new InstancesInfo();
-    File.WriteAllText(instanceInfoPath, JsonSerializer.Serialize<InstancesInfo>(instancesInfo));
-}
-else
-{
-    instancesInfo = JsonSerializer.Deserialize<InstancesInfo>(File.ReadAllText(instanceInfoPath));
-}
-if (instancesInfo == null)
-{
-    logger.LogError("Server fail - Error loading instances info");
-    Environment.Exit(0);
-}
-
 List<string> ReadTxtListFile(string path)
 {
     return File.ReadAllLines(path)
@@ -118,22 +105,44 @@ var trustedEmailDomains = ReadTxtListFile("trusted_domains.txt");
 var config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
 
 // Main server
-var builder = WebApplication.CreateBuilder();
-builder.Services.AddCors(options =>
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
-    options.AddDefaultPolicy(policy => policy.WithOrigins(config.Origin, "*"));
+    ApplicationName = typeof(Program).Assembly.FullName,
+    ContentRootPath = Path.GetFullPath(Directory.GetCurrentDirectory()),
+    WebRootPath = "/",
+    Args = args
 });
-// EFCore Sqlite3 Database
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 builder.Services.AddDbContext<DatabaseContext>(options =>
 {
     options.UseSqlite("Data Source=Server.db");
 });
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
+builder.Services.AddCors((cors) =>
+{
+    cors.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin();
+        policy.AllowAnyHeader();
+        policy.AllowAnyMethod();
+    });
+});
+
 builder.Configuration["Kestrel:Certificates:Default:Path"] = config.CertPath;
 builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = config.KeyPath;
-        
+
 var app = builder.Build();
 app.Urls.Add($"{(config.UseHttps ? "https" : "http")}://*:{config.HttpPort}");
+app.UseStaticFiles();
+
 app.UseCors(policy =>
 {
     policy.AllowAnyMethod()
@@ -141,19 +150,24 @@ app.UseCors(policy =>
         .SetIsOriginAllowed(_ => true)
         .AllowCredentials();
 });
-        
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
-var wsServer = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 
-// Post server
-var postsServer = new PostsServer(config, app);
+var wsServer = new WatsonWsServer(config.Port, config.UseHttps, config.CertPath, config.KeyPath);
 
 // Vanity -> URL of actual socket server & board, done by worker clients on startup
 var httpClient = new HttpClient();
-httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Tk AuthServer v1.0 (by Zekiah-A)");
+httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "web:Rplace.Live AuthServer v1.0 (by Zekiah-A)");
 
 // Used by worker servers + async communication
 var registeredVanities = new Dictionary<string, string>();
@@ -178,7 +192,7 @@ var random = new Random();
 var emailCodes = ReadTxtListFile("email_codes.txt");
 var emailAuthCompletions = new Dictionary<int, EmailAuthCompletion>();
 
-async Task<AccountData?> AuthenticateReddit(string refreshToken, DatabaseContext database)
+async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)
 {
     var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -227,21 +241,21 @@ async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
     return tokenData.AccessToken;
 }
 
-async Task RunPostAuthentication(AccountData accountData, DatabaseContext database)
+async Task RunPostAuthentication(Account accountData, DatabaseContext database)
 {
     // If they have been on the site for 20+ days, we remove their noob badge
     var noobBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
-        accountBadge.OwnerId == accountData.Id && accountBadge.Type == Badge.Newbie);
+        accountBadge.OwnerId == accountData.Id && accountBadge.Type == BadgeType.Newbie);
     if (noobBadge is not null && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(20))
     {
         database.Badges.Remove(noobBadge);
     }
     // If they have been on the site for more than a year, they get awarded a veteran badge
     var veteranBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
-        accountBadge.OwnerId == accountData.Id && accountBadge.Type == Badge.Veteran);
+        accountBadge.OwnerId == accountData.Id && accountBadge.Type == BadgeType.Veteran);
     if (veteranBadge is not null && DateTime.Now - accountData.JoinDate >= TimeSpan.FromDays(365))
     {
-        database.Badges.Add(new AccountBadge(Badge.Veteran, DateTime.Now));
+        database.Badges.Add(new Badge(BadgeType.Veteran, DateTime.Now));
     }
 
     await database.SaveChangesAsync();
@@ -259,7 +273,7 @@ app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext
         return Results.BadRequest(new { Message = "Invalid username format" });
     }
     
-    if (request.Email.Length is > 320 or < 4 ||  !emailAttributes.IsValid(request.Email)
+    if (request.Email.Length is > 320 or < 4 || !emailAttributes.IsValid(request.Email)
         || trustedEmailDomains.BinarySearch(request.Email.Split('@').Last()) < 0)
     {
         return Results.BadRequest(new { Message = "Invalid email format" });
@@ -277,7 +291,7 @@ app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext
         return Results.BadRequest(new { Message = "Account with specified username already exists" });
     }
     
-    var accountData = new AccountData(request.Username, request.Email, AccountTier.Free, DateTime.Now);
+    var accountData = new Account(request.Username, request.Email, AccountTier.Free, DateTime.Now);
     var authCode = emailCodes[random.Next(0, emailCodes.Count - 1)];
     var completion = new EmailAuthCompletion(authCode, ipAddress, DateTime.Now);
     emailAuthCompletions.Add(accountData.Id, completion);
@@ -322,7 +336,7 @@ app.MapPost("/accounts/create", async (EmailUsernameRequest request, HttpContext
 
 app.MapPost("accounts/{id}/verify", async (int id, HttpContext context, DatabaseContext database) =>
 {
-    if (await database.Accounts.FindAsync(id) is not AccountData account)
+    if (await database.Accounts.FindAsync(id) is not Account account)
     {
         return Results.NotFound();
     }
@@ -371,19 +385,18 @@ app.MapDelete("/accounts/{id}", (int id) =>
 
 });
 
-app.MapGet("/accounts/{id}/profile", (int id) =>
+app.MapGet("/accounts/{id}/profile", async (int id, DatabaseContext database) =>
 {
+    var profile = await database.Accounts.FindAsync(id);
+    if (profile is null)
+    {
+        return Results.NotFound(new { Message = "Speficied account does not exist" });
+    }
 
+    return Results.Ok(profile);
 });
 
 /*
-
-   case ClientPackets.CreateAccount:
-   {
-       var username = readableData.ReadString();
-       var email = readableData.ReadString();
-       break;
-   }
    case  ClientPackets.AccountCode:
    {
        var code = readableData.ReadString();
@@ -766,6 +779,123 @@ app.MapGet("/accounts/{id}/profile", (int id) =>
    }
  */
 
+// Posts
+var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
+var contentUploadKeys = new Dictionary<string, int>(); // key : postId
+app.MapGet("/posts/since/{fromDate:datetime}", (DateTime fromDate, DatabaseContext database) =>
+{
+    return Results.Ok(database.Posts.Where(post => post.CreationDate > fromDate).Take(10));
+});
+
+app.MapGet("/posts/before/{beforeDate:datetime}", (DateTime beforeDate, DatabaseContext postsDb) =>
+{
+    return Results.Ok(postsDb.Posts.Where(post => post.CreationDate < beforeDate).Take(10));
+});
+
+app.MapGet("/posts/{id}", async (int id, DatabaseContext database) =>
+{
+    if (await database.Posts.FindAsync(id) is not { } post)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Ok(post);
+});
+
+app.MapPost("/posts/upload", async (PostUploadRequest submission, HttpContext context, DatabaseContext database) =>
+{
+    var address = context.Connection.RemoteIpAddress;
+
+    if (address is null || !postLimiter.IsAuthorised(address))
+    {
+        logger.LogInformation($"Client {address} denied post upload for breaching rate limit, or null address.");
+        return Results.Unauthorized();
+    }
+
+    var sanitised = new Post(submission.Username, submission.Title, submission.Description)
+    {
+        Upvotes = 0,
+        Downvotes = 0,
+        CreationDate = DateTime.Now,
+    };
+
+    await database.Posts.AddAsync(sanitised);
+    await database.SaveChangesAsync();
+
+    // If client also wanted to upload content with this post, we give the post key, which gives them
+    // temporary permission to upload the content to the CDN.
+    var uploadKey = Guid.NewGuid().ToString();
+    contentUploadKeys.Add(uploadKey, sanitised.Id);
+    return Results.Ok(new { PostId = sanitised.Id, UploadKey = uploadKey });
+});
+
+app.MapGet("/content/{contentPath}", (string contentPath) =>
+{
+    var path = Path.Join(config.PostsFolder, "Content", contentPath);
+    path = path.Replace("..", "");
+
+    if (!File.Exists(path))
+    {
+        return Results.NotFound();
+    }
+
+    var stream = new FileStream(path, FileMode.Open);
+    return Results.File(stream);
+});
+
+app.MapPost("/content/upload/{postKey}", async (HttpRequest request, string uploadKey, Stream body, DatabaseContext database) =>
+{
+    var address = request.HttpContext.Connection.RemoteIpAddress;
+    if  (!contentUploadKeys.TryGetValue(uploadKey, out var pendingPostId)
+        || await database.Posts.FindAsync(1) is not Post pendingPost)
+    {
+        logger.LogInformation($"Client {address} denied content upload for invalid master key or post not found.");
+        return Results.Unauthorized();
+    }
+
+    if (pendingPost.ContentPath is not null)
+    {
+        return Results.Unauthorized();
+    }
+
+    // Limit stream length to 5MB to prevent excessively large uploads
+    if (request.ContentLength > 5_000_000)
+    {
+        logger.LogInformation($"Client {address} denied content upload for too large stream file size.");
+        return Results.UnprocessableEntity();
+    }
+
+    // Save data to CDN folder & create content key
+    var contentPath = Path.Join(config.PostsFolder, "Content");
+    if (!Directory.Exists(contentPath))
+    {
+        Directory.CreateDirectory(contentPath);
+    }
+    var extension = request.ContentType switch
+    {
+        "image/gif" => ".gif",
+        "image/jpeg" => ".jpg",
+        "image/png" =>  ".png",
+        "image/webp" => ".webp",
+        _ => null
+    };
+    if (extension is null)
+    {
+        logger.LogInformation($"Client {address} denied content upload for invalid content type.");
+        return Results.UnprocessableEntity();
+    }
+    var contentKey = pendingPostId + extension;
+    await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
+    fileStream.Seek(0, SeekOrigin.Begin);
+    fileStream.SetLength(0);
+    await body.CopyToAsync(fileStream);
+
+    pendingPost.ContentPath = contentKey;
+    await database.SaveChangesAsync();
+    return Results.Ok();
+})
+.Accepts<IFormFile>("image/gif", "image/jpeg","image/png", "image/webp");
+
 wsServer.MessageReceived += (_, args) =>
 {
     var data = args.Data.ToArray();
@@ -980,11 +1110,9 @@ expiredAccountCodeTimer.Elapsed += async (_, _) =>
     await database.SaveChangesAsync();
 };
 
-
 logger.LogInformation("Server listening on port {config}", config.Port);
-wsServer.Logger = message => logger.LogInformation("[SocketServer]: {message}", message);
-postsServer.Logger = message => logger.LogInformation("[PostsServer]: {message}", message);
-await Task.WhenAll(postsServer.StartAsync(), wsServer.StartAsync());
+wsServer.Logger = message => logger.LogInformation(message);
+await Task.WhenAll(app.RunAsync(), wsServer.StartAsync());
 await Task.Delay(-1, serverShutdownToken.Token);
 
 internal partial class Program

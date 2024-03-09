@@ -1,7 +1,7 @@
 using FFMpegCore.Pipes;
 using SkiaSharp;
 
-namespace PlaceHttpsServer;
+namespace RplaceServer.TimelapseGeneration;
 
 public class SKBitmapFrame : IVideoFrame, IDisposable
 {

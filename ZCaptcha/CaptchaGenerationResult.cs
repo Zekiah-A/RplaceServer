@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace RplaceServer.CaptchaGeneration;
+namespace ZCaptcha;
 
 public record struct CaptchaGenerationResult
 (   string Answer,

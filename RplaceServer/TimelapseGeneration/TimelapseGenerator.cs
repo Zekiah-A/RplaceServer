@@ -1,10 +1,8 @@
-using System.Collections.Concurrent;
 using FFMpegCore;
 using FFMpegCore.Pipes;
-using RplaceServer;
 using SkiaSharp;
 
-namespace PlaceHttpsServer;
+namespace RplaceServer.TimelapseGeneration;
 
 /// <summary>
 /// Dependencies:
