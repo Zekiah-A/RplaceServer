@@ -13,6 +13,8 @@ public record struct Configuration(
     string EmailPassword,
     List<string> KnownWorkers,
     string InstanceKey,
+    string Canvas1ServerLocation,
+    bool Canvas1UsesHttps,
     string RedditAuthClientId,
     string RedditAuthClientSecret,
     bool Logger,

@@ -17,7 +17,7 @@ public class Account : AccountProfile
     [JsonIgnore]
     public List<Post> Posts { get; set; } = [];
     // Navigation property to account linked users
-    public List<LinkedUser> LinkedUsers { get; set; } = [];
+    public List<CanvasUser> LinkedUsers { get; set; } = [];
 
     public Account() { }
 

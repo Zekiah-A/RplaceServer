@@ -58,6 +58,8 @@ if (!File.Exists(configPath))
             "myEmailPassword",
             new List<string>(),
             Guid.NewGuid().ToString(),
+            "server.rplace.tk:443",
+            true,
             "MY_REDDIT_API_APPLICATION_CLIENT_ID",
             "MY_REDDIT_API_APPLICATION_CLIENT_SECRET",
             true,
@@ -145,6 +147,7 @@ var app = builder.Build();
 app.Urls.Add($"{(config.UseHttps ? "https" : "http")}://*:{config.HttpPort}");
 app.UseStaticFiles();
 
+
 app.UseCors(policy =>
 {
     policy.AllowAnyMethod()
@@ -194,7 +197,73 @@ var random = new Random();
 var emailCodes = ReadTxtListFile("email_codes.txt");
 var emailAuthCompletions = new Dictionary<int, EmailAuthCompletion>();
 var signupLimiter = new RateLimiter(TimeSpan.FromSeconds(config.SignupLimitSeconds));
+var canvasServerJsonOptions = new JsonSerializerOptions()
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+};
 
+void InsertDefaults()
+{
+    using var scope = app.Services.CreateScope();
+    var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
+    if (database is null)
+    {
+        throw new Exception("Couldn't insert defaults, db was null");
+    }
+
+    // Canvas 1 reserved instance
+    if (database.Instances.Find(1) is null)
+    {
+        database.Instances.Add(new Instance()
+        {
+            VanityName = "canvas1",
+            LatestSync = DateTime.MinValue,
+            ServerLocation = config.Canvas1ServerLocation,
+            OwnerId = null
+        });
+
+        database.SaveChanges();
+    }
+}
+
+InsertDefaults();
+
+// Uses the linkage API to prove that with a given link key, a client owns an instance user account
+async Task<int?> VerifyCanvasUserIntId(int instanceId, string linkKey, DatabaseContext database)
+{
+    var logPrefix = $"Could not verify canvas user with instanceId {instanceId}.";
+
+    // Lookup instance
+    var instance = await database.Instances.FindAsync(instanceId);
+    if (instance is null)
+    {
+        logger.LogInformation("{logPrefix} Instance not found", logPrefix);
+        return null;
+    }
+
+    // Verify with instance that they do own given link key
+    var instanceUri = (instance.UsesHttps ? "https://" : "http://") + instance.ServerLocation;
+    var linkVerifyUri = $"{instanceUri}/link/{linkKey}";
+    var linkResponse = await httpClient.GetAsync(linkVerifyUri);
+    if (linkResponse.IsSuccessStatusCode)
+    {
+        var linkData = await linkResponse.Content.ReadFromJsonAsync<LinkData>(canvasServerJsonOptions);
+        if (linkData is null)
+        {
+            logger.LogInformation("{logPrefix} JSON data returned by server was invalid", logPrefix);
+            return null;
+        }
+
+        // The user's int ID according to the canvas server
+        return linkData.IntId;
+    }
+    else
+    {
+        logger.LogInformation("{logPrefix} Server denied linkage request ({statusCode} {content})",
+            logPrefix, linkResponse.StatusCode, await linkResponse.Content.ReadAsStringAsync());
+        return null;
+    }
+}
 
 async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)
 {
@@ -265,7 +334,7 @@ async Task RunPostAuthentication(Account accountData, DatabaseContext database)
     await database.SaveChangesAsync();
 }
 
-//
+
 app.MapPost("/accounts/create", async ([FromBody] EmailUsernameRequest request, HttpContext context, DatabaseContext database) =>
 {
     if (context.Connection.RemoteIpAddress is not { } ipAddress || !signupLimiter.IsAuthorised(ipAddress))
@@ -344,7 +413,7 @@ app.MapPost("/accounts/create", async ([FromBody] EmailUsernameRequest request, 
 
     await RunPostAuthentication(accountData, database);
 
-    return Results.Ok(accountData);
+    return Results.Ok(new  { Id = accountData });
 });
 
 app.MapPost("/accounts/login", ([FromBody] EmailUsernameRequest request) =>
@@ -352,7 +421,7 @@ app.MapPost("/accounts/login", ([FromBody] EmailUsernameRequest request) =>
     throw new NotImplementedException();
 });
 
-app.MapPost("/accounts/login/code", ([FromBody] string code) =>
+app.MapPost("/accounts/login/verify", ([FromBody] string code) =>
 {
     throw new NotImplementedException();
 });
@@ -367,7 +436,23 @@ app.MapPost("/accounts/login/reddit", ([FromBody] string code) =>
     throw new NotImplementedException();
 });
 
-app.MapPost("accounts/{id}/verify", async (int id, [FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
+app.MapGet("/accounts/id", async (int id, DatabaseContext database) =>
+{
+    var account = await database.Accounts.FindAsync(id);
+    if (account is null)
+    {
+        return Results.NotFound(new ErrorResponse("Speficied account does not exist", "account.notFound"));
+    }
+
+    return Results.Ok(account);
+});
+app.UseWhen
+(
+    context => AccountEndpointRegex().IsMatch(context.Request.Path),
+    appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
+);
+
+app.MapPost("/accounts/{id}/verify", async (int id, [FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
 {
     var address = context.Connection.RemoteIpAddress;
     if (address is null)
@@ -390,8 +475,13 @@ app.MapPost("accounts/{id}/verify", async (int id, [FromBody] AccountVerifyReque
         return Results.Unauthorized();
     }
 
-    return Results.Ok();
+    return Results.Ok(new { Token = account.Token });
 });
+app.UseWhen
+(
+    context => AccountVerifyEndpointRegex().IsMatch(context.Request.Path),
+    appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
+);
 
 app.MapDelete("/accounts/{id}/delete", async (int id, DatabaseContext database) =>
 {
@@ -405,6 +495,11 @@ app.MapDelete("/accounts/{id}/delete", async (int id, DatabaseContext database) 
     await database.SaveChangesAsync();
     return Results.Ok();
 });
+app.UseWhen
+(
+    context => AccountDeleteEndpointRegex().IsMatch(context.Request.Path),
+    appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
+);
 
 app.MapGet("/profiles/{id}", async (int id, DatabaseContext database) =>
 {
@@ -829,27 +924,67 @@ app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, Htt
     {
         return Results.Unauthorized();
     }
+    if (submission.Title.Length is < 1 or > 64)
+    {
+        return Results.BadRequest(
+            new ErrorResponse("Post title should be between 1-64 characters long", "post.upload.badTitleLength"));
+    }
+    if (submission.Description.Length is > 360)
+    {
+        return Results.BadRequest(
+            new ErrorResponse("Post description can not be longer than 360 characters", "post.upload.badDescriptionLength"));
+    }
 
-    var sanitised = new Post(submission.Title, submission.Description)
+    var newPost = new Post(submission.Title, submission.Description)
     {
         Upvotes = 0,
         Downvotes = 0,
         CreationDate = DateTime.Now,
     };
 
-    var postAccount = submission.AccountId is not null ? await database.Accounts.FindAsync(submission.AccountId) : null;
-
-    if (postAccount is not null && submission.Username is not null)
+    var postAccount = submission.AccountId is not null
+        ? await database.Accounts.FindAsync(submission.AccountId)
+        : null;
+    if (postAccount is not null && submission.CanvasUser is not null)
     {
         return Results.BadRequest(new ErrorResponse("Provided username and account are mutually exclusive", "post.upload.exclusive"));
     }
     else if (postAccount is not null)
     {
-        sanitised.AuthorId = postAccount.Id;
+        newPost.AccountId = postAccount.Id;
     }
-    else if (submission.Username is not null)
+    else if (submission.CanvasUser is not null)
     {
-        sanitised.Username = submission.Username;
+        // We need to perform
+        var userIntId = await VerifyCanvasUserIntId(submission.CanvasUser.InstanceId,
+            submission.CanvasUser.LinkKey, database);
+        if (userIntId is null)
+        {
+            // User did not own this userId, or could not be authorised by canvas server
+            return Results.Unauthorized();
+        }
+
+        // Lookup if there is a CanvasUser with this intId, if not we can create it
+        int? canvasUserId = null;
+        var canvasUser = await database.CanvasUsers.FirstOrDefaultAsync(user => user.UserIntId == userIntId);
+        if (canvasUser is null)
+        {
+            var newCanvasUser = new CanvasUser()
+            {
+                InstanceId = submission.CanvasUser.InstanceId,
+                UserIntId = (int) userIntId
+            };
+            await database.CanvasUsers.AddAsync(newCanvasUser);
+            await database.SaveChangesAsync();
+            // Use canvas user ID from newly created record
+            canvasUserId = newCanvasUser.Id;
+        }
+        else
+        {
+            canvasUserId = canvasUser.Id;
+        }
+
+        newPost.CanvasUserId = canvasUserId;
     }
     else
     {
@@ -859,39 +994,39 @@ app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, Htt
     // If client also wanted to upload content with this post, we give the post key, which gives them
     // temporary permission to upload the content to the CDN.
     var uploadKey = Guid.NewGuid().ToString();
-    sanitised.ContentUploadKey = uploadKey;
+    newPost.ContentUploadKey = uploadKey;
 
-    await database.Posts.AddAsync(sanitised);
+    await database.Posts.AddAsync(newPost);
     await database.SaveChangesAsync();
 
-    return Results.Ok(new { PostId = sanitised.Id, ContentUploadKey = uploadKey });
+    return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
 });
 
-// TODO: Move to ASP static file hosting
-app.MapGet("/posts/{id}/content", async (int id, DatabaseContext database) =>
+app.MapGet("/posts/content/{postContentId}", async (int postContentId, DatabaseContext database) =>
 {
-    if (await database.Posts.FindAsync(id) is not { } post)
+    if (await database.PostContents.FindAsync(postContentId) is not { } postContent)
     {
-        return Results.NotFound(new ErrorResponse("Speficied post could not be found",  "posts.content.notFound"));
+        return Results.NotFound(new ErrorResponse("Speficied post content could not be found",  "posts.content.contentNotFound"));
     }
 
-    if (post.ContentPath is null || !File.Exists(post.ContentPath))
+    var contentPath = Path.Join(config.PostsFolder, "Content", postContent.ContentKey);
+    if (!File.Exists(contentPath))
     {
-        return Results.NotFound(new ErrorResponse("Sprcified post content does not exist", "posts.content.noContent"));
+        return Results.NotFound(new ErrorResponse("Speficied post content could not be found",  "posts.content.contentNotFound"));
     }
 
-    var stream = File.OpenRead(post.ContentPath);
-    return Results.File(stream);
+    var stream = File.OpenRead(contentPath);
+    return Results.File(stream, postContent.ContentType, postContent.ContentKey);
 });
 
-app.MapPost("/posts/{id}/content", async (int id, [FromBody] PostContentRequest request, HttpContext context, DatabaseContext database) =>
+app.MapPost("/posts/{id}/content", async (int id, [FromForm] PostContentRequest request, HttpContext context, DatabaseContext database) =>
 {
     var address = context.Connection.RemoteIpAddress;
     if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey) is not { } pendingPost)
     {
         return Results.Unauthorized();
     }
-    if (pendingPost.ContentPath is not null || pendingPost.ContentUploadKey is null)
+    if (pendingPost.ContentUploadKey is null)
     {
         return Results.Unauthorized();
     }
@@ -899,7 +1034,8 @@ app.MapPost("/posts/{id}/content", async (int id, [FromBody] PostContentRequest 
     // Limit stream length to 5MB to prevent excessively large uploads
     if (context.Request.ContentLength > 5_000_000)
     {
-        return Results.UnprocessableEntity(new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)", "posts.content.upload"));
+        return Results.UnprocessableEntity(
+            new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)", "posts.content.tooLarge"));
     }
 
     // Save data to CDN folder & create content key
@@ -908,7 +1044,7 @@ app.MapPost("/posts/{id}/content", async (int id, [FromBody] PostContentRequest 
     {
         Directory.CreateDirectory(contentPath);
     }
-    var extension = context.Request.ContentType switch
+    var extension = request.File.ContentType switch
     {
         "image/gif" => ".gif",
         "image/jpeg" => ".jpg",
@@ -919,20 +1055,22 @@ app.MapPost("/posts/{id}/content", async (int id, [FromBody] PostContentRequest 
     if (extension is null)
     {
         logger.LogInformation($"Client {address} denied content upload for invalid content type.");
-        return Results.UnprocessableEntity();
+        return Results.UnprocessableEntity(
+            new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.invalidType"));
     }
-    var contentKey = pendingPost.Id + extension;
+    var contentKey = $"{pendingPost.Id}-{Guid.NewGuid().ToString()}-{extension}";
     await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
     fileStream.Seek(0, SeekOrigin.Begin);
     fileStream.SetLength(0);
-    await context.Request.Body.CopyToAsync(fileStream);
+    await request.File.CopyToAsync(fileStream);
 
-    pendingPost.ContentPath = contentKey;
+    var postContent = new PostContent(contentKey, request.File.ContentType, id);
+    await database.PostContents.AddAsync(postContent);
     await database.SaveChangesAsync();
-
     return Results.Ok();
 })
-.Accepts<IFormFile>("image/gif", "image/jpeg","image/png", "image/webp");
+// TODO: Harden this if necessary, https://andrewlock.net/exploring-the-dotnet-8-preview-form-binding-in-minimal-apis
+.DisableAntiforgery();
 
 wsServer.MessageReceived += (_, args) =>
 {
@@ -1163,4 +1301,14 @@ internal partial class Program
     private static partial Regex UsernameRegex();
     [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
     private static partial Regex EmailRegex();
+
+    // /accounts/{id}/verify
+    [GeneratedRegex(@"^\/accounts\/\d+\/verify\/*$")]
+    private static partial Regex AccountVerifyEndpointRegex();
+    // /accounts/{id}/delete
+    [GeneratedRegex(@"^\/accounts\/\d+\/delete\/*$")]
+    private static partial Regex AccountDeleteEndpointRegex();
+    ///accounts/{id}
+    [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
+    private static partial Regex AccountEndpointRegex();
 }
