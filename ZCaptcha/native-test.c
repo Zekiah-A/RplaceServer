@@ -17,7 +17,7 @@ typedef struct generation_result {
     int image_data_length;
 } gen_result;
 
-// gcc test.c -o bin/Release/net8.0/linux-x64/publish/test.o -g
+// gcc test.c -o bin/Release/net9.0/linux-x64/publish/test.o -g
 // ./test.o ZCaptcha.so
 // gdb --args ./test.o ZCaptcha.so
 int main(int argc, char* argv[])
