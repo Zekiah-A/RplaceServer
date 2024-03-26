@@ -4,7 +4,7 @@ using System.Text;
 namespace ZCaptcha;
 
 #pragma warning disable CS8500
-// dotnet publish /p:NativeLib=Shared --use-current-runtime -p:PublishAot=true,StripSymbols=true
+// dotnet publish --configuration Release /p:NativeLib=Shared --use-current-runtime -p:PublishAot=true,StripSymbols=true
 // TEST: readelf -Ws --dyn-syms ZCaptcha.so
 public static unsafe class StaticGenerators
 {
@@ -13,11 +13,17 @@ public static unsafe class StaticGenerators
 
     // provided char* must be UTF-16
     [UnmanagedCallersOnly(EntryPoint = "initialise")]
-    public static void Initialise(char* fontPath)
+    public static int Initialise(char* fontPath)
     {
-        var path = new String(fontPath);
+        var path = Marshal.PtrToStringUTF8((IntPtr)fontPath);
+        if (path == null)
+        {
+            return -1;
+        }
+
         emojiGenerator = new EmojiCaptchaGenerator(path);
         textGenerator = new TextCaptchaGenerator(path);
+        return 0;
     }
 
     public static byte* ToUnmanagedUTF8(string text)

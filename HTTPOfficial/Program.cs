@@ -911,7 +911,8 @@ app.MapGet("/posts/{id}", async (int id, DatabaseContext database) =>
 {
     if (await database.Posts.FindAsync(id) is not { } post)
     {
-        return Results.NotFound();
+        return Results.NotFound(
+            new ErrorResponse("Specified post does not exist", "posts.notFound"));
     }
 
     return Results.Ok(post);
@@ -1058,7 +1059,7 @@ app.MapPost("/posts/{id}/content", async (int id, [FromForm] PostContentRequest 
         return Results.UnprocessableEntity(
             new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.invalidType"));
     }
-    var contentKey = $"{pendingPost.Id}-{Guid.NewGuid().ToString()}-{extension}";
+    var contentKey = $"{pendingPost.Id}_{Guid.NewGuid().ToString()}{extension}";
     await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
     fileStream.Seek(0, SeekOrigin.Begin);
     fileStream.SetLength(0);

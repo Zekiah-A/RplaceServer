@@ -23,7 +23,6 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
     private static readonly float Noise1Opacity = 0.35f;
     private static readonly float TextShift = 32;
     private static readonly float TextRotateRad = 0.4f;
-    
     private readonly SKTypeface captchaFont;
 
     public EmojiCaptchaGenerator(string fontPath)

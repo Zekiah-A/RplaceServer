@@ -21,6 +21,7 @@ public class Post
     // under a global auth server account or a linked user
     public int? CanvasUserId { get; set; }
     // Navigation property to canvas user
+    [JsonIgnore]
     public CanvasUser? CanvasUser { get; set; }
 
     public int? AccountId { get; set; }
