@@ -6,5 +6,5 @@ public enum ClientPacket : byte
     ChatMessage = 15,
     CaptchaSubmit = 16,
     ModAction = 98,
-    Rollback = 99,
+    Rollback = 99
 }

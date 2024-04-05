@@ -24,10 +24,14 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
     private static readonly float TextShift = 32;
     private static readonly float TextRotateRad = 0.4f;
     private readonly SKTypeface captchaFont;
+    private readonly SKBitmap bitmap;
+    private readonly SKCanvas canvas;
 
     public EmojiCaptchaGenerator(string fontPath)
     {
         captchaFont = SKTypeface.FromFile(fontPath);
+        bitmap = new SKBitmap(Width, Height);
+        canvas = new SKCanvas(bitmap);
     }
     
     private static SKColor RandomColor()
@@ -41,9 +45,6 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
     public CaptchaGenerationResult Generate()
     {
         var dummies = new List<string>();
-        var bitmap = new SKBitmap(Width, Height);
-        var canvas = new SKCanvas(bitmap);
-        
         for (var i = 0; i < DummiesCount; i++)
         {
             string chosen;

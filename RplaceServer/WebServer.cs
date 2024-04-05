@@ -14,6 +14,7 @@ namespace RplaceServer;
 public sealed class WebServer
 {
     private readonly WebApplication app;
+    private readonly ServerInstance instance;
     private readonly GameData gameData;
     private readonly RateLimiter timelapseLimiter;
     public Action<string>? Logger;
@@ -24,8 +25,9 @@ public sealed class WebServer
     
     public event EventHandler<CanvasBackupCreatedEventArgs>? CanvasBackupCreated;
 
-    public WebServer(GameData data, string certPath, string keyPath, string origin, bool ssl, int port)
+    public WebServer(ServerInstance parentInstance, GameData data, string? certPath, string? keyPath, string origin, bool ssl, int port)
     {
+        instance = parentInstance;
         gameData = data;
         timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriodS));
 
@@ -60,7 +62,7 @@ public sealed class WebServer
         {
             options.ListenAnyIP(port, listenOptions =>
             {
-                if (ssl)
+                if (ssl && certPath != null && keyPath != null)
                 {
                     var certificate = new X509Certificate2(certPath, keyPath);
                     listenOptions.UseHttps(certificate);
@@ -118,7 +120,7 @@ public sealed class WebServer
         //Serve absolute latest board from memory.
         app.MapGet("/place",() =>
         {
-            var board = BoardPacker.RunLengthCompressBoard(gameData.Board);
+            var board = BoardPacker.RunLengthCompressBoard(instance.Board);
             return Results.Bytes(board);
         }).RequireCors("PlacePolicy");
         
@@ -197,7 +199,7 @@ public sealed class WebServer
     public async Task SaveCanvasBackupAsync()
     {
         // Save the place file so that we can recover after a server restart
-        await File.WriteAllBytesAsync(Path.Join(gameData.CanvasFolder, "place"), gameData.Board);
+        await File.WriteAllBytesAsync(Path.Join(gameData.CanvasFolder, "place"), instance.Board);
 
         // Save a dated backup of the canvas to timestamp the place file at this point in time
         var backupName = "place " + DateTime.Now.ToString("yyyy.MM.dd HH.mm.ss");
@@ -206,7 +208,7 @@ public sealed class WebServer
         await backupList.FlushAsync();
 
         var boardPath = Path.Join(gameData.CanvasFolder, backupName);
-        var boardData = BoardPacker.PackBoard(gameData.Board, gameData.Palette, gameData.BoardWidth);
+        var boardData = BoardPacker.PackBoard(instance.Board, gameData.Palette, gameData.BoardWidth);
         await File.WriteAllBytesAsync(boardPath, boardData);
         backupsCount++;
         backupsSize += boardData.Length;

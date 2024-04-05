@@ -10,11 +10,11 @@ namespace TKOfficial;
 
 public class ConsoleWindow : Window
 {
-    public Action<string>? Logger;
+    private Action<string>? Logger;
     
     // Used as a portal to allow the repl to access and interact with the server
     public ServerInstance Server => Program.Server;
-
+    
     public ConsoleWindow()
     {
         Initialise();
@@ -27,7 +27,7 @@ public class ConsoleWindow : Window
         Logger?.Invoke(formatted);
     }
 
-    private void Initialise()
+    public void Initialise()
     {
         Title = "TKOfficial CLI Environment -> ©Zekiah-A (Ctrl+Q to quit)";
 
@@ -523,7 +523,7 @@ closeWizard:
                 //Border = new Border { Background = Color.White }
             };
 
-            var selectedClientPair = Program.Server.GameData.Clients
+            var selectedClientPair = Program.Server.Clients
                 .FirstOrDefault(clientPair => clientPair.Value.IdIpPort.Equals(args.Value));
 
             if (selectedClientPair.Equals(default(KeyValuePair<ClientMetadata, ClientData>)))
@@ -543,7 +543,7 @@ closeWizard:
             
             var vipLabel = new Label
             {
-                Text = "Player VIP status:" + (selectedClientPair.Value.Vip ? "VIP" : selectedClientPair.Value.Admin ? "Admin" : "None"),
+                Text = "Player permissions: " + selectedClientPair.Value.Permissions.ToString(),
                 Y = 1
             };
             var lastChatLabel = new Label
@@ -834,13 +834,13 @@ closeWizard:
         // Update clients panel with a list of all currently connected clients
         Program.Server.SocketServer.PlayerConnected += (_, _) =>
         {
-            clientsListView.SetSource(Program.Server.GameData.Clients
+            clientsListView.SetSource(Program.Server.Clients
                 .Select(pair => pair.Value.IdIpPort)
                 .ToList());
         };
         Program.Server.SocketServer.PlayerDisconnected += (_, _) =>
         {
-            clientsListView.SetSource(Program.Server.GameData.Clients
+            clientsListView.SetSource(Program.Server.Clients
                 .Select(pair => pair.Value.IdIpPort)
                 .ToList());
         };
@@ -870,7 +870,7 @@ closeWizard:
             }
 
             var boardInfo = BoardPacker.UnpackBoard(rawData);
-            Program.Server.GameData.Board = boardInfo.Board;
+            Program.Server.Board = boardInfo.Board;
             Program.Server.GameData.Palette = boardInfo.Palette.Count == 0 ? null : boardInfo.Palette;
             Program.Server.GameData.BoardWidth = boardInfo.Width;
             Program.Server.GameData.BoardHeight = (uint) (boardInfo.Board.Length / boardInfo.Width);

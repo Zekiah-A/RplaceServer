@@ -2,37 +2,29 @@ namespace RplaceServer.Types;
 
 public class LiveChatMessage
 {
-    public uint MessageId;
+    public int MessageId;
+    public int SenderId;
     public DateTime SendDate;
     public string Message;
-    public string Name;
     public string Channel;
-    public uint RepliesTo;
-
-    public UidType SenderType;
-    public string SenderUid;
+    public int RepliesTo;
 }
 
 public class LiveChatReaction
 {
-    public uint MessageId;
+    public int MessageId;
     public string Reaction;
-    
-    public UidType ReacterType;
-    public string ReacterUid;
+    public int ReacterId;
 }
 
 public class PlaceChat
 {
-    public uint MessageId;
+    public int MessageId;
+    public int SenderId;
     public DateTime SendDate;
     public string Message;
-    public string Name;
-    public uint X;
-    public uint Y;
-
-    public UidType SenderType;
-    public string SenderUid;
+    public int X;
+    public int Y;
 }
 
 // A chat message packet (server -> client) is made up of the following. And chat messages may follow this style.  

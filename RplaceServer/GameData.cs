@@ -4,21 +4,11 @@ using WatsonWebsocket;
 namespace RplaceServer;
 
 /// <summary>
-/// Dataclass to contain any data used by the server that can be modified at runtime
+/// Dataclass to contain any configurable data to be used by the server
 /// </summary>
 public class GameData : ICanvasConfiguration, IStorageConfiguration, IModerationConfiguration, IServiceConfiguration
 {
-    // These will be accessed & changed frequently, but should not be saved in
-    // main configs, and are instead managed by the server instance itself
-    [JsonIgnore] public int PlayerCount = 0;
-    [JsonIgnore] public byte[] Board = Array.Empty<byte>();
-    [JsonIgnore] public Dictionary<ClientMetadata, ClientData> Clients = new();
-    [JsonIgnore] public Dictionary<string, string> PendingCaptchas = new();
-    [JsonIgnore] public Dictionary<string, long> Bans = new();
-    [JsonIgnore] public Dictionary<string, long> Mutes = new();
-    [JsonIgnore] public List<string> VipKeys = [];
-
-    // These are persistent & saved in configs + can be changed at runtime
+    // These can be changed at runtime
     // Canvas configuration
     public uint CooldownMs { get; set; }
     public uint BoardWidth { get; set; }
@@ -51,15 +41,13 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     public bool CaptchaEnabled { get; set; }
     public bool CensorChatMessages { get; set; }
     
-    // Service configuration - Optional
+    // External service configuration - Optional
     // These are config-settable, and live changeable, but not necessary 
     public IWebhookService? WebhookService { get; set; }
+    public TurnstileService? TurnstileService { get; set; }
 
     // Constructor
-    protected GameData()
-    {
-        
-    }
+    protected GameData() { }
     public GameData(string staticResourcesFolder, string saveDataFolder, string canvasFolder, IWebhookService? webhookService = null)
     {
         StaticResourcesFolder = staticResourcesFolder;
@@ -134,6 +122,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
         var options = new ConfigureServiceOptions();
         optionsAction(options);
         WebhookService = options.WebhookService;
+        TurnstileService = options.TurnstileService;
         return this;
     }
 }

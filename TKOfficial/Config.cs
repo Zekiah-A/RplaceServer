@@ -3,8 +3,8 @@ using RplaceServer;
 namespace TKOfficial;
 public class Config : GameData
 {
-    public string? CertPath { get; init; }
-    public string? KeyPath { get; init; }
+    public string? CertPath { get; init; } = null;
+    public string? KeyPath { get; init; } = null;
     public bool LogToConsole { get; init; } = true;
     public string Origin { get; init; } = "https://rplace.live";
     public int SocketPort { get; init; } = 8080;

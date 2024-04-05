@@ -37,17 +37,20 @@ public class DiscordWebhookService : IWebhookService
     }
 }
 
+public class TurnstileService
+{
+    public string PrivateKey;
+    public string SiteKey;
+
+    public TurnstileService(string privateKey, string siteKey)
+    {
+        PrivateKey = privateKey;
+        SiteKey = siteKey;
+    }
+}
+
 public class ConfigureServiceOptions : IServiceConfiguration
 {
-    public string? WebhookUrl
-    {
-        set => WebhookService.Url = value;
-    }
-
-    public string? ModWebhookUrl
-    {
-        set => WebhookService.ModerationUrl = value;
-    }
-    
-    public IWebhookService WebhookService { get; set; } = new DiscordWebhookService();
+    public IWebhookService WebhookService { get; set; }
+    public TurnstileService? TurnstileService { get; set; }
 }

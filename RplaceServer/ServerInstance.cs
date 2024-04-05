@@ -14,25 +14,36 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using WatsonWebsocket;
+
 namespace RplaceServer;
 
 public sealed class ServerInstance
 {
+    // Shared managed variables by socket and web server
+    public int PlayerCount = 0;
+    public byte[] Board = Array.Empty<byte>();
+    public Dictionary<ClientMetadata, ClientData> Clients = new();
+    public Dictionary<string, string> PendingCaptchas = new();
+    public Dictionary<string, long> Blacklist = new();
+    public Dictionary<string, long> Mutes = new();
+    public List<string> VipKeys = [];
+
     public GameData GameData;
     public SocketServer SocketServer { get; set; }
     public WebServer WebServer { get; set; }
     public Action<string>? Logger;
 
-    public ServerInstance(GameData gameData, string certPath, string keyPath, string origin, int socketPort, int webPort, bool ssl)
+    public ServerInstance(GameData gameData, string? certPath, string? keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
         GameData = gameData;
-        SocketServer = new SocketServer(gameData, certPath, keyPath, origin, ssl, socketPort);
-        WebServer = new WebServer(gameData, certPath, keyPath, origin, ssl, webPort);
+        SocketServer = new SocketServer(this, gameData, certPath, keyPath, origin, ssl, socketPort);
+        WebServer = new WebServer(this, gameData, certPath, keyPath, origin, ssl, webPort);
     }
 
     private async Task CreateNewBoardAsync()
     {
-        GameData.Board = new byte[GameData.BoardWidth * GameData.BoardHeight];
+        Board = new byte[GameData.BoardWidth * GameData.BoardHeight];
 
         if (!Directory.Exists(GameData.CanvasFolder))
         {
@@ -40,7 +51,7 @@ public sealed class ServerInstance
             Logger?.Invoke("Could not find canvas folder. Regenerating");
         }
             
-        await File.WriteAllBytesAsync(Path.Join(GameData.CanvasFolder, "place"), GameData.Board);
+        await File.WriteAllBytesAsync(Path.Join(GameData.CanvasFolder, "place"), Board);
     }
     
     public async Task StartAsync()
@@ -61,7 +72,7 @@ public sealed class ServerInstance
             }
             else
             {
-                GameData.Board = boardBytes;
+                Board = boardBytes;
             }
         }
 
