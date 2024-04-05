@@ -177,7 +177,7 @@ public sealed class WebServer
         {
             AutoReset = true,
             Enabled = true,
-            Interval = gameData.BackupFrequencyMs
+            Interval = gameData.BackupFrequencyS * 1000
         };
 
         timer.Elapsed += async (_, _) =>
@@ -187,7 +187,7 @@ public sealed class WebServer
                 return;
             }
             
-            timer.Interval = gameData.BackupFrequencyMs;
+            timer.Interval = gameData.BackupFrequencyS * 1000;
             await SaveCanvasBackupAsync();
         };
     }

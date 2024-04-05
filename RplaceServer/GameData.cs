@@ -27,7 +27,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     ];
     
     // Storage configuration
-    public int BackupFrequencyMs { get; set; }
+    public int BackupFrequencyS { get; set; }
     public string StaticResourcesFolder { get; set; }
     public string SaveDataFolder { get; set;  }
     public bool UseDatabase { get; set; }
@@ -86,7 +86,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     {
         var options = new ConfigureStorageOptions();
         optionsAction(options);
-        BackupFrequencyMs = options.BackupFrequencyMs;
+        BackupFrequencyS = options.BackupFrequencyS;
         StaticResourcesFolder = options.StaticResourcesFolder;
         SaveDataFolder = options.SaveDataFolder;
         CanvasFolder = options.CanvasFolder;

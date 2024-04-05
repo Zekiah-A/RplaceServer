@@ -159,7 +159,7 @@ public static class Program
                     BoardWidth = defaultData.BoardWidth,
                     BoardHeight = defaultData.BoardHeight,
                     Palette = defaultData.Palette,
-                    BackupFrequencyMs = defaultData.BackupFrequencyMs,
+                    BackupFrequencyS = defaultData.BackupFrequencyS,
                     StaticResourcesFolder = defaultData.StaticResourcesFolder,
                     SaveDataFolder = defaultData.SaveDataFolder,
                     UseDatabase = defaultData.UseDatabase,
@@ -215,7 +215,7 @@ public static class Program
                 var config = foundConfigs[0];
                 if (config.EndsWith(".json") || config.EndsWith(".yaml") || config.EndsWith(".toml"))
                 {
-                    await RunWithConfig(Path.Join(baseConfigPath, config));
+                    await RunWithConfig(config);
                 }
                 else
                 {
@@ -234,7 +234,7 @@ public static class Program
                 Console.ResetColor();
                 Console.WriteLine("Please select which one you want TKOfficial to use:");
                 var selected = CreateOptions(foundConfigs.ToArray());
-                await RunWithConfig(Path.Join(baseConfigPath, foundConfigs[selected]));
+                await RunWithConfig(foundConfigs[selected]);
                 break;
             }
         }

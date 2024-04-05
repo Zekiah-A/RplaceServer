@@ -82,6 +82,13 @@
             let placeView = new DataView(placeData)
             let metadataLength = placeView.getInt16(placeView.byteLength - 2)
             let boardLength = placeView.byteLength - metadataLength
+            const maxBoardLength = 16777216
+            if (boardLength > maxBoardLength) {
+                // Something is wrong
+                backupLeft()
+                console.error(`Could not render board, board length (${boardLength}) longer than limit (${maxBoardLength})`)
+                return 
+            }
             let boardWidth = placeView.getUint32(boardLength)
             let boardHeight = Math.floor(boardLength / boardWidth) 
             previewCanvas.setAttribute("width", boardWidth)

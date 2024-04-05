@@ -166,27 +166,27 @@ closeWizard:
             fillCanvasWizard.AddStep(firstStep);
             fillCanvasWizard.Finished += (_, _) =>
             {
-                if (!int.TryParse(xStartField.Text.ToString(), out var startX) || startX < 0)
+                if (!int.TryParse(xStartField.Text, out var startX) || startX < 0)
                 {
                     Logger?.Invoke("Failed to fill, invalid Start X Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(yStartField.Text.ToString(), out var startY) || startY < 0)
+                if (!int.TryParse(yStartField.Text, out var startY) || startY < 0)
                 {
                     Logger?.Invoke("Failed to fill, invalid Start Y Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(xEndField.Text.ToString(), out var endX) || endX > Program.Server.GameData.BoardWidth)
+                if (!int.TryParse(xEndField.Text, out var endX) || endX > Program.Server.GameData.BoardWidth)
                 {
                     Logger?.Invoke("Failed to fill, invalid End X Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(yEndField.Text.ToString(), out var endY) || endX > Program.Server.GameData.BoardHeight)
+                if (!int.TryParse(yEndField.Text, out var endY) || endX > Program.Server.GameData.BoardHeight)
                 {
                     Logger?.Invoke("Failed to fill, invalid End Y Parameter");
                     goto closeWizard;
                 }
-                if (!int.TryParse(colourIndexField.Text.ToString(), out var colourIndex) ||
+                if (!int.TryParse(colourIndexField.Text, out var colourIndex) ||
                     colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
                 {
                     Logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
@@ -238,7 +238,7 @@ closeWizard:
             cooldownWizard.AddStep(firstStep);
             cooldownWizard.Finished += (_, _) =>
             {
-                if (int.TryParse(cooldownField.Text.ToString(), out var cooldown))
+                if (int.TryParse(cooldownField.Text, out var cooldown))
                 {
                     Program.Server.GameData.ChatCooldownMs = cooldown;
                 }
@@ -286,7 +286,7 @@ closeWizard:
             chatWizard.AddStep(firstStep);
             chatWizard.Finished += (_, _) =>
             {
-                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text.ToString(), channelInput.Text.ToString());
+                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text, channelInput.Text);
                 Logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
                 Application.Top.Remove(chatWizard);
                 Application.RequestStop();
@@ -368,7 +368,7 @@ closeWizard:
             paletteWizard.Finished += (_, _) =>
             {
                 var newPalette = new List<uint>();
-                var split = paletteField.Text.ToString().Split(',');
+                var split = paletteField.Text.Split(',');
 
                 if (split.Length == 0)
                 {
@@ -432,7 +432,7 @@ closeWizard:
             restoreWizard.AddStep(firstStep);
             restoreWizard.Finished += (_, _) =>
             {
-                if (RestoreFromBackup(restoreField.Text.ToString()) is { } unpackedInfo)
+                if (RestoreFromBackup(restoreField.Text) is { } unpackedInfo)
                 {
                     Logger?.Invoke($"Successfully restored canvas from provided backup. Restored canvas length: : " +
                         $"{unpackedInfo.Board.Length}, restored palette length: {string.Join(", ", unpackedInfo.Palette)}, " +
@@ -543,7 +543,7 @@ closeWizard:
             
             var vipLabel = new Label
             {
-                Text = "Player permissions: " + selectedClientPair.Value.Permissions.ToString(),
+                Text = "Player permissions: " + selectedClientPair.Value.Permissions,
                 Y = 1
             };
             var lastChatLabel = new Label
@@ -633,7 +633,7 @@ closeWizard:
             Y = Pos.Bottom(serverIpPortLabel),
             X = Pos.Center()
         };
-        var webhookUrl = Program.Config.WebhookService.Url;
+        var webhookUrl = Program.Config.WebhookService?.Url;
         var serverWebhookUrlLabel = new Label
         {
             Text = "Game chat webhook URL: " + (string.IsNullOrEmpty(webhookUrl) ? "No webhook URL set" : webhookUrl),
@@ -857,7 +857,6 @@ closeWizard:
         NativeMemory.Free(copyPtr);
         return clone;
     }
-
 
     private UnpackedBoard? RestoreFromBackup(string path)
     {

@@ -2,7 +2,7 @@ namespace RplaceServer;
 
 public interface IStorageConfiguration
 {
-    public int BackupFrequencyMs { get; set; }
+    public int BackupFrequencyS { get; set; }
     // Directory where resources, such as Pages and Captcha Generation assets will be stored,
     // multiple instances can technically share a resources directory as their content is static.
     public string StaticResourcesFolder { get; set; }
@@ -22,11 +22,12 @@ public interface IStorageConfiguration
 
 public class ConfigureStorageOptions : IStorageConfiguration
 {
-    public int BackupFrequencyMs { get; set; }
+    // Every 15 Minutes
+    public int BackupFrequencyS { get; set; } = 900;
     public string StaticResourcesFolder { get; set; } = "StaticData";
     public string SaveDataFolder { get; set; } = "SaveData";
     public string CanvasFolder { get; set; } = "Canvases";
-    public bool UseDatabase { get; set; }
+    public bool UseDatabase { get; set; } = true;
     public int TimelapseLimitPeriodS { get; set; } = 900;
     public bool CreateBackups { get; set; } = true;
 }
