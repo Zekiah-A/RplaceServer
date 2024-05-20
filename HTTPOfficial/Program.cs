@@ -407,13 +407,13 @@ app.MapPost("/accounts/create", async ([FromBody] EmailUsernameRequest request, 
     catch (Exception exception)
     {
         logger.LogError("Could not send email message: {exception}", exception);
-        var errorString = JsonSerializer.Serialize(new ErrorResponse("Failed to send email messge", "account.create.emailFailed"));
+        var errorString = JsonSerializer.Serialize(new ErrorResponse("Failed to send email message", "account.create.emailFailed"));
         return Results.Problem(errorString);
     }
 
     await RunPostAuthentication(accountData, database);
 
-    return Results.Ok(new  { Id = accountData });
+    return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
 });
 
 app.MapPost("/accounts/login", ([FromBody] EmailUsernameRequest request) =>
@@ -426,9 +426,25 @@ app.MapPost("/accounts/login/verify", ([FromBody] string code) =>
     throw new NotImplementedException();
 });
 
-app.MapPost("/accounts/login/token", ([FromBody] string code) =>
+app.MapPost("/accounts/login/token", async ([FromBody] string? token, HttpContext context, DatabaseContext database) =>
 {
-    throw new NotImplementedException();
+    token ??= context.Items["Token"]?.ToString();
+    if (token is null)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsJsonAsync(new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
+        return;
+    }
+    var account = await database.Accounts.FirstOrDefaultAsync(account => account.Token == token);
+    if (account is null)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsJsonAsync(new ErrorResponse("Specified token was invalid", "accounts.login.invalidToken"));
+        return;
+    }
+
+    context.Response.StatusCode = StatusCodes.Status200OK;
+    await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(account.Id, account.Token));
 });
 
 app.MapPost("/accounts/login/reddit", ([FromBody] string code) =>
@@ -441,7 +457,7 @@ app.MapGet("/accounts/id", async (int id, DatabaseContext database) =>
     var account = await database.Accounts.FindAsync(id);
     if (account is null)
     {
-        return Results.NotFound(new ErrorResponse("Speficied account does not exist", "account.notFound"));
+        return Results.NotFound(new ErrorResponse("Specified account does not exist", "account.notFound"));
     }
 
     return Results.Ok(account);
@@ -452,11 +468,12 @@ app.UseWhen
     appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
 );
 
-app.MapPost("/accounts/{id}/verify", async (int id, [FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
+app.MapPost("/accounts/{id:int}/verify", async (int id, [FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
 {
     var address = context.Connection.RemoteIpAddress;
     if (address is null)
     {
+        // TODO: Provide details in unauthorized result with manual 401
         return Results.Unauthorized();
     }
 
@@ -470,12 +487,12 @@ app.MapPost("/accounts/{id}/verify", async (int id, [FromBody] AccountVerifyRequ
         return Results.NotFound(new ErrorResponse("Specified account has no pending verification code", "accounts.verify.noCompletion"));
     }
 
-    if (completion.Address != address || completion.AuthCode != request.VerificationCode)
+    if (completion.Address.ToString() != address.ToString() || completion.AuthCode != request.VerificationCode)
     {
         return Results.Unauthorized();
     }
 
-    return Results.Ok(new { Token = account.Token });
+    return Results.Ok(new LoginDetailsResponse(account.Id, account.Token));
 });
 app.UseWhen
 (
@@ -483,7 +500,7 @@ app.UseWhen
     appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
 );
 
-app.MapDelete("/accounts/{id}/delete", async (int id, DatabaseContext database) =>
+app.MapDelete("/accounts/{id:int}/delete", async (int id, DatabaseContext database) =>
 {
     var profile = await database.Accounts.FindAsync(id);
     if (profile is null)
@@ -501,7 +518,7 @@ app.UseWhen
     appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
 );
 
-app.MapGet("/profiles/{id}", async (int id, DatabaseContext database) =>
+app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
 {
     var profile = (AccountProfile?) await database.Accounts.FindAsync(id);
     if (profile is null)

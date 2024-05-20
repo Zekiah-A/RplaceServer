@@ -1,3 +1,4 @@
+using HTTPOfficial.ApiModel;
 using Microsoft.EntityFrameworkCore;
 
 namespace HTTPOfficial;
@@ -19,20 +20,14 @@ public class TokenAuthMiddleware
             ?? context.Request.Cookies["Authorization"]
             ?? context.Request.Query["authorization"].FirstOrDefault();
 
-        if (token is null || await ValidateToken(token, database) is not int accountId)
+        if (token is null)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { Message = "Invalid token provided in auth header" });
+            await context.Response.WriteAsJsonAsync(new ErrorResponse("Invalid token provided in auth header", "invalidToken"));
             return;
         }
 
-        context.Items["TokenAccountId"] = accountId;
+        context.Items["Token"] = token;
         await downstreamHandler(context);
-    }
-
-    private async Task<int?> ValidateToken(string token, DatabaseContext database)
-    {
-        var account = await database.Accounts.FirstOrDefaultAsync(account => account.Token == token);
-        return account?.Id;
     }
 }
