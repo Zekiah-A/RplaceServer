@@ -28,7 +28,7 @@ public enum ServerPackets : byte
     VanityLocation = 2,
     WorkerLocations = 3,
     AvailableVanity = 4,
-    AccountToken = 5, // Account token used for normal auth
+    AccountToken = 5, // UnverifiedAccount token used for normal auth
     AccountProfile = 6,
     RedditRefreshToken = 7, // Refresh token used for reddit OAuth
 

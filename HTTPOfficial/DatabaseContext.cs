@@ -7,8 +7,10 @@ public class DatabaseContext : DbContext
 {
     // Global auth server accounts
     public DbSet<Account> Accounts { get; set; } = null!;
+    
     // Federated canvas/instance accounts
     public DbSet<CanvasUser> CanvasUsers { get; set; } = null!;
+    
     public DbSet<Badge> Badges { get; set; } = null!;
     public DbSet<Post> Posts { get; set; } = null!;
     public DbSet<PostContent> PostContents { get; set; } = null!;
@@ -20,6 +22,8 @@ public class DatabaseContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Primary keys
+        modelBuilder.Entity<Account>()
+            .HasKey(account => account.Id);
         modelBuilder.Entity<Account>()
             .HasKey(account => account.Id);
         modelBuilder.Entity<Post>()
@@ -42,6 +46,9 @@ public class DatabaseContext : DbContext
             .IsUnique();
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Token)
+            .IsUnique();
+        modelBuilder.Entity<Account>()
+            .HasIndex(unverifiedAccount => unverifiedAccount.VerificationCode)
             .IsUnique();
         modelBuilder.Entity<Instance>()
             .HasIndex(instance => instance.VanityName)

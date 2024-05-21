@@ -10,6 +10,7 @@ public class Post
     public int Upvotes { get; set; }
     public int Downvotes { get; set; }
     public DateTime CreationDate { get; set; }
+    public bool HasSensitiveContent { get; set; }
 
     [JsonIgnore]
     public string? ContentUploadKey { get; set; }

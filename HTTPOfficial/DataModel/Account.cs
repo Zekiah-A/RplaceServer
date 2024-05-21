@@ -4,8 +4,11 @@ namespace HTTPOfficial.DataModel;
 public class Account : AccountProfile
 {
     // Must be unique
-    public string Email { get; set; }
-    public string Token { get; set; }
+    public string Email { get; set; } = null!;
+    // Must be unique
+    public string Token { get; set; } = null!;
+    // Must be unique
+    public string? VerificationCode { get; set; }
 
     public AccountTier Tier { get; set; }
     public string? RedditId { get; set; }
@@ -17,11 +20,12 @@ public class Account : AccountProfile
     [JsonIgnore]
     public List<Post> Posts { get; set; } = [];
     // Navigation property to account linked users
+    [JsonIgnore]
     public List<CanvasUser> LinkedUsers { get; set; } = [];
 
     public Account() { }
 
-    public Account(string username, string email, string token, AccountTier tier, DateTime joinDate)
+    public Account(string username, string email, string token, AccountTier tier, DateTime creationDate)
     {
         Email = email;
         Tier = tier;
@@ -33,7 +37,7 @@ public class Account : AccountProfile
         TwitterHandle = null;
         RedditHandle = null;
         PixelsPlaced = 0;
-        JoinDate = joinDate;
+        CreationDate = creationDate;
         UsesRedditAuthentication = false;
     }
 }

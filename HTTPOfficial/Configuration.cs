@@ -2,25 +2,27 @@ using HTTPOfficial.DataModel;
 
 namespace HTTPOfficial;
 
-public record struct Configuration(
-    int Port,
-    bool UseHttps,
-    string CertPath,
-    string KeyPath,
-    string SmtpHost,
-    int SmtpPort,
-    string EmailUsername,
-    string EmailPassword,
-    List<string> KnownWorkers,
-    string InstanceKey,
-    string Canvas1ServerLocation,
-    bool Canvas1UsesHttps,
-    string RedditAuthClientId,
-    string RedditAuthClientSecret,
-    bool Logger,
-    string PostsFolder,
-    int PostLimitSeconds,
-    int SignupLimitSeconds,
-    string Origin,
-    int HttpPort,
-    Dictionary<AccountTier, int> AccountTierInstanceLimits);
+public class Configuration
+{
+    public int SocketPort { get; init; }
+    public bool UseHttps { get; init; }
+    public string? CertPath { get; init; }
+    public string? KeyPath { get; init; }
+    public string? SmtpHost { get; init; }
+    public int SmtpPort { get; init; }
+    public string EmailUsername { get; init; }
+    public string EmailPassword { get; init; }
+    public List<string> KnownWorkers { get; init; }
+    public string InstanceKey { get; init; }
+    public List<Instance> DefaultInstances { get; set; }
+    public string RedditAuthClientId { get; init; }
+    public string RedditAuthClientSecret { get; init; }
+    public bool Logger { get; init; }
+    public string PostsFolder { get; init; }
+    public int PostLimitSeconds { get; init; }
+    public int SignupLimitSeconds { get; init; }
+    public int VerifyLimitSeconds { get; init; }
+    public string Origin { get; init; }
+    public int Port { get; init; }
+    public Dictionary<AccountTier, int> AccountTierInstanceLimits { get; init; }
+}
