@@ -8,6 +8,7 @@ using MailKit.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MimeKit;
+using Timer = System.Timers.Timer;
 
 namespace HTTPOfficial;
 
@@ -15,7 +16,6 @@ internal static partial class Program
 {
     private static void ConfigureAccountEndpoints()
     {
-        var random = new Random();
         var signupLimiter = new RateLimiter(TimeSpan.FromSeconds(config.SignupLimitSeconds));
 
         // Email and trusted domains
@@ -34,8 +34,8 @@ internal static partial class Program
                 return Results.BadRequest(new ErrorResponse("Invalid username", "account.create.invalidUsername"));
             }
 
-            if (request.Email.Length is > 320 or < 4 || !emailAttributes.IsValid(request.Email) ||
-                !EmailRegex().IsMatch(request.Email)
+            if (request.Email.Length is > 320 or < 4 || !emailAttributes.IsValid(request.Email)
+                || !EmailRegex().IsMatch(request.Email)
                 || trustedEmailDomains.BinarySearch(request.Email.Split('@').Last()) < 0)
             {
                 return Results.BadRequest(new ErrorResponse("Invalid email", "account.create.invalidEmail"));
@@ -57,13 +57,17 @@ internal static partial class Program
 
             var authCode = RandomNumberGenerator.GetInt32(100_000, 999_999);
             var newToken = RandomNumberGenerator.GetHexString(64);
-            var accountData = new Account(request.Username, request.Email, newToken, AccountTier.Free, DateTime.Now)
-            {
-                VerificationCode = authCode.ToString()
-            };
+            var accountData = new Account(request.Username, request.Email, newToken, AccountTier.Free, DateTime.Now);
             await database.Accounts.AddAsync(accountData);
             await database.SaveChangesAsync();
             await RunPostAuthentication(accountData, database);
+            
+            var verification = new AccountPendingVerification(accountData.Id, authCode.ToString(), DateTime.Now)
+            {
+                Initial = true
+            };
+            database.PendingVerifications.Add(verification);
+            await database.SaveChangesAsync();
 
             var message = new MimeMessage();
             message.From.Add(new MailboxAddress(config.EmailUsername, config.EmailUsername));
@@ -109,16 +113,20 @@ internal static partial class Program
 
         app.MapPost("/accounts/create/verify", async ([FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
         {
-            var accountData = await database.Accounts.FirstOrDefaultAsync(
-                account => account.VerificationCode == request.VerificationCode);
-            if (accountData is null)
+            var verification = await database.PendingVerifications.FirstOrDefaultAsync(
+                verification => verification.Code == request.Code);
+            if (verification is null)
             {
                 return Results.NotFound(new ErrorResponse("Invalid code provided", "account.verify.invalidCode"));
             }
-
-            accountData.VerificationCode = null;
+            database.PendingVerifications.Remove(verification);
             await database.SaveChangesAsync();
 
+            var accountData = await database.Accounts.FindAsync(verification.AccountId);
+            if (accountData is null)
+            {
+                return Results.NotFound(new ErrorResponse("Account for given code not found", "account.verify.notFound"));
+            }
             await RunPostAuthentication(accountData, database);
             return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
         });
@@ -162,7 +170,7 @@ internal static partial class Program
                 return Results.NotFound(new ErrorResponse("Specified account has no pending verification code", "accounts.verify.noCompletion"));
             }
 
-            if (completion.Address.ToString() != address.ToString() || completion.AuthCode != request.VerificationCode)
+            if (completion.Address.ToString() != address.ToString() || completion.AuthCode != request.Code)
             {
                 return Results.Unauthorized();
             }
@@ -241,17 +249,52 @@ internal static partial class Program
 
         app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
         {
-            var profile = (AccountProfile?)await database.Accounts.FindAsync(id);
-            if (profile is null)
+            var account = await database.Accounts.FindAsync(id);
+            if (account is null)
             {
                 return Results.NotFound(new ErrorResponse("Specified profile does not exist",
                     "account.profile.notFound"));
             }
 
+            var profile = account.ToProfile();
             return Results.Ok(profile);
         });
+        
+        // Delete accounts that have not verified within the valid timespan
+        var expiredAccountCodeTimer = new Timer(TimeSpan.FromMinutes(config.VerifyExpiryMinutes))
+        {
+            Enabled = true,
+            AutoReset = true
+        };
+        expiredAccountCodeTimer.Elapsed += async (_, _) =>
+        {
+            using var scope = app.Services.CreateScope();
+            var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
+
+            var pendingVerifications = await database.PendingVerifications.Where(
+                verification => DateTime.Now - verification.CreationDate > TimeSpan.FromMinutes(config.VerifyExpiryMinutes))
+                .ToListAsync();
+
+            foreach (var verification in pendingVerifications)
+            {
+                if (verification.Initial)
+                {
+                    // Delete the account associated as well (assume it's a stranded a throwaway that can't be logged into again)
+                    var accountData = await database.Accounts.FindAsync(verification.AccountId);
+                    if (accountData != null)
+                    {
+                        database.Accounts.Remove(accountData);
+                    }
+                }
+                
+                database.PendingVerifications.Remove(verification);
+            }
+            await database.SaveChangesAsync();
+        };
+
     }
 
+    // ReSharper disable once SuggestBaseTypeForParameter
     private static async Task RunPostAuthentication(Account accountData, DatabaseContext database)
     {
         // If they have been on the site for 20+ days, we remove their noob badge

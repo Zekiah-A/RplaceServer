@@ -1,17 +1,22 @@
 using System.Text.Json.Serialization;
 namespace HTTPOfficial.DataModel;
 
-public class Account : AccountProfile
+public class Account : ProfileBase
 {
     // Must be unique
     public string Email { get; set; } = null!;
     // Must be unique
     public string Token { get; set; } = null!;
-    // Must be unique
-    public string? VerificationCode { get; set; }
-
     public AccountTier Tier { get; set; }
-    public string? RedditId { get; set; }
+    
+    public int? RedditAuthId { get; set; }
+    // Navigation property to account reddit auth properties
+    [JsonIgnore]
+    public AccountRedditAuth? RedditAuth { get; set; } 
+    
+    // Navigation property to account pending verifications
+    [JsonIgnore]
+    public List<AccountPendingVerification> PendingVerifications { get; set; } = [];
 
     // Navigation property to account instances
     [JsonIgnore]
@@ -38,6 +43,20 @@ public class Account : AccountProfile
         RedditHandle = null;
         PixelsPlaced = 0;
         CreationDate = creationDate;
-        UsesRedditAuthentication = false;
+    }
+
+    public Profile ToProfile()
+    {
+        return new Profile
+        {
+            Id = Id,
+            Username = Username,
+            DiscordHandle = DiscordHandle,
+            TwitterHandle = TwitterHandle,
+            RedditHandle = RedditHandle,
+            PixelsPlaced = PixelsPlaced,
+            CreationDate = CreationDate,
+            Badges = Badges.ToList()
+        };
     }
 }

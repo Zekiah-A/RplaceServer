@@ -1,6 +1,10 @@
 namespace HTTPOfficial.DataModel;
 
-public class AccountProfile
+/// <summary>
+/// Exists as a stopgap to prevent Account being directly cast to profile
+/// (which could yield a security risk if the contents are serialised).
+/// </summary>
+public abstract class ProfileBase
 {
     // Must be unique
     public int Id { get; set; }
@@ -12,7 +16,6 @@ public class AccountProfile
     public string? RedditHandle { get; set; }
     public int PixelsPlaced { get; set; }
     public DateTime CreationDate { get; set; }
-    public bool UsesRedditAuthentication { get; set; }
 
     // Navigation property to badges
     public List<Badge> Badges { get; set; } = [];

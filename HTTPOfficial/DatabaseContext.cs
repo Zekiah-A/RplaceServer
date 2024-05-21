@@ -7,7 +7,9 @@ public class DatabaseContext : DbContext
 {
     // Global auth server accounts
     public DbSet<Account> Accounts { get; set; } = null!;
-    
+    public DbSet<AccountPendingVerification> PendingVerifications { get; set; } = null!;
+    public DbSet<AccountRedditAuth> AccountRedditAuths { get; set; } = null!;
+
     // Federated canvas/instance accounts
     public DbSet<CanvasUser> CanvasUsers { get; set; } = null!;
     
@@ -24,19 +26,26 @@ public class DatabaseContext : DbContext
         // Primary keys
         modelBuilder.Entity<Account>()
             .HasKey(account => account.Id);
-        modelBuilder.Entity<Account>()
-            .HasKey(account => account.Id);
+
+        modelBuilder.Entity<AccountRedditAuth>()
+            .HasKey(verification => verification.Id);
+        
         modelBuilder.Entity<Post>()
             .HasKey(post => post.Id);
+        
         modelBuilder.Entity<Instance>()
             .HasKey(instance => instance.Id);
+        
         modelBuilder.Entity<Badge>()
             .HasKey(badge => badge.Id);
+        
         modelBuilder.Entity<CanvasUser>()
             .HasKey(user => user.Id);
+        
         modelBuilder.Entity<PostContent>()
             .HasKey(content => content.Id);
 
+        
         // Unique record properties
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Username)
@@ -47,27 +56,43 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Token)
             .IsUnique();
-        modelBuilder.Entity<Account>()
-            .HasIndex(unverifiedAccount => unverifiedAccount.VerificationCode)
+        
+        modelBuilder.Entity<AccountRedditAuth>()
+            .HasIndex(verification => verification.RedditId)
             .IsUnique();
+        
+        modelBuilder.Entity<AccountPendingVerification>()
+            .HasIndex(verification => verification.Code)
+            .IsUnique();
+
         modelBuilder.Entity<Instance>()
             .HasIndex(instance => instance.VanityName)
             .IsUnique();
+        
         modelBuilder.Entity<Post>()
             .HasIndex(post => post.ContentUploadKey)
             .IsUnique();
+        
         modelBuilder.Entity<CanvasUser>()
             .HasIndex(user => user.UserIntId)
             .IsUnique();
+        
         modelBuilder.Entity<PostContent>()
             .HasIndex(content => content.ContentKey)
             .IsUnique();
 
+        
+        // Relationships
         // Badges
         modelBuilder.Entity<Account>()
             .HasMany(account => account.Badges)
             .WithOne(badge => badge.Owner)
             .HasForeignKey(badge => badge.OwnerId);
+        // Reddit auth
+        modelBuilder.Entity<Account>()
+            .HasOne(account => account.RedditAuth)
+            .WithOne(redditAuth => redditAuth.Account)
+            .HasForeignKey<AccountRedditAuth>(redditAuth => redditAuth.AccountId);
         // Post auth accounts
         modelBuilder.Entity<Account>()
             .HasMany(account => account.Posts)
@@ -83,16 +108,19 @@ public class DatabaseContext : DbContext
             .HasMany(account => account.Instances)
             .WithOne(instance => instance.Owner)
             .HasForeignKey(instance => instance.OwnerId);
+            
         // Post contents
         modelBuilder.Entity<Post>()
             .HasMany(post => post.Contents)
             .WithOne(content => content.Post)
             .HasForeignKey(content => content.PostId);
+        
         // Instance
         modelBuilder.Entity<Instance>()
             .HasMany(instance => instance.Users)
             .WithOne(user => user.Instance)
             .HasForeignKey(user => user.InstanceId);
+        
         // Post canvas user accounts
         modelBuilder.Entity<CanvasUser>()
             .HasMany(user => user.Posts)

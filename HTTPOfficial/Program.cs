@@ -9,7 +9,6 @@ using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using WatsonWebsocket;
-using Timer = System.Timers.Timer;
 
 namespace HTTPOfficial;
 
@@ -45,7 +44,7 @@ internal static partial class Program
     ///accounts/{id}
     [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
     private static partial Regex AccountEndpointRegex();
-
+    
     public static async Task Main(string[] args)
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
@@ -55,13 +54,13 @@ internal static partial class Program
         using var factory = LoggerFactory.Create(builder => builder.AddConsole());
         logger = factory.CreateLogger("Program");
 
-        if (!File.Exists(configPath))
+        void CreateNewConfig()
         {
             // Create config
             logger.LogWarning("Could not find server config file, at {configPath}", configPath);
-            await using var configFile = File.OpenWrite(configPath);
             var defaultConfiguration = new Configuration
             {
+                Version = Configuration.CurrentVersion,
                 Port = 8080,
                 UseHttps = false,
                 CertPath = "PATH_TO_CA_CERT",
@@ -89,6 +88,7 @@ internal static partial class Program
                 PostLimitSeconds = 60,
                 SignupLimitSeconds = 60,
                 VerifyLimitSeconds = 2,
+                VerifyExpiryMinutes = 15,
                 Origin = "https://rplace.live",
                 SocketPort = 450,
                 AccountTierInstanceLimits = new Dictionary<AccountTier, int>
@@ -100,14 +100,18 @@ internal static partial class Program
                     { AccountTier.Administrator, 50 }
                 }
             };
-            await JsonSerializer.SerializeAsync(configFile, defaultConfiguration, new JsonSerializerOptions
+            var newConfigText = JsonSerializer.Serialize(defaultConfiguration, new JsonSerializerOptions
             {
                 WriteIndented = true,
                 IndentSize = 1,
                 IndentCharacter = '\t'
             });
-            await configFile.FlushAsync();
+            File.WriteAllText(configPath, newConfigText);
+        }
 
+        if (!File.Exists(configPath))
+        {
+            CreateNewConfig();
             logger.LogWarning("Config files recreated. Please check {currentDirectory} and run this program again.",
                 Directory.GetCurrentDirectory());
             Environment.Exit(0);
@@ -123,8 +127,18 @@ internal static partial class Program
             Directory.CreateDirectory(dataPath);
         }
 
-        config = await JsonSerializer.DeserializeAsync<Configuration>(File.OpenRead(configPath));
-
+        var configData = JsonSerializer.Deserialize<Configuration>(await File.ReadAllTextAsync(configPath));
+        if (configData is null || configData.Version < Configuration.CurrentVersion)
+        {
+            var oldConfigPath = configPath + ".old";
+            logger.LogWarning("Current config file is invalid or outdated, moving to {oldConfigDirectory}. Config files recreated. Cheeck {currentDirectory} and run this program again.",
+                oldConfigPath, Directory.GetCurrentDirectory());
+            File.Move(configPath, oldConfigPath);
+            CreateNewConfig();
+            Environment.Exit(0);
+        }
+        config = configData;
+        
         // Main server
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -216,7 +230,9 @@ internal static partial class Program
 
         async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)
         {
-            var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
+            throw new NotImplementedException();
+            // TODO: Reimplement
+            /*var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
             var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
@@ -229,7 +245,7 @@ internal static partial class Program
             }
 
             var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
-            return accountData;
+            return accountData;*/
         }
 
         async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
@@ -691,7 +707,10 @@ internal static partial class Program
                 */
             }
         };
-        wsServer.ClientDisconnected += (_, args) => { authorisedClients.Remove(args.Client); };
+        wsServer.ClientDisconnected += (_, args) =>
+        {
+            authorisedClients.Remove(args.Client);
+        };
 
         var serverShutdownToken = new CancellationTokenSource();
 
@@ -709,37 +728,7 @@ internal static partial class Program
             await serverShutdownToken.CancelAsync();
             Environment.Exit(1);
         };
-
-        // Delete accounts that have not verified within the valid timespan
-        var expiredAccountCodeTimer = new Timer(TimeSpan.FromMinutes(10))
-        {
-            Enabled = true,
-            AutoReset = true
-        };
-        expiredAccountCodeTimer.Elapsed += async (_, _) =>
-        {
-            // TODO: Reimplement
-            /*using var scope = app.Services.CreateScope();
-            var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-
-            foreach (var completion in emailAuthCompletions)
-            {
-                if (DateTime.Now - completion.Value.StartDate < TimeSpan.FromMinutes(10))
-                {
-                    continue;
-                }
-
-                emailAuthCompletions.Remove(completion.Key);
-                var account = await database.Accounts.FindAsync(completion.Key);
-                if (account is not null)
-                {
-                    database.Accounts.Remove(account);
-                }
-            }
-
-            await database.SaveChangesAsync();*/
-        };
-
+        
         ConfigureAccountEndpoints();
         ConfigurePostEndpoints();
 

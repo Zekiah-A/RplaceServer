@@ -4,6 +4,9 @@ namespace HTTPOfficial;
 
 public class Configuration
 {
+    public const int CurrentVersion = 1;
+
+    public int Version { get; set; }
     public int SocketPort { get; init; }
     public bool UseHttps { get; init; }
     public string? CertPath { get; init; }
@@ -22,6 +25,7 @@ public class Configuration
     public int PostLimitSeconds { get; init; }
     public int SignupLimitSeconds { get; init; }
     public int VerifyLimitSeconds { get; init; }
+    public int VerifyExpiryMinutes { get; init; }
     public string Origin { get; init; }
     public int Port { get; init; }
     public Dictionary<AccountTier, int> AccountTierInstanceLimits { get; init; }
