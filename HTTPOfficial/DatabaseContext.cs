@@ -26,9 +26,12 @@ public class DatabaseContext : DbContext
         // Primary keys
         modelBuilder.Entity<Account>()
             .HasKey(account => account.Id);
+        
+        modelBuilder.Entity<AccountPendingVerification>()
+            .HasKey(verification => verification.Id);
 
         modelBuilder.Entity<AccountRedditAuth>()
-            .HasKey(verification => verification.Id);
+            .HasKey(redditAuth => redditAuth.Id);
         
         modelBuilder.Entity<Post>()
             .HasKey(post => post.Id);

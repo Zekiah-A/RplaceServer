@@ -4,6 +4,7 @@ namespace HTTPOfficial.DataModel;
 
 public class AccountPendingVerification
 {
+    public int Id;
     public bool Initial { get; set; }
     public string Code { get; set; } = null!;
     public DateTime CreationDate { get; set; }
