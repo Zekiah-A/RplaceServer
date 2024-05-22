@@ -12,12 +12,14 @@ internal static partial class Program
         var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
         app.MapGet("/posts/since/{fromDate:datetime}", (DateTime fromDate, DatabaseContext database) =>
         {
-            return Results.Ok(database.Posts.Where(post => post.CreationDate > fromDate).Take(10));
+            return Results.Ok(database.Posts.Include(post => post.Contents)
+            	.Where(post => post.CreationDate > fromDate).Take(10));
         });
 
         app.MapGet("/posts/before/{beforeDate:datetime}", (DateTime beforeDate, DatabaseContext postsDb) =>
         {
-            return Results.Ok(postsDb.Posts.Where(post => post.CreationDate < beforeDate).Take(10));
+            return Results.Ok(postsDb.Posts.Include(post => post.Contents)
+            	.Where(post => post.CreationDate < beforeDate).Take(10));
         });
 
         app.MapGet("/posts/{id:int}", async (int id, DatabaseContext database) =>
@@ -27,7 +29,11 @@ internal static partial class Program
                 return Results.NotFound(
                     new ErrorResponse("Specified post does not exist", "posts.notFound"));
             }
-
+      		// Explicitly ensure that contents are fetched from navigation property
+		    database.Entry(post)
+        		.Collection(post => post.Contents)
+      			.Load();
+      		
             return Results.Ok(post);
         });
 

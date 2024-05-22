@@ -6,12 +6,13 @@ public class Post
 {
     public int Id { get; set; }
     public string Title { get; set; }
-    public string Description;
+    public string Description { get; set; }
     public int Upvotes { get; set; }
     public int Downvotes { get; set; }
     public DateTime CreationDate { get; set; }
     public bool HasSensitiveContent { get; set; }
 
+	// ContentUploadKey should never be exposed in the API - Handle carefully
     [JsonIgnore]
     public string? ContentUploadKey { get; set; }
 
