@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace HTTPOfficial.DataModel;
 
 public class PostContent
@@ -9,6 +11,7 @@ public class PostContent
 
     public int PostId { get; set; }
     // Navigation property to post
+	[JsonIgnore]
     public Post Post { get; set; } = null!;
 
     public PostContent() { }
