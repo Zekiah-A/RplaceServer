@@ -30,20 +30,6 @@ internal static partial class Program
 
     [GeneratedRegex(@"^(/ua/)?[A-Za-z0-9_-]+$")]
     private static partial Regex RedditHandleRegex();
-
-    [GeneratedRegex(@"^\w{4,16}$")]
-    private static partial Regex UsernameRegex();
-
-    [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
-    private static partial Regex EmailRegex();
-
-    // /accounts/{id}/delete
-    [GeneratedRegex(@"^\/accounts\/\d+\/delete\/*$")]
-    private static partial Regex AccountDeleteEndpointRegex();
-
-    ///accounts/{id}
-    [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
-    private static partial Regex AccountEndpointRegex();
     
     public static async Task Main(string[] args)
     {

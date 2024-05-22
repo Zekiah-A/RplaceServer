@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using MailKit.Net.Smtp;
@@ -14,6 +15,24 @@ namespace HTTPOfficial;
 
 internal static partial class Program
 {
+    [GeneratedRegex(@"^\w{4,16}$")]
+    private static partial Regex UsernameRegex();
+
+    [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
+    private static partial Regex EmailRegex();
+    
+    // /accounts/{id:int}/verify
+    [GeneratedRegex(@"^\/accounts\/\d+\/verify\/*$")]
+    private static partial Regex AccountVerifyEndpointRegex();
+
+    // /accounts/{id:int}/delete
+    [GeneratedRegex(@"^\/accounts\/\d+\/delete\/*$")]
+    private static partial Regex AccountDeleteEndpointRegex();
+
+    // /accounts/{id:int}
+    [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
+    private static partial Regex AccountEndpointRegex();
+
     private static void ConfigureAccountEndpoints()
     {
         var signupLimiter = new RateLimiter(TimeSpan.FromSeconds(config.SignupLimitSeconds));
@@ -108,13 +127,13 @@ internal static partial class Program
                 return Results.Problem(errorString);
             }
 
-            return Results.Ok();
+            return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
         });
 
-        app.MapPost("/accounts/create/verify", async ([FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
+        app.MapPost("/accounts/{id:int}/verify", async (int id, [FromBody] AccountVerifyRequest request, DatabaseContext database) =>
         {
             var verification = await database.PendingVerifications.FirstOrDefaultAsync(
-                verification => verification.Code == request.Code);
+                verification => verification.Code == request.Code && verification.Id == id);
             if (verification is null)
             {
                 return Results.NotFound(new ErrorResponse("Invalid code provided", "account.verify.invalidCode"));
@@ -149,43 +168,10 @@ internal static partial class Program
             await RunPostAuthentication(accountData, database);
             return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
         });
-
-        app.MapPost("/accounts/login/verify", async ([FromBody] AccountVerifyRequest request, HttpContext context, DatabaseContext database) =>
+        
+        app.MapPost("/accounts/login/token", async ([FromBody] AccountTokenRequest? tokenRequest, HttpContext context, DatabaseContext database) =>
         {
-            throw new NotImplementedException();
-
-            /*var address = context.Connection.RemoteIpAddress;
-            if (address is null)
-            {
-                return Results.Unauthorized();
-            }
-
-            if (await database.Accounts.FindAsync(id) is not { } account)
-            {
-                return Results.NotFound(new ErrorResponse("Specified account does not exist", "accounts.verify.notFound"));
-            }
-
-            if (!emailAuthCompletions.TryGetValue(id, out var completion))
-            {
-                return Results.NotFound(new ErrorResponse("Specified account has no pending verification code", "accounts.verify.noCompletion"));
-            }
-
-            if (completion.Address.ToString() != address.ToString() || completion.AuthCode != request.Code)
-            {
-                return Results.Unauthorized();
-            }
-
-            return Results.Ok(new LoginDetailsResponse(account.Id, account.Token));*/
-        });
-        app.UseWhen
-        (
-            context => context.Request.Path.StartsWithSegments("/account/login/verify"),
-            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
-        );
-
-        app.MapPost("/accounts/login/token", async ([FromBody] string? token, HttpContext context, DatabaseContext database) =>
-        {
-            token ??= context.Items["Token"]?.ToString();
+            var token = tokenRequest?.Token ?? context.Items["Token"]?.ToString();
             if (token is null)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -206,21 +192,39 @@ internal static partial class Program
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(account.Id, account.Token));
         });
+        app.UseWhen
+        (
+            context => AccountVerifyEndpointRegex().IsMatch(context.Request.Path),
+            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
+        );
 
         app.MapPost("/accounts/login/reddit", () =>
         {
             throw new NotImplementedException();
         });
 
-        app.MapGet("/accounts/{id:int}", async (int id, DatabaseContext database) =>
+        app.MapGet("/accounts/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
         {
+            var token = context.Items["Token"]?.ToString();
+            if (token is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
+                return;
+            }
+
             var account = await database.Accounts.FindAsync(id);
             if (account is null)
             {
-                return Results.NotFound(new ErrorResponse("Specified account does not exist", "account.notFound"));
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Specified account does not exist", "account.notFound"));
+                return;
             }
 
-            return Results.Ok(account);
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            await context.Response.WriteAsJsonAsync(account);
         });
         app.UseWhen
         (
@@ -228,18 +232,29 @@ internal static partial class Program
             appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
         );
 
-        app.MapDelete("/accounts/{id:int}/delete", async (int id, DatabaseContext database) =>
+        app.MapDelete("/accounts/{id:int}/delete", async (int id, HttpContext context, DatabaseContext database) =>
         {
+            var token = context.Items["Token"]?.ToString();
+            if (token is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
+                return;
+            }
+
             var profile = await database.Accounts.FindAsync(id);
             if (profile is null)
             {
-                return Results.NotFound(
-                    new ErrorResponse("Speficied account does not exist", "account.delete.notFound"));
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Specifcied account does not exist", "account.delete.notFound"));
+                return;
             }
 
             database.Accounts.Remove(profile);
             await database.SaveChangesAsync();
-            return Results.Ok();
+            context.Response.StatusCode = StatusCodes.Status200OK;
         });
         app.UseWhen
         (
@@ -271,12 +286,14 @@ internal static partial class Program
             using var scope = app.Services.CreateScope();
             var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
 
-            var pendingVerifications = await database.PendingVerifications.Where(
-                verification => DateTime.Now - verification.CreationDate > TimeSpan.FromMinutes(config.VerifyExpiryMinutes))
-                .ToListAsync();
-
-            foreach (var verification in pendingVerifications)
+            var pendingVerifications = database.PendingVerifications.AsAsyncEnumerable();
+            await foreach (var verification in pendingVerifications)
             {
+                if (DateTime.Now - verification.CreationDate < TimeSpan.FromMinutes(config.VerifyExpiryMinutes))
+                {
+                    continue;
+                }
+                
                 if (verification.Initial)
                 {
                     // Delete the account associated as well (assume it's a stranded a throwaway that can't be logged into again)
