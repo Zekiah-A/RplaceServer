@@ -133,7 +133,7 @@ internal static partial class Program
         app.MapPost("/accounts/{id:int}/verify", async (int id, [FromBody] AccountVerifyRequest request, DatabaseContext database) =>
         {
             var verification = await database.PendingVerifications.FirstOrDefaultAsync(
-                verification => verification.Code == request.Code && verification.Id == id);
+                verification => verification.Code == request.Code && verification.AccountId == id);
             if (verification is null)
             {
                 return Results.NotFound(new ErrorResponse("Invalid code provided", "account.verify.invalidCode"));
