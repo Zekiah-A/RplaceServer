@@ -8,6 +8,7 @@ public class Account : ProfileBase
     // Must be unique
     public string Token { get; set; } = null!;
     public AccountTier Tier { get; set; }
+    public bool Terminated { get; set; } = false;
     
     public int? RedditAuthId { get; set; }
     // Navigation property to account reddit auth properties

@@ -8,6 +8,7 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using MimeKit;
 using Timer = System.Timers.Timer;
 
@@ -159,7 +160,7 @@ internal static partial class Program
         {
             var accountData = await database.Accounts.FirstOrDefaultAsync(account =>
                 account.Email == request.Email && account.Username == request.Username);
-            if (accountData is null)
+            if (accountData is null || accountData.Terminated)
             {
                 return Results.NotFound(new ErrorResponse("Account with specified details does not exist",
                     "account.login.notFound"));
@@ -181,7 +182,7 @@ internal static partial class Program
             }
 
             var account = await database.Accounts.FirstOrDefaultAsync(account => account.Token == token);
-            if (account is null)
+            if (account is null || account.Terminated)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new ErrorResponse("Specified token was invalid",
@@ -242,17 +243,18 @@ internal static partial class Program
                     new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
                 return;
             }
-
-            var profile = await database.Accounts.FindAsync(id);
-            if (profile is null)
+            
+            // TODO: Research account deletion standards further
+            // Fully deleting the account record can cause a lot of DB issues if all relations are not handled,
+            // for now, all account data will simply be wiped (termination), but the record will remain
+            var success = await TerminateAccountData(id, database);
+            if (!success)
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Specifcied account does not exist", "account.delete.notFound"));
+                    new ErrorResponse("Specified account does not exist", "account.delete.notFound"));
                 return;
             }
-
-            database.Accounts.Remove(profile);
             await database.SaveChangesAsync();
             context.Response.StatusCode = StatusCodes.Status200OK;
         });
@@ -297,10 +299,10 @@ internal static partial class Program
                 if (verification.Initial)
                 {
                     // Delete the account associated as well (assume it's a stranded a throwaway that can't be logged into again)
-                    var accountData = await database.Accounts.FindAsync(verification.AccountId);
-                    if (accountData != null)
+                    var success = await TerminateAccountData(verification.AccountId, database);
+                    if (!success)
                     {
-                        database.Accounts.Remove(accountData);
+                        logger.LogError("Failed to terminate account ${AccountId}, which expired before verification", verification.AccountId);
                     }
                 }
                 
@@ -309,6 +311,23 @@ internal static partial class Program
             await database.SaveChangesAsync();
         };
 
+    }
+
+    private static async Task<bool> TerminateAccountData(int accountId, DatabaseContext database)
+    {
+        var accountData = await database.Accounts.FindAsync(accountId);
+        if (accountData is null)
+        {
+            return false;
+        }
+        accountData.Username = "Deleted Account";
+        accountData.Email = "";
+        accountData.Token = "";
+        accountData.TwitterHandle = null;
+        accountData.TwitterHandle = null;
+        accountData.TwitterHandle = null;
+        accountData.Terminated = true;
+        return true;
     }
 
     // ReSharper disable once SuggestBaseTypeForParameter
