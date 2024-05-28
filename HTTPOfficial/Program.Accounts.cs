@@ -263,7 +263,7 @@ internal static partial class Program
             context => AccountDeleteEndpointRegex().IsMatch(context.Request.Path),
             appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
         );
-
+        
         app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
         {
             var account = await database.Accounts.FindAsync(id);

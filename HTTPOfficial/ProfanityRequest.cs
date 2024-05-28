@@ -1,3 +1,3 @@
 namespace HTTPOfficial;
 
-public record ProfanityRequest(string message);
+public record ProfanityRequest(string Message);

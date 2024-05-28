@@ -717,6 +717,7 @@ internal static partial class Program
         
         ConfigureAccountEndpoints();
         ConfigurePostEndpoints();
+        ConfigureInstanceEndpoints();
 
         logger.LogInformation("Server listening on port {config}", config.SocketPort);
         wsServer.Logger = message => logger.LogInformation("{message}", message);

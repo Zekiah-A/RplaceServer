@@ -10,18 +10,46 @@ internal static partial class Program
     private static void ConfigurePostEndpoints()
     {
         var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
-        app.MapGet("/posts/since/{fromDate:datetime}", (DateTime fromDate, DatabaseContext database) =>
+        
+        app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
+            [FromQuery] int? fromUpvotes, [FromQuery] int? fromDownvotes, [FromQuery] int? authorId,
+            [FromQuery] string? keyword, [FromQuery] int limit, DatabaseContext database) =>
         {
-            return Results.Ok(database.Posts.Include(post => post.Contents)
-            	.Where(post => post.CreationDate > fromDate).Take(10));
-        });
+            var useLimit = Math.Clamp(limit, 1, 32);
+            var query = database.Posts.AsQueryable();
+            if (sinceDate.HasValue)
+            {
+                query = query.Where(post => post.CreationDate > sinceDate.Value);
+            }
+            if (beforeDate.HasValue)
+            {
+                query = query.Where(post => post.CreationDate < beforeDate.Value);
+            }
+            if (fromUpvotes.HasValue)
+            {
+                query = query.Where(post => post.Upvotes >= fromUpvotes.Value)
+                    .OrderByDescending(post => post.Upvotes);
+            }
+            if (fromDownvotes.HasValue)
+            {
+                query = query.Where(post => post.Downvotes >= fromDownvotes.Value)
+                    .OrderByDescending(post => post.Downvotes);
+            }
+            if (authorId.HasValue)
+            {
+                query = query.Where(post => post.AccountId == authorId);
+            }
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                query = query.Where(post => post.Title.Contains(keyword) || post.Description.Contains(keyword));
+            }
 
-        app.MapGet("/posts/before/{beforeDate:datetime}", (DateTime beforeDate, DatabaseContext postsDb) =>
-        {
-            return Results.Ok(postsDb.Posts.Include(post => post.Contents)
-            	.Where(post => post.CreationDate < beforeDate).Take(10));
+            var posts = query.Include(post => post.Contents)
+                .Take(useLimit)
+                .ToList();
+            return Results.Ok(new PostsResponse(posts.Count, posts));
         });
-
+        
         app.MapGet("/posts/{id:int}", async (int id, DatabaseContext database) =>
         {
             if (await database.Posts.FindAsync(id) is not { } post)
