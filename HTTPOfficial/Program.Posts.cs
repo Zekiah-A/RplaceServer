@@ -12,7 +12,7 @@ internal static partial class Program
         var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
         
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
-            [FromQuery] int? fromUpvotes, [FromQuery] int? fromDownvotes, [FromQuery] int? authorId,
+            [FromQuery] int? beforeUpvotes, [FromQuery] int? beforeDownvotes, [FromQuery] int? authorId,
             [FromQuery] string? keyword, [FromQuery] int limit, DatabaseContext database) =>
         {
             var useLimit = Math.Clamp(limit, 1, 32);
@@ -25,14 +25,14 @@ internal static partial class Program
             {
                 query = query.Where(post => post.CreationDate < beforeDate.Value);
             }
-            if (fromUpvotes.HasValue)
+            if (beforeUpvotes.HasValue)
             {
-                query = query.Where(post => post.Upvotes >= fromUpvotes.Value)
+                query = query.Where(post => post.Upvotes < fromUpvotes.Value)
                     .OrderByDescending(post => post.Upvotes);
             }
-            if (fromDownvotes.HasValue)
+            if (beforeDownvotes.HasValue)
             {
-                query = query.Where(post => post.Downvotes >= fromDownvotes.Value)
+                query = query.Where(post => post.Downvotes < fromDownvotes.Value)
                     .OrderByDescending(post => post.Downvotes);
             }
             if (authorId.HasValue)
