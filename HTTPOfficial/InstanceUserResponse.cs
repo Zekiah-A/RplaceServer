@@ -1,3 +1,3 @@
 namespace HTTPOfficial;
 
-public record InstanceUserResponse(int IntId, string ChatName, int LastJoined, int PixelsPlaced, int PlayTimeSeconds);
+public record InstanceUserResponse(int IntId, string ChatName, long LastJoined, int PixelsPlaced, int PlayTimeSeconds);

@@ -27,8 +27,8 @@ internal static partial class Program
             var instanceUser = await httpClient.GetFromJsonAsync<InstanceUserResponse>(endpointLocation, defaultJsonOptions);
             if (instanceUser is null)
             {
-                return Results.NotFound(new ErrorResponse("Error when communicating with this users host instance",
-                    "instances.users.instanceError"));
+                return Results.NotFound(new ErrorResponse("Specified user does not exist on their host instance",
+                    "instances.users.instanceUserNotFound"));
             }
 
             var instanceUserLastJoined = DateTimeOffset.FromUnixTimeMilliseconds(instanceUser.LastJoined).DateTime;
