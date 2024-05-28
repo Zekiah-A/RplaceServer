@@ -1,0 +1,44 @@
+{
+	"SocketPort": 450,
+	"UseHttps": false,
+	"CertPath": "PATH_TO_CA_CERT",
+	"KeyPath": "PATH_TO_CA_KEY",
+	"SmtpHost": "smtp.gmail.com",
+	"SmtpPort": 587,
+	"EmailUsername": "username@example.com",
+	"EmailPassword": "password",
+	"KnownWorkers": [],
+	"InstanceKey": "6c50eef1-4011-4fa4-b774-a0edc1d63fb6",
+	"DefaultInstances": [
+		{
+			"Id": 0,
+			"VanityName": "canvas1",
+			"ServerLocation": "server.rplace.live",
+			"UsesHttps": true,
+			"OwnerId": null
+		},
+		{
+			"Id": 0,
+			"VanityName": "placetest",
+			"ServerLocation": "server.rplace.live/testws",
+			"UsesHttps": true,
+			"OwnerId": null
+		}
+	],
+	"RedditAuthClientId": "MY_REDDIT_API_APPLICATION_CLIENT_ID",
+	"RedditAuthClientSecret": null,
+	"Logger": true,
+	"PostsFolder": "Posts",
+	"PostLimitSeconds": 60,
+	"SignupLimitSeconds": 60,
+	"VerifyLimitSeconds": 2,
+	"Origin": "https://rplace.live",
+	"Port": 8080,
+	"AccountTierInstanceLimits": {
+		"Free": 2,
+		"Bronze": 5,
+		"Silver": 10,
+		"Gold": 25,
+		"Administrator": 50
+	}
+}
