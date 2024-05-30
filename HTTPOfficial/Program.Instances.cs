@@ -22,7 +22,7 @@ internal static partial class Program
                     "instances.users.instanceNotFound"));
             }
 
-            var protocol = instance.UsesHttps ? "http://" : "https://";
+            var protocol = instance.UsesHttps ? "https://" : "http://";
             var endpointLocation = $"{protocol}{instance.ServerLocation}/users/{canvasUser.UserIntId}";
             InstanceUserResponse? instanceUser = null;
             try
