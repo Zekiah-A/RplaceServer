@@ -24,7 +24,15 @@ internal static partial class Program
 
             var protocol = instance.UsesHttps ? "http://" : "https://";
             var endpointLocation = $"{protocol}{instance.ServerLocation}/users/{canvasUser.UserIntId}";
-            var instanceUser = await httpClient.GetFromJsonAsync<InstanceUserResponse>(endpointLocation, defaultJsonOptions);
+            InstanceUserResponse? instanceUser = null;
+            try
+            {
+                instanceUser = await httpClient.GetFromJsonAsync<InstanceUserResponse>(endpointLocation, defaultJsonOptions);
+            }
+            catch(Exception exception)
+            {
+                logger.LogError("Failed to request user info from instance {endpointLocation}, {exception}", endpointLocation, exception);
+            }
             if (instanceUser is null)
             {
                 return Results.NotFound(new ErrorResponse("Specified user does not exist on their host instance",
