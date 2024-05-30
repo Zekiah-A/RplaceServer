@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using CensorCore;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.Mvc;
@@ -154,24 +155,24 @@ internal static partial class Program
             return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
         }).UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds));
 
-        app.MapGet("/posts/content/{postContentId:int}", async (int postContentId, DatabaseContext database) =>
+        app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, DatabaseContext database) =>
         {
             if (await database.PostContents.FindAsync(postContentId) is not { } postContent)
             {
-                return Results.NotFound(new ErrorResponse("Speficied post content could not be found",  "posts.content.contentNotFound"));
+                return Results.NotFound(new ErrorResponse("Specified post content could not be found",  "posts.content.contentNotFound"));
             }
 
             var contentPath = Path.Join(config.PostsFolder, "Content", postContent.ContentKey);
             if (!File.Exists(contentPath))
             {
-                return Results.NotFound(new ErrorResponse("Speficied post content could not be found",  "posts.content.contentNotFound"));
+                return Results.NotFound(new ErrorResponse("Specified post content could not be found",  "posts.content.contentNotFound"));
             }
 
             var stream = File.OpenRead(contentPath);
             return Results.File(stream, postContent.ContentType, postContent.ContentKey);
         });
 
-        app.MapPost("/posts/{id:int}/content", async (int id, [FromForm] PostContentRequest request, HttpContext context, DatabaseContext database) =>
+        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, DatabaseContext database) =>
         {
             var address = context.Connection.RemoteIpAddress;
             if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey) is not { } pendingPost)
@@ -186,10 +187,10 @@ internal static partial class Program
             // Limit stream length to 5MB to prevent excessively large uploads
             if (context.Request.ContentLength > 5_000_000)
             {
-                return Results.UnprocessableEntity(
-                    new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)", "posts.content.tooLarge"));
+                return Results.UnprocessableEntity(new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)",
+                    "posts.content.tooLarge"));
             }
-
+            
             // Save data to CDN folder & create content key
             var contentPath = Path.Join(config.PostsFolder, "Content");
             if (!Directory.Exists(contentPath))
@@ -206,16 +207,55 @@ internal static partial class Program
             };
             if (extension is null)
             {
-                logger.LogInformation($"Client {address} denied content upload for invalid content type.");
+                logger.LogInformation("Client {address} denied content upload for invalid content type.", address);
                 return Results.UnprocessableEntity(
                     new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.invalidType"));
             }
             var contentKey = $"{pendingPost.Id}_{Guid.NewGuid().ToString()}{extension}";
+            
+            // Stream gymnastics to get the data into a file, and a byte array for the AI model
+            await using var memoryStream = new MemoryStream();
+            await request.File.CopyToAsync(memoryStream);
+            await memoryStream.FlushAsync();
+            
+            // Content filters
+            try
+            {
+                var result = await nudeNetAiService.RunModel(memoryStream.ToArray());
+                if (result is null)
+                {
+                    logger.LogWarning("Error running CensorCore model on post content {contentKey}, result was null",
+                        contentKey);
+                }
+                else
+                {
+                    if (result.Results.Count > 0)
+                    {
+                        pendingPost.HasSensitiveContent = true;
+                    }
+
+                    var session = result.Session;
+                    if (session is not null)
+                    {
+                        logger.LogTrace("Ran CensorCore on post content {contentKey}, {Image} {Tensor} {Model}",
+                            contentKey, session.ImageLoadTime, session.TensorLoadTime, session.ModelRunTime );
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                logger.LogError("Error running CensorCore model on post content {contentKey}, {exception}",
+                    contentKey, exception);
+            }
+            
+            // Save to file
+            memoryStream.Seek(0, SeekOrigin.Begin);
             await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
             fileStream.Seek(0, SeekOrigin.Begin);
             fileStream.SetLength(0);
-            await request.File.CopyToAsync(fileStream);
-
+            await memoryStream.CopyToAsync(fileStream);
+            await memoryStream.FlushAsync();
+            
             var postContent = new PostContent(contentKey, request.File.ContentType, id);
             await database.PostContents.AddAsync(postContent);
             await database.SaveChangesAsync();

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CensorCore;
 using DataProto;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
@@ -24,6 +25,7 @@ internal static partial class Program
     private static ILogger logger;
     private static HttpClient httpClient;
     private static JsonSerializerOptions defaultJsonOptions;
+    private static AIService nudeNetAiService;
 
     [GeneratedRegex(@"^.{3,32}#[0-9]{4}$")]
     private static partial Regex TwitterHandleRegex();
@@ -35,7 +37,6 @@ internal static partial class Program
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
         var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
-        var dataPath = Path.Combine(Directory.GetCurrentDirectory(), "SaveData");
 
         using var factory = LoggerFactory.Create(builder => builder.AddConsole());
         logger = factory.CreateLogger("Program");
@@ -102,17 +103,11 @@ internal static partial class Program
                 Directory.GetCurrentDirectory());
             Environment.Exit(0);
         }
-
         if (!Directory.Exists(instancesPath))
         {
             Directory.CreateDirectory(instancesPath);
         }
-
-        if (!Directory.Exists(dataPath))
-        {
-            Directory.CreateDirectory(dataPath);
-        }
-
+        
         var configData = JsonSerializer.Deserialize<Configuration>(await File.ReadAllTextAsync(configPath));
         if (configData is null || configData.Version < Configuration.CurrentVersion)
         {
@@ -212,7 +207,16 @@ internal static partial class Program
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true
         };
-
+        
+        // Sensitive content detection with NudeNet / CensorCore
+        const string modelName = "detector_v2_default_checkpoint.onnx";
+        var modelPath = Path.Combine("Resources/", modelName);
+        var modelBytes = await File.ReadAllBytesAsync(modelPath);
+        var imgSharp = new ImageSharpHandler(2048, 2048); // Max image size
+        var handler = new BodyAreaImageHandler(imgSharp, OptimizationMode.Normal);
+        nudeNetAiService = AIService.Create(modelBytes, handler, false);
+        
+        // Default canvas instances
         await InsertDefaultInstancesAsync();
 
         async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)

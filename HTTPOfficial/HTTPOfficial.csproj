@@ -8,6 +8,7 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\CensorCore\src\CensorCore\CensorCore.csproj" />
     <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
     <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
   </ItemGroup>
@@ -36,5 +37,11 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Resource>
     <None Remove="email_codes.txt" />
+    <None Update="Resources\NudeNetBest.onnx">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Resources\" />
   </ItemGroup>
 </Project>
