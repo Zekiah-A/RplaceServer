@@ -342,8 +342,8 @@ internal static partial class Program
             logPrefix, linkResponse.StatusCode, await linkResponse.Content.ReadAsStringAsync());
         return null;
     }
-    
-    static string CensorBannedUrls(string text)
+
+    private static string CensorBannedUrls(string text)
     {
         return BannedUrlsRegex().Replace(text, match => 
             {
