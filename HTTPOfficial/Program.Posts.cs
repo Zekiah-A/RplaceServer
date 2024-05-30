@@ -10,9 +10,19 @@ namespace HTTPOfficial;
 
 internal static partial class Program
 {
+    // /posts/upload
     [GeneratedRegex(@"^\/posts\/upload\/*$")]
-    public static partial Regex PostUploadEndpointRegex();
+    private static partial Regex PostUploadEndpointRegex();
     
+    [GeneratedRegex(@"https?:\/\/(\w+\.)+\w{2,15}(\/\S*)?|(\w+\.)+\w{2,15}\/\S*|(\w+\.)+(tk|ga|gg|gq|cf|ml|fun|xxx|webcam|sexy?|tube|cam|p[o]rn|adult|com|net|org|online|ru|co|info|link)")]
+    private static partial Regex BannedUrlsRegex();
+
+    private static readonly HashSet<string> PostContentAllowedUrls =
+    [
+        "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
+        "pxls.space", "reddit.com", "discord.com", "x.com", "youtube.com", "t.me"
+    ];
+
     private static void ConfigurePostEndpoints()
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
@@ -137,6 +147,10 @@ internal static partial class Program
             {
                 return Results.BadRequest(new ErrorResponse("No username or account provided", "post.upload.noUsernameOrAccount"));
             }
+            
+            // Spam filtering
+            newPost.Title = CensorBannedUrls(newPost.Title);
+            newPost.Description = CensorBannedUrls(newPost.Description);
             
             // Automatic sensitive content detection - (Thanks to https://profanity.dev)
             if (await ProbablyHasProfanity(newPost.Title) || await ProbablyHasProfanity(newPost.Description))
@@ -327,5 +341,15 @@ internal static partial class Program
         logger.LogInformation("{logPrefix} Server denied linkage request ({statusCode} {content})",
             logPrefix, linkResponse.StatusCode, await linkResponse.Content.ReadAsStringAsync());
         return null;
+    }
+    
+    static string CensorBannedUrls(string text)
+    {
+        return BannedUrlsRegex().Replace(text, match => 
+            {
+                var url = match.Value.Replace("https://", "").Replace("http://", "").Split('/')[0];
+                return PostContentAllowedUrls.Contains(url) ? match.Value : new string('*', match.Length);
+            })
+            .Trim();
     }
 }
