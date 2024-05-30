@@ -22,6 +22,10 @@ internal static partial class Program
     [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
     private static partial Regex EmailRegex();
     
+    // /accounts/create
+    [GeneratedRegex(@"^\/accounts\/create\/*$")]
+    private static partial Regex AccountCreateEndpointRegex();
+    
     // /accounts/{id:int}/verify
     [GeneratedRegex(@"^\/accounts\/\d+\/verify\/*$")]
     private static partial Regex AccountVerifyEndpointRegex();
@@ -34,21 +38,17 @@ internal static partial class Program
     [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
     private static partial Regex AccountEndpointRegex();
 
+    [GeneratedRegex(@"^\/account\/login\/token")]
+    private static partial Regex AccountLoginTokenRegex();
+
     private static void ConfigureAccountEndpoints()
     {
-        var signupLimiter = new RateLimiter(TimeSpan.FromSeconds(config.SignupLimitSeconds));
-
         // Email and trusted domains
         var emailAttributes = new EmailAddressAttribute();
         var trustedEmailDomains = ReadTxtListFile("trusted_domains.txt");
 
         app.MapPost("/accounts/create", async ([FromBody] EmailUsernameRequest request, HttpContext context, DatabaseContext database) =>
         {
-            if (context.Connection.RemoteIpAddress is not { } ipAddress || !signupLimiter.IsAuthorised(ipAddress))
-            {
-                return Results.Unauthorized();
-            }
-
             if (request.Username.Length is < 4 or > 32 || !UsernameRegex().IsMatch(request.Username))
             {
                 return Results.BadRequest(new ErrorResponse("Invalid username", "account.create.invalidUsername"));
@@ -129,7 +129,7 @@ internal static partial class Program
             }
 
             return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
-        });
+        }).UseMiddleware<RateLimiterMiddleware>(app, AccountCreateEndpointRegex, TimeSpan.FromSeconds(config.SignupLimitSeconds));
 
         app.MapPost("/accounts/{id:int}/verify", async (int id, [FromBody] AccountVerifyRequest request, DatabaseContext database) =>
         {
@@ -139,22 +139,20 @@ internal static partial class Program
             {
                 return Results.NotFound(new ErrorResponse("Invalid code provided", "account.verify.invalidCode"));
             }
+
             database.PendingVerifications.Remove(verification);
             await database.SaveChangesAsync();
 
             var accountData = await database.Accounts.FindAsync(verification.AccountId);
             if (accountData is null)
             {
-                return Results.NotFound(new ErrorResponse("Account for given code not found", "account.verify.notFound"));
+                return Results.NotFound(new ErrorResponse("Account for given code not found",
+                    "account.verify.notFound"));
             }
+
             await RunPostAuthentication(accountData, database);
             return Results.Ok(new LoginDetailsResponse(accountData.Id, accountData.Token));
-        });
-        app.UseWhen
-        (
-            context => context.Request.Path.StartsWithSegments("/account/login/verify"),
-            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
-        );
+        }).UseMiddleware<TokenAuthMiddleware>(app, AccountVerifyEndpointRegex);
 
         app.MapPost("/accounts/login", async ([FromBody] EmailUsernameRequest request, DatabaseContext database) =>
         {
@@ -192,13 +190,8 @@ internal static partial class Program
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(account.Id, account.Token));
-        });
-        app.UseWhen
-        (
-            context => AccountVerifyEndpointRegex().IsMatch(context.Request.Path),
-            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
-        );
-
+        }).UseMiddleware<TokenAuthMiddleware>(app, AccountLoginTokenRegex);
+        
         app.MapPost("/accounts/login/reddit", () =>
         {
             throw new NotImplementedException();
@@ -226,12 +219,7 @@ internal static partial class Program
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(account);
-        });
-        app.UseWhen
-        (
-            context => AccountEndpointRegex().IsMatch(context.Request.Path),
-            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
-        );
+        }).UseMiddleware<TokenAuthMiddleware>(app, AccountEndpointRegex);
 
         app.MapDelete("/accounts/{id:int}/delete", async (int id, HttpContext context, DatabaseContext database) =>
         {
@@ -243,7 +231,7 @@ internal static partial class Program
                     new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
                 return;
             }
-            
+
             // TODO: Research account deletion standards further
             // Fully deleting the account record can cause a lot of DB issues if all relations are not handled,
             // for now, all account data will simply be wiped (termination), but the record will remain
@@ -255,14 +243,10 @@ internal static partial class Program
                     new ErrorResponse("Specified account does not exist", "account.delete.notFound"));
                 return;
             }
+
             await database.SaveChangesAsync();
             context.Response.StatusCode = StatusCodes.Status200OK;
-        });
-        app.UseWhen
-        (
-            context => AccountDeleteEndpointRegex().IsMatch(context.Request.Path),
-            appBuilder => appBuilder.UseMiddleware<TokenAuthMiddleware>()
-        );
+        }).UseMiddleware<TokenAuthMiddleware>(app, AccountDeleteEndpointRegex);
         
         app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
         {

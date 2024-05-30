@@ -1,16 +1,19 @@
+using System.Text.RegularExpressions;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MediaTypeHeaderValue = System.Net.Http.Headers.MediaTypeHeaderValue;
 
 namespace HTTPOfficial;
 
 internal static partial class Program
 {
+    [GeneratedRegex(@"^\/posts\/upload\/*$")]
+    public static partial Regex PostUploadEndpointRegex();
+    
     private static void ConfigurePostEndpoints()
     {
-        var postLimiter = new RateLimiter(TimeSpan.FromSeconds(config.PostLimitSeconds));
-        
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
             [FromQuery] int? beforeUpvotes, [FromQuery] int? beforeDownvotes, [FromQuery] int? authorId,
             [FromQuery] string? keyword, [FromQuery] int limit, DatabaseContext database) =>
@@ -27,12 +30,12 @@ internal static partial class Program
             }
             if (beforeUpvotes.HasValue)
             {
-                query = query.Where(post => post.Upvotes < fromUpvotes.Value)
+                query = query.Where(post => post.Upvotes < beforeUpvotes.Value)
                     .OrderByDescending(post => post.Upvotes);
             }
             if (beforeDownvotes.HasValue)
             {
-                query = query.Where(post => post.Downvotes < fromDownvotes.Value)
+                query = query.Where(post => post.Downvotes < beforeDownvotes.Value)
                     .OrderByDescending(post => post.Downvotes);
             }
             if (authorId.HasValue)
@@ -67,11 +70,6 @@ internal static partial class Program
 
         app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, DatabaseContext database) =>
         {
-            var address = context.Connection.RemoteIpAddress;
-            if (address is null || !postLimiter.IsAuthorised(address))
-            {
-                return Results.Unauthorized();
-            }
             if (submission.Title.Length is < 1 or > 64)
             {
                 return Results.BadRequest(
@@ -154,7 +152,7 @@ internal static partial class Program
             await database.SaveChangesAsync();
 
             return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
-        });
+        }).UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds));
 
         app.MapGet("/posts/content/{postContentId:int}", async (int postContentId, DatabaseContext database) =>
         {
@@ -230,11 +228,11 @@ internal static partial class Program
     private static async Task<bool> ProbablyHasProfanity(string text)
     {
         const string logPrefix = "Failed to query profanity API:";
-        
         try
         {
-            var result = await httpClient.PostAsJsonAsync("https://vector.profanity.dev",
-                new ProfanityRequest(text), defaultJsonOptions);
+            var content = JsonContent.Create(new { Message = text }, options: defaultJsonOptions);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            var result = await httpClient.PostAsync("https://vector.profanity.dev", content);
             if (!result.IsSuccessStatusCode)
             {
                 logger.LogError("{logPrefix} Status {statusCode} received", logPrefix, result.StatusCode);

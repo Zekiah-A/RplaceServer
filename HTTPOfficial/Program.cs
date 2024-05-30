@@ -209,7 +209,8 @@ internal static partial class Program
         };
         defaultJsonOptions = new JsonSerializerOptions
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
         };
 
         await InsertDefaultInstancesAsync();
@@ -718,7 +719,7 @@ internal static partial class Program
         ConfigureAccountEndpoints();
         ConfigurePostEndpoints();
         ConfigureInstanceEndpoints();
-
+        
         logger.LogInformation("Server listening on port {config}", config.SocketPort);
         wsServer.Logger = message => logger.LogInformation("{message}", message);
         await Task.WhenAll(app.RunAsync(), wsServer.StartAsync(serverShutdownToken.Token));
