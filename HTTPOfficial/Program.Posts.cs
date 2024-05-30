@@ -96,7 +96,7 @@ internal static partial class Program
             {
                 Upvotes = 0,
                 Downvotes = 0,
-                CreationDate = DateTime.Now,
+                CreationDate = DateTime.Now.ToUniversalTime(),
             };
 
             var postAccount = submission.AccountId is not null
