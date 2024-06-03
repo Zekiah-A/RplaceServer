@@ -26,28 +26,38 @@ internal static partial class Program
     private static void ConfigurePostEndpoints()
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
-            [FromQuery] int? beforeUpvotes, [FromQuery] int? beforeDownvotes, [FromQuery] int? authorId,
-            [FromQuery] string? keyword, [FromQuery] int limit, DatabaseContext database) =>
+            [FromQuery] int? beforeUpvotes, [FromQuery] int? sinceUpvotes, [FromQuery] int? beforeDownvotes,
+            [FromQuery] int? sinceDownvotes, [FromQuery] int? authorId, [FromQuery] string? keyword,
+            [FromQuery] int limit, DatabaseContext database) =>
         {
             var useLimit = Math.Clamp(limit, 1, 32);
             var query = database.Posts.AsQueryable();
+            if (beforeDate.HasValue)
+            {
+                query = query.Where(post => post.CreationDate < beforeDate.Value)
+                    .OrderByDescending(post => post.CreationDate);
+            }
             if (sinceDate.HasValue)
             {
                 query = query.Where(post => post.CreationDate > sinceDate.Value);
-            }
-            if (beforeDate.HasValue)
-            {
-                query = query.Where(post => post.CreationDate < beforeDate.Value);
             }
             if (beforeUpvotes.HasValue)
             {
                 query = query.Where(post => post.Upvotes < beforeUpvotes.Value)
                     .OrderByDescending(post => post.Upvotes);
             }
+            if (sinceUpvotes.HasValue)
+            {
+                query = query.Where(post => post.Upvotes > beforeUpvotes.Value);
+            }
             if (beforeDownvotes.HasValue)
             {
                 query = query.Where(post => post.Downvotes < beforeDownvotes.Value)
                     .OrderByDescending(post => post.Downvotes);
+            }
+            if (sinceDownvotes.HasValue)
+            {
+                query = query.Where(post => post.Downvotes > beforeDownvotes.Value);
             }
             if (authorId.HasValue)
             {
