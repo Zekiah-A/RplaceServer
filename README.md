@@ -15,7 +15,7 @@ The first time you run the server, it should create a configuration, edit this i
 ### Running from source:
 _To run from source, you need the latest dotnet version and git installed on your system._
 
-Clone the repository with `git clone --recursive https://github.com/Zekiah-A/RplaceServer/` to include all submodules.
+Clone the repository with `git lfs clone --recursive https://github.com/Zekiah-A/RplaceServer/` to include all submodules.
 
 Once cloned, enter the root RplaceServer directory, with `cd RplaceServer` and ensure all submodules are updated with `git submodule update --remote`
 
@@ -86,9 +86,6 @@ Canvas:
       canvas   The canvas width,  Palette colours,     Final length of
       bytes    4 byte Uint32.     Uint32 array.        the added metadata.
     ```
-
-Chat:
- - There are two types of chat packets, live chat and place chat.
 
 ## Notes:
  - **[Known bug]** If you are facing issues with enabling TLS/SSL on the socket server, you can use a TlS/SSL proxy, such as NGINX to easily enable HTTPS functionality on the non-https server.
