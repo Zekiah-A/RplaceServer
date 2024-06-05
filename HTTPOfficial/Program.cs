@@ -132,7 +132,10 @@ internal static partial class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
-        builder.Services.AddDbContext<DatabaseContext>(options => { options.UseSqlite("Data Source=Server.db"); });
+        builder.Services.AddDbContext<DatabaseContext>(options =>
+        {
+            options.UseSqlite("Data Source=Server.db");
+        });
 
         builder.Services.ConfigureHttpJsonOptions(options =>
         {

@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using CensorCore;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.Mvc;
@@ -65,7 +64,9 @@ internal static partial class Program
             }
             if (!string.IsNullOrEmpty(keyword))
             {
-                query = query.Where(post => post.Title.Contains(keyword) || post.Description.Contains(keyword));
+                var searchKeyword = keyword.Trim().ToLower();
+                query = query.Where(post => EF.Functions.Like(post.Title, $"%{searchKeyword}%")
+                    || EF.Functions.Like(post.Description, $"%{searchKeyword}%"));
             }
 
             var posts = query.Include(post => post.Contents)
