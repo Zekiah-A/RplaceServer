@@ -5,6 +5,7 @@ namespace RplaceServer.Events;
 
 public sealed class ChatMessageEventArgs : EventArgs
 {
+    public ServerInstance Instance { get; }
     public ClientMetadata Player { get; }
     public string Message { get; }
     public string Channel { get; }
@@ -17,8 +18,9 @@ public sealed class ChatMessageEventArgs : EventArgs
 
 
     //Give them the socket client instance, chat name, channel, message, message type (if canvas chat) + pos
-    public ChatMessageEventArgs(ClientMetadata player, string message, string channel, string name, ChatMessageType type, byte[] packet, int? x, int? y, EventInhibitor inhibitor)
+    public ChatMessageEventArgs(ServerInstance instance, ClientMetadata player, string message, string channel, string name, ChatMessageType type, byte[] packet, int? x, int? y, EventInhibitor inhibitor)
     {
+        Instance = instance;
         Player = player;
         Message = message;
         Channel = channel;

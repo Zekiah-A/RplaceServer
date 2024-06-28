@@ -7,6 +7,8 @@ public class Instance
     public int Id { get; set; }
     public string? VanityName { get; set; }
     public string ServerLocation { get; set; }
+    public bool Legacy { get; set;}
+    public string FileServerLocation { get; set; }
     public bool UsesHttps { get; set; }
 
     public int? OwnerId { get; set; }

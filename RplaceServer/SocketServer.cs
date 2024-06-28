@@ -299,7 +299,7 @@ public sealed partial class SocketServer
         app.SendAsync(args.Client, canvasInfo.ToArray());
         
         DistributePlayerCount();
-        PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(args.Client));
+        PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(instance, args.Client));
     }
     
     private void MessageReceived(object? sender, MessageReceivedEventArgs args)
@@ -346,7 +346,7 @@ public sealed partial class SocketServer
                 PixelPlacementReceived?.Invoke
                 (
                     this,
-                    new PixelPlacementEventArgs(colour, (index % gameData.BoardWidth),
+                    new PixelPlacementEventArgs(instance, colour, (index % gameData.BoardWidth),
                         index / gameData.BoardHeight, index, args.Client, data.ToArray(), inhibitor)
                 );
 
@@ -421,7 +421,7 @@ public sealed partial class SocketServer
                 ChatMessageReceived?.Invoke
                 (
                     this, 
-                    new ChatMessageEventArgs(args.Client, message, channel, name, type, 
+                    new ChatMessageEventArgs(instance, args.Client, message, channel, name, type, 
                         data.ToArray(), x is not null ? int.Parse(x) : null, y is not null ? int.Parse(y) : null, inhibitor)
                 );
 
@@ -525,7 +525,7 @@ public sealed partial class SocketServer
         instance.PlayerCount--;
         DistributePlayerCount();
         
-        PlayerDisconnected?.Invoke(this, new PlayerDisconnectedEventArgs(args.Client));
+        PlayerDisconnected?.Invoke(this, new PlayerDisconnectedEventArgs(instance, args.Client));
     }
 
     /// <summary>

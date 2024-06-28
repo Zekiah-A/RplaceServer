@@ -14,6 +14,7 @@ public interface IStorageConfiguration
     public bool UseDatabase { get; set; }
     // Seconds
     public int TimelapseLimitPeriodS { get; set; }
+    public bool TimelapseEnabled { get; set; }
     // Will contain live canvas save and canvas backups
     public string CanvasFolder { get; set; }
     public bool CreateBackups { get; set; }
@@ -29,5 +30,6 @@ public class ConfigureStorageOptions : IStorageConfiguration
     public string CanvasFolder { get; set; } = "Canvases";
     public bool UseDatabase { get; set; } = true;
     public int TimelapseLimitPeriodS { get; set; } = 900;
+    public bool TimelapseEnabled { get; set; } = false;
     public bool CreateBackups { get; set; } = true;
 }

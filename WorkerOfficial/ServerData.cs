@@ -1,8 +1,15 @@
 namespace WorkerOfficial;
 
-public record ServerData(int Id, string? VanityName, int SocketPort, int WebPort)
+public class ServerData
 {
-    public string? VanityName = VanityName;
-    public int SocketPort = SocketPort;
-    public int WebPort = WebPort;
+    public int Id { get; init; }
+    public int SocketPort;
+    public int WebPort;
+
+    public ServerData(int id, int socketPort, int webPort)
+    {
+        Id = id;
+        SocketPort = socketPort;
+        WebPort = webPort;
+    }
 }

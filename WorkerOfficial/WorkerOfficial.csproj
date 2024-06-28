@@ -8,6 +8,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\AuthWorkerShared\AuthWorkerShared.csproj" />
+      <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
+      <ProjectReference Include="..\HTTPOfficial\HTTPOfficial.csproj" />
       <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
     </ItemGroup>
 

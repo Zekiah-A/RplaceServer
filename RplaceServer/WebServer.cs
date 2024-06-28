@@ -145,8 +145,13 @@ public sealed class WebServer
         
         app.MapPost("/timelapse", async (TimelapseInformation timelapseInfo, HttpContext context) =>
         {
-            var address = context.Connection.RemoteIpAddress;
+            if (!gameData.TimelapseEnabled)
+            {
+                Logger?.Invoke($"Timelapse generation is disabled on this instance");
+                return Results.Unauthorized();
+            }
             
+            var address = context.Connection.RemoteIpAddress;
             if (address is null || !timelapseLimiter.IsAuthorised(address))
             {
                 Logger?.Invoke($"Timelapse generation rejected from client {address} due to exceeding rate limit");
@@ -213,7 +218,7 @@ public sealed class WebServer
         backupsCount++;
         backupsSize += boardData.Length;
 
-        CanvasBackupCreated?.Invoke(this, new CanvasBackupCreatedEventArgs(backupName, DateTime.Now, boardPath));
+        CanvasBackupCreated?.Invoke(this, new CanvasBackupCreatedEventArgs(instance, backupName, DateTime.Now, boardPath));
     }
 
     public async Task StopAsync()

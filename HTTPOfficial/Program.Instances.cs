@@ -7,6 +7,18 @@ internal static partial class Program
 {
     private static void ConfigureInstanceEndpoints()
     {
+        app.MapGet("/instances/vanity/{vanityName}", async (string vanityName, DatabaseContext database) =>
+        {
+            var instance = await database.Instances.FirstOrDefaultAsync(instance => instance.VanityName == vanityName);
+            if (instance is null)
+            {
+                return Results.NotFound(new ErrorResponse("Specified canvas instance does not exist",
+                    "instances.vanity.notFound"));
+            }
+
+            return Results.Ok(instance);
+        });
+        
         app.MapGet("/instances/users/{id:int}", async (int id, DatabaseContext database) =>
         {
             var canvasUser = await database.CanvasUsers.FindAsync(id);
@@ -43,6 +55,18 @@ internal static partial class Program
             var canvasUserResponse = new CanvasUserResponse(canvasUser.Id, canvasUser.UserIntId, canvasUser.InstanceId,
                 canvasUser.AccountId, instanceUser.ChatName, instanceUserLastJoined, instanceUser.PixelsPlaced, instanceUser.PlayTimeSeconds);
             return Results.Ok(canvasUserResponse);
+        });
+        
+        app.MapGet("/instances/overlays/{id:int}", async (int id, DatabaseContext database) =>
+        {
+            // TODO: Query canvas server for their list of overlays
+            throw new NotImplementedException();
+        });
+
+        app.MapGet("/instances/{instanceId:int}/overlays", async (int instanceId, int id, DatabaseContext database) =>
+        {
+            // TODO: Query canvas server for their list of overlays
+            throw new NotImplementedException();
         });
     }
 }

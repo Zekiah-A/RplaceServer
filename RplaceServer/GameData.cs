@@ -32,6 +32,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     public string SaveDataFolder { get; set;  }
     public bool UseDatabase { get; set; }
     public int TimelapseLimitPeriodS { get; set; }
+    public bool TimelapseEnabled { get; set; }
     public string CanvasFolder { get; set; }
     public bool CreateBackups { get; set; }
 
@@ -92,6 +93,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
         CanvasFolder = options.CanvasFolder;
         UseDatabase = options.UseDatabase;
         TimelapseLimitPeriodS = options.TimelapseLimitPeriodS;
+        TimelapseEnabled = options.TimelapseEnabled;
         CreateBackups = options.CreateBackups;
         return this;
     }

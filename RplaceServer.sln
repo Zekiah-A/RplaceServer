@@ -16,6 +16,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZCaptcha", "ZCaptcha\ZCaptc
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CensorCore", "CensorCore\src\CensorCore\CensorCore.csproj", "{3B7315A5-D763-41FD-92E5-4A1CDC44780A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AuthWorkerShared", "AuthWorkerShared\AuthWorkerShared.csproj", "{3F42776F-B5FE-4D5E-BD56-95D28CD7A234}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -54,5 +56,9 @@ Global
 		{3B7315A5-D763-41FD-92E5-4A1CDC44780A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3B7315A5-D763-41FD-92E5-4A1CDC44780A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3B7315A5-D763-41FD-92E5-4A1CDC44780A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3F42776F-B5FE-4D5E-BD56-95D28CD7A234}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F42776F-B5FE-4D5E-BD56-95D28CD7A234}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F42776F-B5FE-4D5E-BD56-95D28CD7A234}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3F42776F-B5FE-4D5E-BD56-95D28CD7A234}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

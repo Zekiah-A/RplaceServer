@@ -8,6 +8,7 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AuthWorkerShared\AuthWorkerShared.csproj" />
     <ProjectReference Include="..\CensorCore\src\CensorCore\CensorCore.csproj" />
     <ProjectReference Include="..\DataProto\DataProto\DataProto.csproj" />
     <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />

@@ -4,10 +4,12 @@ namespace RplaceServer.Events;
 
 public sealed class PlayerDisconnectedEventArgs : EventArgs
 {
+    public ServerInstance Instance { get; }
     public ClientMetadata Player { get; }
     
-    public PlayerDisconnectedEventArgs(ClientMetadata player)
+    public PlayerDisconnectedEventArgs(ServerInstance instance, ClientMetadata player)
     {
+        Instance = instance;
         Player = player;
     }
 }
