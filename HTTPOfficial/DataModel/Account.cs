@@ -25,9 +25,14 @@ public class Account : ProfileBase
     // Navigation property to account posts
     [JsonIgnore]
     public List<Post> Posts { get; set; } = [];
+    // Navigation property to banned contents (moderator only)
+    [JsonIgnore]
+    public List<BannedContent> BannedContents { get; set; } = [];
+    
     // Navigation property to account linked users
     [JsonIgnore]
     public List<CanvasUser> LinkedUsers { get; set; } = [];
+    
 
     public Account() { }
 

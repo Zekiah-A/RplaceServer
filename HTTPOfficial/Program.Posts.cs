@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using CoenM.ImageHash;
+using CoenM.ImageHash.HashAlgorithms;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.Mvc;
@@ -238,10 +240,20 @@ internal static partial class Program
             }
             var contentKey = $"{pendingPost.Id}_{Guid.NewGuid().ToString()}{extension}";
             
-            // Stream gymnastics to get the data into a file, and a byte array for the AI model
+            // Stream gymnastics to get the data into a byte array for the AI model, the content hasher,
+            // and destination file
             await using var memoryStream = new MemoryStream();
             await request.File.CopyToAsync(memoryStream);
             await memoryStream.FlushAsync();
+            
+            // Banned content match check
+            memoryStream.Seek(0L, SeekOrigin.Begin);
+            if (IsContentBanned(memoryStream, request.File.ContentType, database))
+            {
+                logger.LogTrace("Denied uploading post content {contentKey} from {address}, banned content hash match detected",
+                    contentKey, address);
+                return Results.Forbid();
+            }
             
             // Content filters
             try
@@ -262,8 +274,8 @@ internal static partial class Program
                     var session = result.Session;
                     if (session is not null)
                     {
-                        logger.LogTrace("Ran CensorCore on post content {contentKey}, {Image} {Tensor} {Model}",
-                            contentKey, session.ImageLoadTime, session.TensorLoadTime, session.ModelRunTime );
+                        logger.LogTrace("Ran CensorCore on post content {contentKey}, {Image} {Tensor} {Model} from {address}",
+                            contentKey, session.ImageLoadTime, session.TensorLoadTime, session.ModelRunTime, address);
                     }
                 }
             }
@@ -290,6 +302,52 @@ internal static partial class Program
         .DisableAntiforgery();
     }
 
+    private static bool IsContentBanned(Stream data, string contentType, DatabaseContext database)
+    {
+        const string logPrefix = "Could not check if content is banned:";
+        
+        switch (contentType)
+        {
+            // We need to compute hashes for every frame / every n frames and compare against the database
+            case "image/gif":
+            {
+                // TODO: Handle this
+                break;
+            }
+            // Compute all hashes and then compare against database
+            case "image/jpeg" or "image/png" or "image/webp":
+            {
+                var perceptualHash = new PerceptualHash();
+                var contentHash = perceptualHash.Hash(data);
+                var applicableBannedContents = database.BlockedContents.Where(content =>
+                    content.HashType == ContentHashType.Perceptual && content.FileType == ContentFileType.Image);
+                foreach (var bannedContent in applicableBannedContents)
+                {
+                    if (!ulong.TryParse(bannedContent.Hash, out var bannedHash))
+                    {
+                        logger.LogWarning("{logPrefix} Banned content {id}'s hash could not be parsed as ulong",
+                            logPrefix, bannedContent.Id);
+                        continue;
+                    }
+                    
+                    var percentSimilarity = CompareHash.Similarity(contentHash, bannedHash);
+                    if (percentSimilarity > config.MinBannedContentPerceptualPercent)
+                    {
+                        return true;
+                    }
+                }
+                break;
+            }
+            default:
+            {
+                logger.LogError("{logPrefix} Content of type {contentType} not recognised", logPrefix, contentType);
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     private static async Task<bool> ProbablyHasProfanity(string text)
     {
         const string logPrefix = "Failed to query profanity API:";
@@ -307,7 +365,7 @@ internal static partial class Program
             var profanityResponse = await result.Content.ReadFromJsonAsync<ProfanityResponse>();
             if (profanityResponse is null)
             {
-                logger.LogError("{logPrefix} Deserialised  profanity response {statusCode} received", logPrefix, result.StatusCode);
+                logger.LogError("{logPrefix} Deserialised profanity response {statusCode} received", logPrefix, result.StatusCode);
                 return false;
             }
             return profanityResponse.IsProfanity;

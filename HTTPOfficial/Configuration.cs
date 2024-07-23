@@ -4,7 +4,7 @@ namespace HTTPOfficial;
 
 public class Configuration
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; }
     public int SocketPort { get; init; }
@@ -23,6 +23,7 @@ public class Configuration
     public bool Logger { get; init; }
     public string PostsFolder { get; init; }
     public int PostLimitSeconds { get; init; }
+    public int MinBannedContentPerceptualPercent { get; set; }
     public int SignupLimitSeconds { get; init; }
     public int VerifyLimitSeconds { get; init; }
     public int VerifyExpiryMinutes { get; init; }

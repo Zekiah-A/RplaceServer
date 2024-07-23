@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,19 +28,32 @@ internal static partial class Program
     private static HttpClient httpClient;
     private static JsonSerializerOptions defaultJsonOptions;
     private static AIService nudeNetAiService;
+    private static CancellationTokenSource serverShutdownToken;
 
     [GeneratedRegex(@"^.{3,32}#[0-9]{4}$")]
     private static partial Regex TwitterHandleRegex();
 
     [GeneratedRegex(@"^(/ua/)?[A-Za-z0-9_-]+$")]
     private static partial Regex RedditHandleRegex();
-    
+
     public static async Task Main(string[] args)
     {
         var configPath = Path.Combine(Directory.GetCurrentDirectory(), "server_config.json");
         var instancesPath = Path.Combine(Directory.GetCurrentDirectory(), "Instances");
+        var logsPath = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
+        if (!Directory.Exists(logsPath))
+        {
+            Directory.CreateDirectory(logsPath);
+        }
 
-        using var factory = LoggerFactory.Create(builder => builder.AddConsole());
+        using var factory = LoggerFactory.Create(builder =>
+        {
+            builder.AddConsole();
+            builder.AddFile(options =>
+            {
+                options.RootPath = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
+            });
+        });
         logger = factory.CreateLogger("Program");
 
         void CreateNewConfig()
@@ -65,12 +78,13 @@ internal static partial class Program
                     new Instance("server.rplace.live", true)
                     {
                         VanityName = "canvas1",
-                        Legacy = true,
-                        FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main" 
+                        FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
+                        Legacy = true
                     },
                     new Instance("server.rplace.live/testws", true)
                     {
                         VanityName = "placetest",
+                        FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
                         Legacy = true
                     }
                 ],
@@ -78,6 +92,7 @@ internal static partial class Program
                 Logger = true,
                 PostsFolder = "Posts",
                 PostLimitSeconds = 60,
+                MinBannedContentPerceptualPercent = 80,
                 SignupLimitSeconds = 60,
                 VerifyLimitSeconds = 2,
                 VerifyExpiryMinutes = 15,
@@ -112,19 +127,19 @@ internal static partial class Program
         {
             Directory.CreateDirectory(instancesPath);
         }
-        
+
         var configData = JsonSerializer.Deserialize<Configuration>(await File.ReadAllTextAsync(configPath));
         if (configData is null || configData.Version < Configuration.CurrentVersion)
         {
             var oldConfigPath = configPath + ".old";
-            logger.LogWarning("Current config file is invalid or outdated, moving to {oldConfigDirectory}. Config files recreated. Cheeck {currentDirectory} and run this program again.",
+            logger.LogWarning("Current config file is invalid or outdated, moving to {oldConfigDirectory}. Config files recreated. Check {currentDirectory} and run this program again.",
                 oldConfigPath, Directory.GetCurrentDirectory());
             File.Move(configPath, oldConfigPath);
             CreateNewConfig();
             Environment.Exit(0);
         }
         config = configData;
-        
+
         // Main server
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -215,7 +230,7 @@ internal static partial class Program
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true
         };
-        
+
         // Sensitive content detection with NudeNet / CensorCore
         const string modelName = "detector_v2_default_checkpoint.onnx";
         var modelPath = Path.Combine("Resources", modelName);
@@ -223,7 +238,7 @@ internal static partial class Program
         var imgSharp = new ImageSharpHandler(2048, 2048); // Max image size
         var handler = new BodyAreaImageHandler(imgSharp, OptimizationMode.Normal);
         nudeNetAiService = AIService.Create(modelBytes, handler, false);
-        
+
         // Default canvas instances
         await InsertDefaultInstancesAsync();
 
@@ -291,16 +306,16 @@ internal static partial class Program
 
             switch (code)
             {
-                case (byte) WorkerPackets.AnnounceExistence:
-                {
-                    var instanceKey = packet.ReadString();
-                    var instanceUri = packet.ReadString();
-                    var workerInstanceCount = packet.ReadInt();
-                    var workerMaxInstances = packet.ReadInt();
-                    logger.LogInformation($"{instanceKey}, {instanceUri}, {workerInstanceCount}, {workerMaxInstances}");
+                case (byte)WorkerPackets.AnnounceExistence:
+                    {
+                        var instanceKey = packet.ReadString();
+                        var instanceUri = packet.ReadString();
+                        var workerInstanceCount = packet.ReadInt();
+                        var workerMaxInstances = packet.ReadInt();
+                        logger.LogInformation($"{instanceKey}, {instanceUri}, {workerInstanceCount}, {workerMaxInstances}");
 
-                    break;
-                }
+                        break;
+                    }
             }
         };
         wsServer.ClientDisconnected += (_, args) =>
@@ -308,7 +323,7 @@ internal static partial class Program
             authorisedClients.Remove(args.Client);
         };
 
-        var serverShutdownToken = new CancellationTokenSource();
+        serverShutdownToken = new CancellationTokenSource();
 
         Console.CancelKeyPress += async (_, _) =>
         {
@@ -324,16 +339,16 @@ internal static partial class Program
             await serverShutdownToken.CancelAsync();
             Environment.Exit(1);
         };
-        
+
         ConfigureAccountEndpoints();
         ConfigurePostEndpoints();
         ConfigureInstanceEndpoints();
-        
+
         wsServer.Logger = message => logger.LogInformation("{message}", message);
         await Task.WhenAll(app.RunAsync(), wsServer.StartAsync(serverShutdownToken.Token));
         await Task.Delay(-1, serverShutdownToken.Token);
     }
-    
+
     private static async Task InsertDefaultInstancesAsync()
     {
         using var scope = app.Services.CreateScope();
@@ -350,7 +365,7 @@ internal static partial class Program
                 database.Instances.Add(defaultInstance);
             }
         }
-        
+
         await database.SaveChangesAsync();
     }
 

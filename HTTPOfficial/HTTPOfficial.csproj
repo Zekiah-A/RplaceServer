@@ -17,7 +17,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="CoenM.ImageSharp.ImageHash" Version="1.3.6" />
     <PackageReference Include="Fastenshtein" Version="1.0.0.9" />
+    <PackageReference Include="Karambolo.Extensions.Logging.File" Version="3.5.0" />
     <PackageReference Include="MailKit" Version="4.4.0" />
     <!--These code analysis packages are required in order to alleviate a dependency conflict-->
     <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.9.2" />

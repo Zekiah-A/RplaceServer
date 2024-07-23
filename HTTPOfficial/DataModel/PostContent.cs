@@ -5,7 +5,7 @@ namespace HTTPOfficial.DataModel;
 public class PostContent
 {
     public int Id { get; set; }
-    // Filesystem file name for content (usually post_id-unique_guid.file_extension)
+    // Filesystem file name for content (usually PostId_Id.extension)
     public string ContentKey { get; set; } = null!;
     public string ContentType { get; set; } = null!; // Mime Type
 

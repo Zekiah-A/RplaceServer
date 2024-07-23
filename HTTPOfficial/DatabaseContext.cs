@@ -16,6 +16,7 @@ public class DatabaseContext : DbContext
     public DbSet<Badge> Badges { get; set; } = null!;
     public DbSet<Post> Posts { get; set; } = null!;
     public DbSet<PostContent> PostContents { get; set; } = null!;
+    public DbSet<BannedContent> BlockedContents { get; set; } = null!;
     public DbSet<Instance> Instances { get; set; } = null!;
 
     public DatabaseContext() { }
@@ -26,30 +27,25 @@ public class DatabaseContext : DbContext
         // Primary keys
         modelBuilder.Entity<Account>()
             .HasKey(account => account.Id);
-        
         modelBuilder.Entity<AccountPendingVerification>()
             .HasKey(verification => verification.Id);
-
         modelBuilder.Entity<AccountRedditAuth>()
             .HasKey(redditAuth => redditAuth.Id);
-        
         modelBuilder.Entity<Post>()
             .HasKey(post => post.Id);
-        
         modelBuilder.Entity<Instance>()
             .HasKey(instance => instance.Id);
-        
         modelBuilder.Entity<Badge>()
             .HasKey(badge => badge.Id);
-        
         modelBuilder.Entity<CanvasUser>()
             .HasKey(user => user.Id);
-        
         modelBuilder.Entity<PostContent>()
             .HasKey(content => content.Id);
+        modelBuilder.Entity<BannedContent>()
+            .HasKey(bannedContent => bannedContent.Id);
 
         
-        // Unique record properties
+        // Unique account properties
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Username)
             .IsUnique();
@@ -59,31 +55,31 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Token)
             .IsUnique();
-        
+        // Unique reddit account bindings (multiple accounts can't bind to the same reddit user)
         modelBuilder.Entity<AccountRedditAuth>()
             .HasIndex(verification => verification.RedditId)
             .IsUnique();
-        
+        // Unique authentication verification codes
         modelBuilder.Entity<AccountPendingVerification>()
             .HasIndex(verification => verification.Code)
             .IsUnique();
-
+        // Unique instance vanity names
         modelBuilder.Entity<Instance>()
             .HasIndex(instance => instance.VanityName)
             .IsUnique();
-        
+        // Unique post content key
         modelBuilder.Entity<Post>()
             .HasIndex(post => post.ContentUploadKey)
             .IsUnique();
-        
+        // Unique canvas userIntId (multiple canvas users can't own a single instance account)
         modelBuilder.Entity<CanvasUser>()
             .HasIndex(user => user.UserIntId)
             .IsUnique();
-        
+        // Unique post content key
         modelBuilder.Entity<PostContent>()
             .HasIndex(content => content.ContentKey)
             .IsUnique();
-
+        
         
         // Relationships
         // Badges
@@ -117,6 +113,12 @@ public class DatabaseContext : DbContext
             .HasMany(post => post.Contents)
             .WithOne(content => content.Post)
             .HasForeignKey(content => content.PostId);
+        
+        // Blocked content
+        modelBuilder.Entity<BannedContent>()
+            .HasOne(bannedContent => bannedContent.Moderator)
+            .WithMany(moderator => moderator.BannedContents)
+            .HasForeignKey(bannedContent => bannedContent.ModeratorId);
         
         // Instance
         modelBuilder.Entity<Instance>()
