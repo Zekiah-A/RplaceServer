@@ -236,13 +236,13 @@ internal static partial class Program
             // Explicitly ensure that contents are fetched from navigation property
             await database.Entry(pendingPost).Collection(post => post.Contents).LoadAsync();
             string contentKey;
-            string contentFileLocation;
+            string contentFilePath;
             do
             {
                 var contentIndex = pendingPost.Contents.Count + 1;
                 contentKey = $"{pendingPost.Id}_{contentIndex}.{extension}";
-                contentFileLocation = Path.Combine(contentPath, contentKey);
-            } while (File.Exists(contentFileLocation));
+                contentFilePath = Path.Combine(contentPath, contentKey);
+            } while (File.Exists(contentFilePath));
             
             // Stream gymnastics to get the data into a byte array for the AI model, the content hasher,
             // and destination file
@@ -291,7 +291,7 @@ internal static partial class Program
             
             // Save to file
             memoryStream.Seek(0, SeekOrigin.Begin);
-            await using var fileStream = File.OpenWrite(contentFileLocation);
+            await using var fileStream = File.OpenWrite(contentFilePath);
             fileStream.Seek(0, SeekOrigin.Begin);
             fileStream.SetLength(0);
             await memoryStream.CopyToAsync(fileStream);
