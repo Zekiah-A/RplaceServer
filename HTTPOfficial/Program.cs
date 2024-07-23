@@ -92,6 +92,12 @@ internal static partial class Program
                 Logger = true,
                 PostsFolder = "Posts",
                 PostLimitSeconds = 60,
+                PostContentAllowedDomains = [ 
+                    "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
+                    "reddit.com", "discord.com", "x.com", "youtube.com", "t.me", "discord.com",
+                    "tiktok.com", "twitch.tv", "fandom.com", "instagram.com", "canv.tk", "chit.cf",
+                    "github.com", "openmc.pages.dev", "count.land"
+                ],
                 MinBannedContentPerceptualPercent = 80,
                 SignupLimitSeconds = 60,
                 VerifyLimitSeconds = 2,

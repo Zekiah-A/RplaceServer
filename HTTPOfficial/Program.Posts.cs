@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using CoenM.ImageHash;
 using CoenM.ImageHash.HashAlgorithms;
@@ -17,13 +18,7 @@ internal static partial class Program
     
     [GeneratedRegex(@"https?:\/\/(\w+\.)+\w{2,15}(\/\S*)?|(\w+\.)+\w{2,15}\/\S*|(\w+\.)+(tk|ga|gg|gq|cf|ml|fun|xxx|webcam|sexy?|tube|cam|p[o]rn|adult|com|net|org|online|ru|co|info|link)")]
     private static partial Regex BannedUrlsRegex();
-
-    private static readonly HashSet<string> PostContentAllowedUrls =
-    [
-        "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
-        "pxls.space", "reddit.com", "discord.com", "x.com", "youtube.com", "t.me"
-    ];
-
+    
     private static void ConfigurePostEndpoints()
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
@@ -85,10 +80,7 @@ internal static partial class Program
                     new ErrorResponse("Specified post does not exist", "posts.notFound"));
             }
       		// Explicitly ensure that contents are fetched from navigation property
-		    database.Entry(post)
-        		.Collection(post => post.Contents)
-      			.Load();
-      		
+		    await database.Entry(post).Collection(postRecord => postRecord.Contents).LoadAsync();
             return Results.Ok(post);
         });
 
@@ -173,14 +165,15 @@ internal static partial class Program
 
             // If client also wanted to upload content with this post, we give the post key, which gives them
             // temporary permission to upload the content to the CDN.
-            var uploadKey = Guid.NewGuid().ToString();
+            var uploadKey = RandomNumberGenerator.GetHexString(64, true);
             newPost.ContentUploadKey = uploadKey;
 
             await database.Posts.AddAsync(newPost);
             await database.SaveChangesAsync();
 
             return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
-        }).UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds));
+        })
+        .UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds));
 
         app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, DatabaseContext database) =>
         {
@@ -202,7 +195,8 @@ internal static partial class Program
         app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, DatabaseContext database) =>
         {
             var address = context.Connection.RemoteIpAddress;
-            if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey) is not { } pendingPost)
+            if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey)
+                is not { } pendingPost)
             {
                 return Results.Unauthorized();
             }
@@ -226,10 +220,10 @@ internal static partial class Program
             }
             var extension = request.File.ContentType switch
             {
-                "image/gif" => ".gif",
-                "image/jpeg" => ".jpg",
-                "image/png" =>  ".png",
-                "image/webp" => ".webp",
+                "image/gif" => "gif",
+                "image/jpeg" => "jpg",
+                "image/png" =>  "png",
+                "image/webp" => "webp",
                 _ => null
             };
             if (extension is null)
@@ -238,7 +232,17 @@ internal static partial class Program
                 return Results.UnprocessableEntity(
                     new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.invalidType"));
             }
-            var contentKey = $"{pendingPost.Id}_{Guid.NewGuid().ToString()}{extension}";
+
+            // Explicitly ensure that contents are fetched from navigation property
+            await database.Entry(pendingPost).Collection(post => post.Contents).LoadAsync();
+            string contentKey;
+            string contentFileLocation;
+            do
+            {
+                var contentIndex = pendingPost.Contents.Count + 1;
+                contentKey = $"{pendingPost.Id}_{contentIndex}.{extension}";
+                contentFileLocation = Path.Combine(contentPath, contentKey);
+            } while (File.Exists(contentFileLocation));
             
             // Stream gymnastics to get the data into a byte array for the AI model, the content hasher,
             // and destination file
@@ -287,7 +291,7 @@ internal static partial class Program
             
             // Save to file
             memoryStream.Seek(0, SeekOrigin.Begin);
-            await using var fileStream = File.OpenWrite(Path.Join(contentPath, contentKey));
+            await using var fileStream = File.OpenWrite(contentFileLocation);
             fileStream.Seek(0, SeekOrigin.Begin);
             fileStream.SetLength(0);
             await memoryStream.CopyToAsync(fileStream);
@@ -417,7 +421,7 @@ internal static partial class Program
         return BannedUrlsRegex().Replace(text, match => 
             {
                 var url = match.Value.Replace("https://", "").Replace("http://", "").Split('/')[0];
-                return PostContentAllowedUrls.Contains(url) ? match.Value : new string('*', match.Length);
+                return config.PostContentAllowedDomains.Contains(url) ? match.Value : new string('*', match.Length);
             })
             .Trim();
     }
