@@ -6,18 +6,18 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using RplaceServer.Events;
 using RplaceServer.Types;
 using WatsonWebsocket;
-using LiteDB;
 using ZCaptcha;
 
 namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
-    private readonly ServerDbService? serverDb;
+    private readonly DatabaseContext? serverDb;
     private readonly HttpClient httpClient;
     private readonly EmojiCaptchaGenerator emojiCaptchaGenerator;
     private readonly WatsonWsServer app;
@@ -72,97 +72,39 @@ public sealed partial class SocketServer
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
         origin = originHeader;
         httpClient = new HttpClient();
-        emojiCaptchaGenerator = new EmojiCaptchaGenerator(Path.Join(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
-        blockedWordsPattern = @"\\b(sik[ey]rim|orospu|piç|yavşak|kevaşe|ıçmak|kavat|kaltak|götveren|amcık|@everyone|@here|amcık|[fF][uU][ckr]{1,3}(\\b|ing\\b|ed\\b)?|shi[t]|c[u]nt|nigg[ae]r?|bastard|bitch|blowjob|clit|cock|cum|cunt|dick|fag|tranny|faggot|fuck|jizz|kike|dyke|masturbat(e|ion)|nazi|nigga|whore|porn|pussy|queer|rape|r[a4]pe|slut|suck|tit)\\b";
+        emojiCaptchaGenerator = new EmojiCaptchaGenerator(Path.Combine(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
+        // TODO: Reimplement this!
+        blockedWordsPattern = "";
         blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
         blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
         blockedDomainsRegex = new Regex(blockedDomainsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
-        
-        if (gameData.UseDatabase)
-        {
-            serverDb = new ServerDbService(Path.Join(gameData.SaveDataFolder, "Server.db"));
-        }
-    }
-    
-    // These are hybrid files, made up of a key value dictionary separated by a whitespace, but also can contain
-    // links to other hosted plaintext files, which will also be evaluated and added to the dictionary
-    private async Task ReadMuteBanLinkSheet<T>(IEnumerable<string> text, T targetDictionary) where T : IDictionary
-    {
-        foreach (var line in text)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
 
-            var sections = line.Split(" ");
-            switch (sections.Length)
-            {
-                case 0:
-                {
-                    continue;
-                }
-                case 1:
-                {
-                    if (Uri.TryCreate(sections[0], UriKind.Absolute, out var banSheetUri) &&
-                        (banSheetUri.Scheme == Uri.UriSchemeHttp || banSheetUri.Scheme == Uri.UriSchemeHttps))
-                    {
-                        var response = await httpClient.GetAsync(sections[0]);
-                        if (response.IsSuccessStatusCode)
-                        {
-                            var linkSheet = await response.Content.ReadAsStringAsync();
-                            await ReadMuteBanLinkSheet(linkSheet.Split("\n"), targetDictionary);
-                        }
-                    }
-                    else
-                    {
-                        targetDictionary.Add(sections[0], long.MaxValue);
-                    }
-                    break;
-                }
-                case 2:
-                {
-                    if (long.TryParse(sections[1], out var dateEnd))
-                    {
-                        targetDictionary.Add(sections[0], dateEnd);
-                    }
-                    break;
-                }
-            }
-        }
+        var dbPath = Path.Combine(gameData.SaveDataFolder, "Server.db");
+        serverDb = new DatabaseContext(dbPath);
     }
     
     public async Task StartAsync()
     {
-        var captchaResources = Path.Join(gameData.StaticResourcesFolder, @"CaptchaGeneration");
+        var captchaResources = Path.Combine(gameData.StaticResourcesFolder, @"CaptchaGeneration");
         if (!Directory.Exists(captchaResources))
         {
             Logger?.Invoke($"Could not find Resources Captcha Generation at {captchaResources}. Regenerating.");
             Directory.CreateDirectory(captchaResources);
-            FileUtils.RecursiveCopy(Path.Join(FileUtils.BuildContentPath, @"CaptchaGeneration"), captchaResources);
+            FileUtils.RecursiveCopy(Path.Combine(FileUtils.BuildContentPath, @"CaptchaGeneration"), captchaResources);
         }
         
-        var bansPath = Path.Join(gameData.SaveDataFolder, "bans.txt");
-        if (File.Exists(bansPath))
+        var blacklistPath = Path.Combine(gameData.SaveDataFolder, "bans.txt");
+        if (File.Exists(blacklistPath))
         {
-            ReadMuteBanLinkSheet(await File.ReadAllLinesAsync(bansPath), instance.Blacklist).GetAwaiter().GetResult();
+            FileUtils.ReadUrlSheet(httpClient, await File.ReadAllLinesAsync(blacklistPath), instance.IpBlacklist).GetAwaiter().GetResult();
         }
         else
         {
-            Logger?.Invoke($"Could not find bans file at {Path.Join(gameData.SaveDataFolder, "bans.txt")}. Will be regenerated when a player is banned.");
+            Logger?.Invoke($"Could not find bans file at {Path.Combine(gameData.SaveDataFolder, "bans.txt")}. Will be regenerated when a player is banned.");
         }
         
-        var mutesPath = Path.Join(gameData.SaveDataFolder, "mutes.txt");
-        if (File.Exists(mutesPath))
-        {
-            ReadMuteBanLinkSheet(await File.ReadAllLinesAsync(mutesPath), instance.Mutes).GetAwaiter().GetResult();
-        }
-        else
-        {
-            Logger?.Invoke($"Could not find mutes file at {Path.Join(gameData.SaveDataFolder, "mutes.txt")}. Will be regenerated when a player is muted.");
-        }
-
-        var vipPath = Path.Join(gameData.SaveDataFolder, "vip.txt");
+        
+        var vipPath = Path.Combine(gameData.SaveDataFolder, "vip.txt");
         if (File.Exists(vipPath))
         {
             instance.VipKeys.AddRange(await File.ReadAllLinesAsync(vipPath));
@@ -196,22 +138,17 @@ public sealed partial class SocketServer
         }
         
         // Carry out ban check, if their ban time is expired we allow connect
-        if (instance.Blacklist.TryGetValue(realIp, out var banUnixMsEnd))
+        if (instance.IpBlacklist.Contains(realIp))
         {
-            if (banUnixMsEnd < DateTimeOffset.Now.ToUnixTimeMilliseconds())
-            {
-                Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks");
-                return;
-            }
-
-            instance.Blacklist.Remove(realIp);
-            // TODO: Send discord and console message, update bans in file
+            Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks.");
+            _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
+            return;
         }
         
         // Reject
         if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers.Origin.First() != origin)
         {
-            Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks");
+            Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks.");
             _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
             return;
         }
@@ -376,19 +313,6 @@ public sealed partial class SocketServer
                     return;
                 }
                 
-                if (instance.Mutes.TryGetValue(GetRealIp(args.Client), out var muteUnixMsEnd))
-                {
-                    if (muteUnixMsEnd < DateTimeOffset.Now.ToUnixTimeMilliseconds())
-                    {
-                        Logger?.Invoke($"Chat message from client {GetRealIpPort(args.Client)} rejected for being muted");
-                        return;
-                    }
-
-                    instance.Mutes.Remove(realIp);
-                    // TODO: Send discord and console message & save to file
-                    return;
-                }
-
                 instance.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
                 var rawText = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1);
@@ -628,6 +552,8 @@ public sealed partial class SocketServer
     /// <param name="timeSpecifier">Either long unixTimeMs for ban end or a DateTimeOffset</param>
     public async Task BanPlayer<TPlayer, TDuration>(TPlayer identifier, TDuration timeSpecifier)
     {
+        throw new NotImplementedException();
+
         var clientIp = identifier switch
         {
             string ip => ip,
@@ -650,8 +576,7 @@ public sealed partial class SocketServer
             return;
         }
 
-        instance.Blacklist.Add(clientIp, (long) endTime);
-        await File.AppendAllTextAsync(Path.Join(gameData.SaveDataFolder, "bans.txt"), "\n" + clientIp);
+        await File.AppendAllTextAsync(Path.Combine(gameData.SaveDataFolder, "bans.txt"), "\n" + clientIp);
         foreach (var client in app.Clients.Where(client => GetRealIp(client) == clientIp))
         {
             await app.DisconnectClientAsync(client, "You have been banned from this instance");
@@ -666,6 +591,7 @@ public sealed partial class SocketServer
     /// <param name="timeSpecifier">Either long unixTimeMs for mute end or a DateTimeOffset</param>
     public async Task MutePlayer<TPlayer, TDuration>(TPlayer identifier, TDuration timeSpecifier)
     {
+        throw new NotImplementedException();
         var clientIp = identifier switch
         {
             string ip => ip,
@@ -688,8 +614,7 @@ public sealed partial class SocketServer
             return;
         }
         
-        instance.Mutes.Add(clientIp, (long) endTime);
-        await File.AppendAllTextAsync(Path.Join(gameData.SaveDataFolder, "mutes.txt"), "\n" + clientIp);
+        await File.AppendAllTextAsync(Path.Combine(gameData.SaveDataFolder, "mutes.txt"), "\n" + clientIp);
     }
 
     /// <summary>

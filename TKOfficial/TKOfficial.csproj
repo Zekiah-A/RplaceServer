@@ -16,4 +16,9 @@
   <ItemGroup>
     <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="censors.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

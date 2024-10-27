@@ -1,3 +1,3 @@
 namespace RplaceServer.Types;
 
-public record UnpackedBoard(byte[] Board, uint Width, List<uint> Palette);
+public record UnpackedBoard(byte[] Board, uint Width, uint Height, List<uint> Palette);

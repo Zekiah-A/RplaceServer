@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace RplaceServer;
 
 public interface IModerationConfiguration
@@ -6,8 +8,9 @@ public interface IModerationConfiguration
     public bool UseCloudflare { get; set; }
     public int ChatCooldownMs { get; set; }
     public bool CaptchaEnabled { get; set; }
-    // By default will use regexes provided in SocketServer.cs to censor chat messages for profanity
+    // By default will use regexes provided in censors.txt to censor chat messages for profanity
     public bool CensorChatMessages { get; set; }
+    public List<Regex> CensorChatRegexes { get; set; }
 }
 
 public class ConfigureModerationOptions : IModerationConfiguration
@@ -16,4 +19,5 @@ public class ConfigureModerationOptions : IModerationConfiguration
     public int ChatCooldownMs { get; set; }
     public bool CaptchaEnabled { get; set; }
     public bool CensorChatMessages { get; set; }
+    public List<Regex> CensorChatRegexes { get; set; } = [];
 }

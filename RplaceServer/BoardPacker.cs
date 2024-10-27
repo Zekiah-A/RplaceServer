@@ -5,47 +5,50 @@ namespace RplaceServer;
 
 public static class BoardPacker
 {
-    public static byte[] PackBoard(byte[] board, List<uint>? palette, uint boardWidth)
+    public static byte[] PackBoard(byte[] board, List<uint>? palette, uint boardWidth, uint boardHeight)
     {
-        
-        var metadataLength = 4 + (palette?.Count ?? 0) * 4 + 2;
-        var packedBoard = (Span<byte>) stackalloc byte[board.Length + metadataLength];
-        board.CopyTo(packedBoard);
+        var metadataLength = sizeof(uint) + sizeof(uint) + sizeof(byte) + (palette?.Count ?? 0) * sizeof(uint);
+        var packedBoard = (Span<byte>)stackalloc byte[metadataLength + board.Length];
+    
+        var position = 0;
+        BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..], boardWidth);
+        position += sizeof(uint);
+        BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..], boardHeight);
+        position += sizeof(uint);
 
-        var position = board.Length;
-        BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..(position + 4)], (uint) boardWidth);
-        position += 4;
-
+        packedBoard[position++] = (byte)(palette?.Count ?? 0);
         if (palette is not null)
         {
             foreach (var colour in palette)
             {
                 BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..(position + 4)], colour);
-                position += 4;
+                position += sizeof(uint);
             }
         }
         
-        BinaryPrimitives.WriteUInt16BigEndian(packedBoard[position..(position + 2)], (ushort) metadataLength);
+        board.CopyTo(packedBoard[position..]);
         return packedBoard.ToArray();
     }
 
     public static UnpackedBoard UnpackBoard(byte[] packed)
     {
         var packedBoard = new Span<byte>(packed);
-        
-        var metadataLength =
-            BinaryPrimitives.ReadUInt16BigEndian(packedBoard[^2..packedBoard.Length]);
-        var boardLength = packedBoard.Length - metadataLength;
 
-        var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[boardLength..(boardLength + 4)]);
+        var position = 0;
+        var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]);
+        position += sizeof(uint);
+        var boardHeight = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]);
+        position += sizeof(uint);
 
+        var paletteLength = packedBoard[position++];
         var palette = new List<uint>();
-        for (var i = boardLength + 4; i < packedBoard.Length - 2; i += 4)
+        for (var i = position; i < paletteLength; i += sizeof(uint))
         {
-            palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[i..(i + 4)]));
+            palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]));
+            position += sizeof(uint);
         }
-        
-        return new UnpackedBoard(packedBoard[..boardLength].ToArray(), boardWidth, palette);
+    
+        return new UnpackedBoard(packedBoard[position..].ToArray(), boardWidth, boardHeight, palette);
     }
 
     public static byte[] RunLengthCompressBoard(byte[] board)

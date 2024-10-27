@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -30,7 +31,6 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     public int BackupFrequencyS { get; set; }
     public string StaticResourcesFolder { get; set; }
     public string SaveDataFolder { get; set;  }
-    public bool UseDatabase { get; set; }
     public int TimelapseLimitPeriodS { get; set; }
     public bool TimelapseEnabled { get; set; }
     public string CanvasFolder { get; set; }
@@ -41,6 +41,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     public int ChatCooldownMs { get; set; }
     public bool CaptchaEnabled { get; set; }
     public bool CensorChatMessages { get; set; }
+    public List<Regex> CensorChatRegexes { get; set; }
     
     // External service configuration - Optional
     // These are config-settable, and live changeable, but not necessary 
@@ -91,7 +92,6 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
         StaticResourcesFolder = options.StaticResourcesFolder;
         SaveDataFolder = options.SaveDataFolder;
         CanvasFolder = options.CanvasFolder;
-        UseDatabase = options.UseDatabase;
         TimelapseLimitPeriodS = options.TimelapseLimitPeriodS;
         TimelapseEnabled = options.TimelapseEnabled;
         CreateBackups = options.CreateBackups;
@@ -111,6 +111,7 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
         ChatCooldownMs = options.ChatCooldownMs;
         CaptchaEnabled = options.CaptchaEnabled;
         CensorChatMessages = options.CensorChatMessages;
+        CensorChatRegexes = options.CensorChatRegexes;
         return this;
     }
     

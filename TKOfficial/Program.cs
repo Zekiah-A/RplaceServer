@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+using System;
 using System.Text.Json;
 using RplaceServer;
 using Terminal.Gui;
@@ -25,10 +25,10 @@ namespace TKOfficial;
 
 public static class Program
 {
-
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     public static ServerInstance Server { get; set; } = null!;
     public static Config Config { get; set; } = null!;
+    private static string baseConfigPath = null!;
 
     private static void PrintOptions(IReadOnlyList<string> options, int selectedOption, int optionsTop)
     {
@@ -75,12 +75,74 @@ public static class Program
         return selectedOption;
     }
 
+    private static async Task<string> WriteDefaultConfig(ConfigFormat format)
+    {
+        var defaultData = GameData.CreateGameData()
+            .ConfigureCanvas()
+            .ConfigureModeration()
+            .ConfigureServices()
+            .ConfigureStorage();
+
+        var defaultConfig = new Config
+        {
+            CooldownMs = defaultData.CooldownMs,
+            BoardWidth = defaultData.BoardWidth,
+            BoardHeight = defaultData.BoardHeight,
+            Palette = defaultData.Palette,
+            BackupFrequencyS = defaultData.BackupFrequencyS,
+            StaticResourcesFolder = defaultData.StaticResourcesFolder,
+            SaveDataFolder = defaultData.SaveDataFolder,
+            TimelapseLimitPeriodS = defaultData.TimelapseLimitPeriodS,
+            CanvasFolder = defaultData.CanvasFolder,
+            CreateBackups = defaultData.CreateBackups,
+            UseCloudflare = defaultData.UseCloudflare,
+            ChatCooldownMs = defaultData.ChatCooldownMs,
+            CaptchaEnabled = defaultData.CaptchaEnabled,
+            CensorChatMessages = defaultData.CensorChatMessages,
+            CensorChatRegexes = defaultData.CensorChatRegexes,
+            WebhookService = defaultData.WebhookService,
+            TurnstileService = defaultData.TurnstileService,
+        };
+        switch (format)
+        {
+            case ConfigFormat.Json:
+            {
+                var configPath = Path.Combine(baseConfigPath, "server_config.json");
+                var config = JsonSerializer.Serialize(defaultConfig, JsonOptions);
+                await File.WriteAllTextAsync(configPath, config);
+                return configPath;
+            }
+            case ConfigFormat.Yaml:
+            {
+                var configPath = Path.Combine(baseConfigPath, "server_config.yaml");
+                var serializer = new SerializerBuilder()
+                    .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                    .Build();
+                await File.WriteAllTextAsync(configPath, serializer.Serialize(defaultConfig));
+                return configPath;
+            }
+            case ConfigFormat.Toml:
+            {
+                var configPath = Path.Combine(baseConfigPath, "server_config.toml");
+                var config = TomletMain.DocumentFrom(defaultConfig).SerializedValue;
+                await File.WriteAllTextAsync(configPath, config);
+                return configPath;
+            }
+            default:
+            {
+                throw new ArgumentOutOfRangeException(nameof(format));
+            }
+        }
+    }
+
     private static async Task RunWithConfig(string path)
     {
+        ConfigFormat format;
         if (path.EndsWith(".json"))
         {
             Config = JsonSerializer.Deserialize<Config>(await File.ReadAllTextAsync(path))
-                ?? throw new NullReferenceException();
+                     ?? throw new NullReferenceException();
+            format = ConfigFormat.Json;
         }
         else if (path.EndsWith(".yaml"))
         {
@@ -88,17 +150,38 @@ public static class Program
                 .WithNamingConvention(UnderscoredNamingConvention.Instance)
                 .Build();
             Config = deserialiser.Deserialize<Config>(await File.ReadAllTextAsync(path))
-                ?? throw new NullReferenceException();
+                     ?? throw new NullReferenceException();
+            format = ConfigFormat.Yaml;
         }
         else if (path.EndsWith(".toml"))
         {
             Config = TomletMain.To<Config>(await File.ReadAllTextAsync(path));
+            format = ConfigFormat.Toml;
         }
         else
         {
             throw new ArgumentException("Unsupported config file format", nameof(path));
         }
-        Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origin, Config.SocketPort, Config.HttpPort, Config.Ssl);
+
+        // If config is outdated, move old config, generate new and bail
+        if (Config.Version < Config.LatestVersion)
+        {
+            var moveLocation = $"{path}.v{Config.Version}.old";
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("[Warning]: Config is outdated, moving config from {0} to {1} and generating new config.",
+                path, moveLocation);
+            Console.ResetColor();
+            File.Move(path, moveLocation);
+            var configPath = await WriteDefaultConfig(format);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine(
+                $"\n[INFO]: Config file recreated. Please check {configPath} and run this program again.");
+            Console.ResetColor();
+            Environment.Exit(0);
+        }
+
+        Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origin, Config.SocketPort,
+            Config.HttpPort, Config.Ssl);
 
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
         {
@@ -116,9 +199,7 @@ public static class Program
 
         try
         {
-            var serverTask = Task.Run(async () => await Server.StartAsync());
             Application.Run<ConsoleWindow>();
-            await serverTask;
         }
         catch (Exception exception)
         {
@@ -127,11 +208,12 @@ public static class Program
             Console.WriteLine("Unexpected server exception: " + exception);
         }
     }
-    
+
     public static async Task Main(string[] args)
     {
-        var baseConfigPath = Directory.GetCurrentDirectory();
+        baseConfigPath = Directory.GetCurrentDirectory();
         var foundConfigs = Directory.GetFiles(baseConfigPath, "server_config.*").ToList();
+        foundConfigs = foundConfigs.Where(config => !config.EndsWith(".old")).ToList();
     FindConfigs:
         switch (foundConfigs.Count)
         {
@@ -139,73 +221,18 @@ public static class Program
             {
                 Console.Clear();
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("[Warning]: Could not find a game config file in " + baseConfigPath);
+                Console.WriteLine("[Warning]: Could not find a server config file in " + baseConfigPath);
                 Console.ResetColor();
-            
+
                 Console.WriteLine("Creating a new server config file. Please select a file format for TKOfficial to use first...");
                 var selected = CreateOptions("JSON (.json)", "YAML (.yaml)", "TOML (.toml)", "Exit");
                 if (selected == 3)
                 {
                     Environment.Exit(0);
                 }
-                var defaultData = GameData.CreateGameData()
-                    .ConfigureCanvas()
-                    .ConfigureModeration()
-                    .ConfigureServices()
-                    .ConfigureStorage();
-                var defaultConfig = new Config
-                {
-                    CooldownMs = defaultData.CooldownMs,
-                    BoardWidth = defaultData.BoardWidth,
-                    BoardHeight = defaultData.BoardHeight,
-                    Palette = defaultData.Palette,
-                    BackupFrequencyS = defaultData.BackupFrequencyS,
-                    StaticResourcesFolder = defaultData.StaticResourcesFolder,
-                    SaveDataFolder = defaultData.SaveDataFolder,
-                    UseDatabase = defaultData.UseDatabase,
-                    TimelapseLimitPeriodS = defaultData.TimelapseLimitPeriodS,
-                    CanvasFolder = defaultData.CanvasFolder,
-                    CreateBackups = defaultData.CreateBackups,
-                    UseCloudflare = defaultData.UseCloudflare,
-                    ChatCooldownMs = defaultData.ChatCooldownMs,
-                    CaptchaEnabled = defaultData.CaptchaEnabled,
-                    CensorChatMessages = defaultData.CensorChatMessages,
-                    WebhookService = defaultData.WebhookService,
-                    TurnstileService = defaultData.TurnstileService,
-                };
-                string configPath;
-                switch (selected)
-                {
-                    case 0:
-                    {
-                        configPath = Path.Join(baseConfigPath, "server_config.json");
-                        var config = JsonSerializer.Serialize(defaultConfig, JsonOptions);
-                        await File.WriteAllTextAsync(configPath, config);
-                        break;
-                    }
-                    case 1:
-                    {
-                        configPath = Path.Join(baseConfigPath, "server_config.yaml");
-                        var serializer = new SerializerBuilder()
-                            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-                            .Build();
-                        await File.WriteAllTextAsync(configPath, serializer.Serialize(defaultConfig));
-                        break;
-                    }
-                    case 2:
-                    {
-                        configPath = Path.Join(baseConfigPath, "server_config.toml");
-                        var config = TomletMain.DocumentFrom(defaultConfig).SerializedValue;
-                        await File.WriteAllTextAsync(configPath, config);
-                        break;
-                    }
-                    default:
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(selected));
-                    }
-                }
+                var configPath = await WriteDefaultConfig((ConfigFormat) selected);
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"\n[INFO]: Config files recreated. Please check {configPath} and run this program again.");
+                Console.WriteLine($"\n[INFO]: Config file created. Please check {configPath} and run this program again.");
                 Console.ResetColor();
                 Environment.Exit(0);
                 break;

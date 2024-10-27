@@ -1,7 +1,7 @@
 server_config.*
 Canvases/*
-Posts/*
-Content/*
-Pages/*
+StaticData/*
 SaveData/*
-Resources/*
+Server.db
+Server.db-shm
+Server.db-wal

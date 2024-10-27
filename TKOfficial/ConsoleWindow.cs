@@ -1,8 +1,8 @@
+using System;
 using System.Runtime.InteropServices;
 using RplaceServer;
 using RplaceServer.Types;
 using Terminal.Gui;
-using WatsonWebsocket;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 
@@ -10,736 +10,185 @@ namespace TKOfficial;
 
 public class ConsoleWindow : Window
 {
-    private Action<string>? Logger;
-    
+    private readonly List<string> serverLogs = [];
+    private Action<string>? logger;
+    private FrameView? serverLogPanel;
+    private FrameView? serverReplPanel;
+    private FrameView? serverBottomPrimary;
+    private Button? bottomActionButton;
+    private ListView? clientsListView;
+    private TextView? replTextField;
+    private Label? serverUptimeLabel;
+
     // Used as a portal to allow the repl to access and interact with the server
     public ServerInstance Server => Program.Server;
-    
+    public Action<string> Logger => this.logger!;
+
     public ConsoleWindow()
     {
-        Initialise();
+        InitialiseWindow();
+        InitialiseServerActions();
+        InitialiseClientsPanel();
+        InitializeStatisticsPanel();
+        InitialiseBottomPanels();
+        InitialiseServerLogging();
+        InitialiseTimers();
+
+        _ = Task.Run(Server.StartAsync);
+        logger?.Invoke("Server software started");
     }
-    
+
+    private void InitialiseWindow()
+    {
+        Title = "TKOfficial CLI Environment -> ©Zekiah-A (Ctrl+Q to quit)";
+        BorderStyle = LineStyle.Rounded;
+    }
+
     // Used as an alias to make invoking logger from the repl easier
     public void Print(object data)
     {
         var formatted = ObjectDumper.Dump(data);
-        Logger?.Invoke(formatted);
+        logger?.Invoke(formatted);
     }
 
-    public void Initialise()
+    private void InitialiseServerActions()
     {
-        Title = "TKOfficial CLI Environment -> ©Zekiah-A (Ctrl+Q to quit)";
-
-        // Server actions stack panel container
-        var serverActionsContainer = new View
+        var actionButtons = new[]
         {
+            CreateActionButton("Expand canvas", ShowExpandCanvasDialog),
+            CreateActionButton("Fill canvas area", ShowFillCanvasDialog),
+            CreateActionButton("Edit chat cooldown", ShowChatCooldownDialog),
+            CreateActionButton("Broadcast chat message", ShowBroadcastChatDialog),
+            CreateActionButton("Edit place cooldown", ShowPlaceCooldownDialog),
+            CreateActionButton("Edit colour palette", ShowPaletteDialog),
+            CreateActionButton("Restore canvas from backup", ShowRestoreBackupDialog),
+            CreateActionButton("Save canvas to disk", async () => {
+                await Server.WebServer.SaveCanvasBackupAsync();
+                logger?.Invoke("Canvas saved to disk");
+            }),
+            CreateActionButton("Prune backup list", () => Task.Run(PruneBackupList)),
+            CreateActionButton("Stop server", async () => {
+                logger?.Invoke("Server shutdown request received");
+                await Server.WebServer.SaveCanvasBackupAsync();
+                Application.Shutdown();
+                await Server.StopAsync();
+                Console.Clear();
+            })
+        };
+
+        var panel = new FrameView
+        {
+            Title = "Server actions",
             Width = 32,
-            Height = 16
+            Height = 16,
+            BorderStyle = LineStyle.Rounded
         };
-        var expandCanvasButton = new Button
+        for (var i = 0; i < actionButtons.Length; i++)
         {
-            Text = "Expand canvas",
-            Y = Pos.Top(serverActionsContainer) + 1
-        };
-        expandCanvasButton.Clicked += (_, _) =>
-        {
-            var expandCanvasWizard = new Wizard()
-            {
-                Title = "Expand canvas",
-                Modal = false,
-                Width = 32,
-                Height = 9
-            };
+            actionButtons[i].Y = i;
+            panel.Add(actionButtons[i]);
+        }
+        Add(panel);
+    }
 
-            var firstStep = new WizardStep();
-            var expandXField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 1
-            };
-            var expandYField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 3
-            };
-            var colourIndexField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 5
-            };
+    private static Button CreateActionButton(string text, Action clickHandler)
+    {
+        var button = new Button(text);
+        button.Clicked += (sender, args) => clickHandler();
+        return button;
+    }
 
-            firstStep.Add(new Label { Text = "Expand X (Width)" }, expandXField,
-                new Label { Y = 2, Text = "Expand Y (Height)" }, expandYField,
-                new Label { Y = 4, Text = "Expand colour index" }, colourIndexField);
-
-            expandCanvasWizard.AddStep(firstStep);
-            expandCanvasWizard.Finished += (_, _) =>
-            {
-                if (!int.TryParse(expandXField.Text, out var expandWidth))
-                {
-                    Logger?.Invoke("Failed to expand, invalid Expand X Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(expandYField.Text, out var expandHeight))
-                {
-                    Logger?.Invoke("Failed to expand, invalid Expand Y Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(colourIndexField.Text, out var colourIndex) ||
-                    colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
-                {
-                    Logger?.Invoke("Failed to expand, invalid Colour Index Parameter");
-                    goto closeWizard;
-                }
-                
-                var formattedColour = colourIndex.ToString();
-                if (Program.Server.GameData.Palette?.ElementAtOrDefault(colourIndex) is not null)
-                {
-                    formattedColour = RgbFormatColour(Program.Server.GameData.Palette[colourIndex]);
-                }
-                
-                var originalDimensions = (Program.Server.GameData.BoardWidth, Program.Server.GameData.BoardHeight);
-                var newDimensions = Program.Server.SocketServer.ExpandCanvas((uint) expandWidth, (uint) expandHeight, colourIndex);
-                var difference = newDimensions.NewWidth * newDimensions.NewHeight - originalDimensions.BoardWidth * originalDimensions.BoardHeight;
-
-                Logger?.Invoke($"Expanded canvas size to ({newDimensions.NewWidth}, {newDimensions.NewHeight}), with colour {formattedColour}, ({difference} pixels)");
-closeWizard:
-                Application.Top.Remove(expandCanvasWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(expandCanvasWizard);
-            Application.Run(Application.Top);
-        };
-
-        var fillCanvasButton = new Button
-        {
-            Text = "Fill canvas area",
-            Y = Pos.Top(serverActionsContainer) + 2
-        };
-        fillCanvasButton.Clicked += (_, _) =>
-        {
-            var fillCanvasWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 32,
-                Height = 13,
-            };
-
-            var firstStep = new WizardStep()
-            {
-                Title = "Fill canvas area"
-            };
-            var xStartField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 1
-            };
-            var yStartField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 3
-            };
-            var xEndField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 5
-            };
-            var yEndField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 7
-            };
-            var colourIndexField = new TextField("0")
-            {
-                Width = Dim.Fill(),
-                Y = 9
-            };
-            firstStep.Add(xStartField, new Label { Text = "Pixel X start" }, yStartField,
-                new Label { Y = 2, Text = "Pixel Y start" }, xEndField, new Label { Y = 4, Text = "Pixel X end" },
-                yEndField, new Label { Y = 6, Text = "Pixel Y end" },
-                new Label { Y = 8, Text = $"Palette colour index (0 - {Program.Server.GameData.Palette?.Count ?? 31})" },
-                colourIndexField);
-
-            fillCanvasWizard.AddStep(firstStep);
-            fillCanvasWizard.Finished += (_, _) =>
-            {
-                if (!int.TryParse(xStartField.Text, out var startX) || startX < 0)
-                {
-                    Logger?.Invoke("Failed to fill, invalid Start X Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(yStartField.Text, out var startY) || startY < 0)
-                {
-                    Logger?.Invoke("Failed to fill, invalid Start Y Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(xEndField.Text, out var endX) || endX > Program.Server.GameData.BoardWidth)
-                {
-                    Logger?.Invoke("Failed to fill, invalid End X Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(yEndField.Text, out var endY) || endX > Program.Server.GameData.BoardHeight)
-                {
-                    Logger?.Invoke("Failed to fill, invalid End Y Parameter");
-                    goto closeWizard;
-                }
-                if (!int.TryParse(colourIndexField.Text, out var colourIndex) ||
-                    colourIndex > (Program.Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
-                {
-                    Logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
-                    goto closeWizard;
-                }
-                
-                var formattedColour = colourIndex.ToString();
-                if (Program.Server.GameData.Palette?.ElementAtOrDefault(colourIndex) is not null)
-                {
-                    formattedColour = RgbFormatColour(Program.Server.GameData.Palette[colourIndex]);
-                }
-                var areaFilled = Program.Server.SocketServer.Fill(startX, startY, endX, endY, (byte) colourIndex);
-                
-                Logger?.Invoke($"Filled canvas area ({startX}, {startY}) to ({endX}, {endY}) with colour {formattedColour} ({areaFilled} pixels filled)");
-closeWizard:
-                Application.Top.Remove(fillCanvasWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(fillCanvasWizard);
-            Application.Run(Application.Top);
-        };
-
-        var chatCooldownButton = new Button
-        {
-            Text = "Edit chat cooldown",
-            Y = Pos.Top(serverActionsContainer) + 3
-        };
-        chatCooldownButton.Clicked += (_, _) =>
-        {
-            var cooldownWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 32,
-                Height = 4,
-            };
-
-            var firstStep = new WizardStep()
-            {
-                Title = "Edit chat message cooldown"
-            };
-            var cooldownField = new TextField(Program.Server.GameData.ChatCooldownMs.ToString())
-            {
-                Width = Dim.Fill(),
-            };
-            firstStep.Add(cooldownField);
-
-            cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += (_, _) =>
-            {
-                if (int.TryParse(cooldownField.Text, out var cooldown))
-                {
-                    Program.Server.GameData.ChatCooldownMs = cooldown;
-                }
-                
-                Logger?.Invoke($"Updated game chat message cooldown to {Program.Server.GameData.ChatCooldownMs}ms");
-                Application.Top.Remove(cooldownWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(cooldownWizard);
-            Application.Run(Application.Top);
-        };
-
-        var broadcastChatButton = new Button
-        {
-            Text = "Broadcast chat message",
-            Y = Pos.Top(serverActionsContainer) + 4
-        };
-        broadcastChatButton.Clicked += (_, _) =>
-        {
-            var chatWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 32,
-                Height = 7,
-            };
-            
-            var firstStep = new WizardStep()
-            {
-                Title = "Broadcast chat message"
-            };
-            var textInput = new TextField("Message from the server")
-            {
-                Width = Dim.Fill(),
-                Y = 1
-            };
-            var channelInput = new TextField("en")
-            {
-                Width = Dim.Fill(),
-                Y = 3
-            };
-            firstStep.Add(new Label { Text = "Message:" }, textInput, new Label { Text = "Channel:", Y = 2 }, channelInput);
-
-            chatWizard.AddStep(firstStep);
-            chatWizard.Finished += (_, _) =>
-            {
-                Program.Server.SocketServer.BroadcastChatMessage(textInput.Text, channelInput.Text);
-                Logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
-                Application.Top.Remove(chatWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(chatWizard);
-            Application.Run(Application.Top);
-        };
-
-        var changeGameCooldownButton = new Button
-        {
-            Text = "Edit place cooldown",
-            Y = Pos.Top(serverActionsContainer) + 5
-        };
-        changeGameCooldownButton.Clicked += (_, _) =>
-        {
-            var cooldownWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 32,
-                Height = 4,
-            };
-            
-            var firstStep = new WizardStep()
-            {
-                Title = "Edit pixel place cooldown"
-            };
-            var cooldownField = new TextField(Program.Server.GameData.CooldownMs.ToString())
-            {
-                Width = Dim.Fill(),
-            };
-            firstStep.Add(cooldownField);
-
-            cooldownWizard.AddStep(firstStep);
-            cooldownWizard.Finished += (_, _) =>
-            {
-                if (int.TryParse(cooldownField.Text, out var cooldown))
-                {
-                    Program.Server.GameData.CooldownMs = (uint) cooldown;
-                }
-
-                Logger?.Invoke($"Updated game pixel place cooldown to {Program.Server.GameData.CooldownMs} ms");
-                Application.Top.Remove(cooldownWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(cooldownWizard);
-            Application.Run(Application.Top);
-        };
-
-        var editPaletteButton = new Button
-        {
-            Text = "Edit colour palette",
-            Y = Pos.Top(serverActionsContainer) + 6
-        };
-        editPaletteButton.Clicked += (_, _) =>
-        {
-            var paletteWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 64,
-                Height = 5,
-            };
-            
-            var firstStep = new WizardStep()
-            {
-                Title = "Edit colour palette"
-            }; 
-            var paletteField = new TextField(string.Join(", ", Program.Server.GameData.Palette))
-            {
-                Width = Dim.Fill(),
-                Y = 1
-            };
-            firstStep.Add(new Label { Text = "Comma separated integer palette colours" }, paletteField);
-
-            paletteWizard.AddStep(firstStep);
-            paletteWizard.Finished += (_, _) =>
-            {
-                var newPalette = new List<uint>();
-                var split = paletteField.Text.Split(',');
-
-                if (split.Length == 0)
-                {
-                    Program.Server.GameData.Palette = null;
-                    Logger?.Invoke("Cleared colour palette, server will use default game palette");
-                    goto closeWizard;
-                }
-                
-                for (var index = 0; index < split.Length; index++)
-                {
-                    if (uint.TryParse(split[index].Trim(), out var uintValue))
-                    {
-                        newPalette.Add(uintValue);
-                        continue;
-                    }
-                    
-                    Logger?.Invoke($"Could not add beyond the {GetOrdinalSuffix(index + 1)} element due to it not being a correctly formatted number.");
-                    break;
-                }
-
-                Program.Server.GameData.Palette = newPalette;
-                Logger?.Invoke("Updated colour palette to: " +
-                              string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
-                              " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
-                
-closeWizard:
-                Application.Top.Remove(paletteWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(paletteWizard);
-            Application.Run(Application.Top);
-        };
-        
-        var restoreBackupButton = new Button
-        {
-            Text = "Restore canvas from backup",
-            Y = Pos.Top(serverActionsContainer) + 7
-        };
-        restoreBackupButton.Clicked += (_, _) =>
-        {
-            var restoreWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 64,
-                Height = 5,
-            };
-            
-            var firstStep = new WizardStep()
-            {
-                Title = "Restore canvas from backup"
-            }; 
-            var restoreField = new TextField(Program.Server.GameData.CanvasFolder)
-            {
-                Width = Dim.Fill(),
-                Y = 1
-            };
-            firstStep.Add(new Label { Text = "Enter the path to the canvas backup to restore from" }, restoreField);
-
-            restoreWizard.AddStep(firstStep);
-            restoreWizard.Finished += (_, _) =>
-            {
-                if (RestoreFromBackup(restoreField.Text) is { } unpackedInfo)
-                {
-                    Logger?.Invoke($"Successfully restored canvas from provided backup. Restored canvas length: : " +
-                        $"{unpackedInfo.Board.Length}, restored palette length: {string.Join(", ", unpackedInfo.Palette)}, " +
-                        $"restored canvas dimensions {unpackedInfo.Width}x{unpackedInfo.Board.Length/unpackedInfo.Width}");
-                }
-                else
-                {
-                    Logger?.Invoke("Could not restore canvas from provided backup. Make sure the path is pointing to a valid canvas backup.");
-                }
-
-                Application.Top.Remove(restoreWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(restoreWizard);
-            Application.Run(Application.Top);
-        };
-
-        var saveCanvasButton = new Button
-        {
-            Text = "Save canvas to disk",
-            Y = Pos.Top(serverActionsContainer) + 8
-        };
-        saveCanvasButton.Clicked += async (_, _) =>
-        {
-            Logger?.Invoke("Canvas saved to disk");
-            await Program.Server.WebServer.SaveCanvasBackupAsync();
-        };
-
-        var pruneBackupsButton = new Button
-        {
-            Text = "Prune backup list",
-            Y = Pos.Top(serverActionsContainer) + 9
-        };
-        pruneBackupsButton.Clicked += (_, _) => Task.Run(PruneBackupList);
-
-        var stopServerButton = new Button
-        {
-            Text = "Gracefully stop server",
-            Y = Pos.Top(serverActionsContainer) + 10
-        };
-        stopServerButton.Clicked += async (_, _) =>
-        {
-            Logger?.Invoke("Server shutdown request received");
-            await Program.Server.WebServer.SaveCanvasBackupAsync();
-            Application.Shutdown();
-            await Program.Server.StopAsync();
-            Console.Clear();
-        };
-        
-        serverActionsContainer.Add(expandCanvasButton, fillCanvasButton, chatCooldownButton,
-            broadcastChatButton, changeGameCooldownButton, editPaletteButton, restoreBackupButton, saveCanvasButton,
-            pruneBackupsButton, stopServerButton);
-        // End server actions stack panel container
-        
-        // Server actions panel, provides nice border around container
-        // TODO: Stand-in
-        var serverActionsPanel = new FrameView()
-        {
-            Title = "Server actions"
-        };
-        /*var serverActionsPanel = new PanelView
-        {
-            Border = new Border
-            {
-                BorderBrush = Color.White,
-                BorderStyle = BorderStyle.Rounded,
-                Title = "Server actions",
-            },
-            ColorScheme = Colors.Base,
-            Child = serverActionsContainer
-        };*/
-        
-        // Clients panel
-        var clientsListView = new ListView(new Rect(0, 0, 64, 16),
+    private void InitialiseClientsPanel()
+    {
+        clientsListView = new ListView(new Rect(0, 0, 64, 16),
             new List<string> { "No clients are connected yet... Invite some friends!" })
         {
             Width = Dim.Fill(),
         };
-        clientsListView.SelectedItemChanged += (_, args) =>
+        //clientsListView.SelectedItemChanged += ShowClientInfoDialog;
+
+        var clientsPanel = new FrameView
         {
-            var clientWizard = new Wizard()
-            {
-                Modal = false,
-                Width = 64,
-                Height = 8,
-                //Border = new Border { Background = Color.White }
-            };
-
-            var selectedClientPair = Program.Server.Clients
-                .FirstOrDefault(clientPair => clientPair.Value.IdIpPort.Equals(args.Value));
-
-            if (selectedClientPair.Equals(default(KeyValuePair<ClientMetadata, ClientData>)))
-            {
-                return;
-            }
-            
-            var firstStep = new WizardStep()
-            {
-                Title = "Player info"
-            };
-            var ipLabel = new Label
-            {
-                Text = "Player IP/Port: " + args.Value,
-                Y = 0
-            };
-            
-            var vipLabel = new Label
-            {
-                Text = "Player permissions: " + selectedClientPair.Value.Permissions,
-                Y = 1
-            };
-            var lastChatLabel = new Label
-            {
-                Text = "Player last chat: " + selectedClientPair.Value.LastChat,
-                Y = 2
-            };
-            var kickButton = new Button
-            {
-                Text = "Kick player",
-                Y = 3
-            };
-            kickButton.Clicked += async (_, _) =>
-            {
-                Logger?.Invoke($"Disconnected player {selectedClientPair.Value.IdIpPort}");
-                await Program.Server.SocketServer.KickPlayer(selectedClientPair.Key);
-            };
-            var banButton = new Button
-            {
-                Text = "Ban player",
-                Y = 4
-            };
-            banButton.Clicked += (_, _) =>
-            {
-                Logger?.Invoke($"Banned player {selectedClientPair.Value.IdIpPort}");
-                Program.Server.SocketServer.BanPlayer(selectedClientPair.Key, 1000); //TODO: Add ban duration
-            };
-            firstStep.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
-
-            clientWizard.AddStep(firstStep);
-            clientWizard.Finished += (_, _) =>
-            {
-                Application.Top.Remove(clientWizard);
-                Application.RequestStop();
-                Application.Run(Application.Top);
-            };
-            
-            Application.Top.Add(clientWizard);
-            Application.Run(Application.Top);
-        };
-        var clientsPanel = new FrameView()
-        {
-            X = Pos.Right(serverActionsPanel) + 2,
+            X = Pos.X(this) + 33,
             Height = 16,
+            Width = Dim.Fill(),
             Title = "Connected clients",
-            ColorScheme = Colors.Base,
+            BorderStyle = LineStyle.Rounded
         };
         clientsPanel.Add(clientsListView);
-        // TODO: Stand-in
-        /*var clientsPanel = new PanelView
-        {
-            X = Pos.Right(serverActionsPanel) + 2,
-            Height = 16,
-            Border = new Border
-            {
-                BorderBrush = Color.White,
-                BorderStyle = BorderStyle.Rounded,
-                Title = "Connected Clients"
-            },
-            ColorScheme = Colors.Base,
-            Child = clientsListView
-        };*/
-        
-        var statisticLogLabel = new Label
-        {
-            Text = "Server Statistics:",
-            Y = Pos.Bottom(serverActionsPanel) + 2,
-            X = Pos.Center()
-        };
-        var serverUptimeLabel = new Label
-        {
-            Text = "Server uptime: 00:00:00",
-            Y = Pos.Bottom(statisticLogLabel),
-            X = Pos.Center()
-        };
-        var serverIpPortLabel = new Label
-        {
-            Text = "Server IP Port: " + (Program.Config.Ssl ? "wss://" : "ws://") + "localhost:" +
-                   Program.Config.SocketPort + " " + (Program.Config.Ssl ? "https://" : "http://") + "localhost:" +
-                   Program.Config.HttpPort + "/place" + (Program.Config.UseCloudflare ? " (cloudflare)" : ""),
-            Y = Pos.Bottom(serverUptimeLabel),
-            X = Pos.Center()
-        };
-        var serverBackupPathLabel = new Label
-        {
-            Text = "Canvas backup path: " + new DirectoryInfo(Program.Config.CanvasFolder).FullName,
-            Y = Pos.Bottom(serverIpPortLabel),
-            X = Pos.Center()
-        };
-        var webhookUrl = Program.Config.WebhookService?.Url;
-        var serverWebhookUrlLabel = new Label
-        {
-            Text = "Game chat webhook URL: " + (string.IsNullOrEmpty(webhookUrl) ? "No webhook URL set" : webhookUrl),
-            Y = Pos.Bottom(serverBackupPathLabel),
-            X = Pos.Center()
-        };
+        Add(clientsPanel);
 
-        // Statistics log panel
-        // TODO: Stand-in
-        //PanelView serverBottomPrimary = null!;
-        FrameView serverBottomPrimary = null!;
-        var serverLogs = new List<string>();
-        var serverLogPanel = new FrameView
+        // Wire up client connection events
+        Server.SocketServer.PlayerConnected += UpdateClientsList;
+        Server.SocketServer.PlayerDisconnected += UpdateClientsList;
+    }
+
+    private void UpdateClientsList(object? sender, EventArgs e)
+    {
+        clientsListView.SetSource(Server.Clients
+            .Select(pair => pair.Value.IdIpPort)
+            .ToList());
+    }
+
+    private void InitializeStatisticsPanel()
+    {
+        var labels = new[]
         {
-            Y = Pos.AnchorEnd() - 13,
-            Height = 8,
-            Title = "Server logs",
-            ColorScheme = Colors.Base
-        };
-        serverLogPanel.Add(new ListView(new Rect(0, 0, 128, 8), serverLogs)
-        {
-            Width = Dim.Fill()
-        });
-        /*var serverLogPanel = new PanelView
-        {
-            Y = Pos.AnchorEnd() - 13,
-            Height = 8,
-            Border = new Border
+            new Label
             {
-                BorderBrush = Color.White,
-                BorderStyle = BorderStyle.Rounded,
-                Title = "Server logs"
+                Text = "Server Statistics:",
+                X = Pos.Center(),
+                Y = Pos.Center()
             },
-            ColorScheme = Colors.Base,
-        };
-        serverLogPanel.Add = new ListView(new Rect(0, 0, 128, 8), serverLogs)
-        {
-            Width = Dim.Fill()
-        };*/
-        
-        // TODO: Stand-in
-        var serverReplPanel = new FrameView
-        {
-            Y = Pos.AnchorEnd() - 3,
-            Height = 2,
-            Title = "Command line repl",
-            ColorScheme = Colors.Base
-        };
-        /*var serverReplPanel = new PanelView
-        {
-            Y = Pos.AnchorEnd() - 3,
-            Height = 2,
-            Border = new Border
+            serverUptimeLabel = new Label
             {
-                BorderBrush = Color.White,
-                BorderStyle = BorderStyle.Rounded,
-                Title = "Command line repl"
+                Text = "Server uptime: 00:00:00",
+                X = Pos.Center(),
+                Y = Pos.Center() + 1
             },
-            ColorScheme = Colors.Base,
-        };*/
-        var replTextField = new TextView()
-        {
-            Width = Dim.Fill(),
-            Height = Dim.Fill()
-        };
-        replTextField.KeyDown += (_, args) =>
-        {
-            if (serverBottomPrimary == serverLogPanel && args.KeyEvent.Key == Key.Enter)
+            new Label
             {
-                args.Handled = true;
-                ExecuteServerRepl();
+                Text = $"Server Address: {(Program.Config.Ssl ? "wss://" : "ws://")}localhost:{Program.Config.SocketPort} " +
+                       $"{(Program.Config.Ssl ? "https://" : "http://")}localhost:{Program.Config.HttpPort}/place" +
+                       $"{(Program.Config.UseCloudflare ? " (cloudflare)" : "")}",
+                X = Pos.Center(),
+                Y = Pos.Center() + 2
+            },
+            new Label {
+                Text = "Canvas backup path: " + new DirectoryInfo(Program.Config.CanvasFolder).FullName,
+                X = Pos.Center(),
+                Y = Pos.Center() + 3
+            },
+            new Label {
+                Text = "Game chat webhook URL: " +
+                       (string.IsNullOrEmpty(Program.Config.WebhookService?.Url) ?
+                           "No webhook URL set" : Program.Config.WebhookService.Url),
+                X = Pos.Center(),
+                Y = Pos.Center() + 4
             }
         };
-        /*serverReplPanel.Child = replTextField;*/
-        serverReplPanel.Add(replTextField);
 
-        void ExecuteServerRepl()
-        {
-            var codeText = replTextField.Text;
-            replTextField.Text = "";
-            
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var state = await CSharpScript.RunAsync(codeText, ScriptOptions.Default, this, typeof(ConsoleWindow));
-                    if (state.ReturnValue != null)
-                    {
-                        Logger?.Invoke(state.ReturnValue.ToString()!);
-                    }
-                }
-                catch (Exception e)
-                {
-                    Logger?.Invoke(e.ToString());
-                }
-                
-            });
-        }
+        Add(labels);
+    }
 
-        serverBottomPrimary = serverLogPanel;
-        var serverBottomAction = new Button("Clear")
+    private void InitialiseBottomPanels()
+    {
+        InitializeLogPanel();
+        InitializeReplPanel();
+
+        var swapButton = new Button("Swap primary")
         {
-            Y = Pos.AnchorEnd() - 13,
-            X = Pos.AnchorEnd() - 10
+            Y = Pos.Bottom(this) - 14,
+            X = Pos.Right(this) - 28
         };
-        serverBottomAction.Clicked += (_, _) =>
+        swapButton.Clicked += (sender, args) => SwapPrimaryPanel();
+
+        bottomActionButton = new Button("Clear")
+        {
+            Y = Pos.Bottom(this) - 14,
+            X = Pos.Right(this) - 12
+        };
+        bottomActionButton.Clicked += (sender, args) =>
         {
             if (serverBottomPrimary == serverLogPanel)
             {
@@ -750,112 +199,529 @@ closeWizard:
                 ExecuteServerRepl();
             }
         };
-        var serverBottomSwapPrimary = new Button("Swap primary")
-        {
-            Y = Pos.AnchorEnd() - 13,
-            X = Pos.AnchorEnd() - 26
-        };
-        serverBottomSwapPrimary.Clicked += (_, _) =>
-        {
-            var logsX = CloneObject(serverLogPanel.X);
-            var logsY = CloneObject(serverLogPanel.Y);
-            var logsHeight = CloneObject(serverLogPanel.Height);
-            
-            serverLogPanel.X = serverReplPanel.X;
-            serverLogPanel.Y = serverReplPanel.Y;
-            serverLogPanel.Height = serverReplPanel.Height;
 
-            serverReplPanel.X = logsX;
-            serverReplPanel.Y = logsY;
-            serverReplPanel.Height = logsHeight;
-            serverBottomPrimary = serverBottomPrimary == serverLogPanel ? serverReplPanel :serverLogPanel;
+        Add(swapButton, bottomActionButton);
+    }
 
-            if (serverBottomPrimary == serverLogPanel)
-            {
-                serverBottomAction.Text = "Clear";
-            }
-            else
-            {
-                serverBottomAction.Text = "Exec";
-            }
-            
-            // We did an element position change so we need to do a full layout recalculation
-            Application.Top.LayoutSubviews();
-            Application.Refresh();
+    private void InitializeLogPanel()
+    {
+        serverLogPanel = new FrameView
+        {
+            Y = Pos.Bottom(this) - 14,
+            Height = 12,
+            Width = Dim.Fill(),
+            Title = "Server logs",
+            ColorScheme = Colors.Base,
+            BorderStyle = LineStyle.Rounded
         };
 
-        Add(serverActionsPanel, clientsPanel, statisticLogLabel, serverUptimeLabel, serverIpPortLabel,
-            serverBackupPathLabel, serverWebhookUrlLabel, serverLogPanel, serverReplPanel, serverBottomSwapPrimary, serverBottomAction);
-        
-        // Server uptime timer
+        serverLogPanel.Add(new ListView(new Rect(0, 0, 128, 8), serverLogs)
+        {
+            Width = Dim.Fill()
+        });
+
+        Add(serverLogPanel);
+        serverBottomPrimary = serverLogPanel;
+    }
+
+    private void InitializeReplPanel()
+    {
+        serverReplPanel = new FrameView
+        {
+            Y = Pos.Bottom(this) - 5,
+            Height = 3,
+            Width = Dim.Fill(),
+            Title = "Command line repl",
+            ColorScheme = Colors.Base,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        replTextField = new TextView
+        {
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        };
+        replTextField.KeyDown += HandleReplKeyDown;
+
+        serverReplPanel.Add(replTextField);
+    }
+
+    private void HandleReplKeyDown(object? sender, KeyEventEventArgs? args)
+    {
+        if (serverBottomPrimary == serverLogPanel && args?.KeyEvent.Key == Key.Enter)
+        {
+            args.Handled = true;
+            ExecuteServerRepl();
+        }
+    }
+
+    private void InitialiseServerLogging()
+    {
+        if (!Program.Config.LogToConsole)
+        {
+            serverLogs.Add($"[TKOfficial {DateTime.Now:hh:mm:ss}]: Server logging to console has been disabled. Logs will not appear here.");
+            return;
+        }
+
+        logger = message => serverLogs.Add($"[TKOfficial {DateTime.Now:hh:mm:ss}]: {message}");
+        Server.Logger = message => serverLogs.Add($"[ServerInstance {DateTime.Now:hh:mm:ss}]: {message}");
+        Server.SocketServer.Logger = message => serverLogs.Add($"[SocketServer {DateTime.Now:hh:mm:ss}]: {message}");
+        Server.WebServer.Logger = message => serverLogs.Add($"[WebServer {DateTime.Now:hh:mm:ss}]: {message}");
+    }
+
+    private void InitialiseTimers()
+    {
         var elapsedSeconds = 0;
         var uptimeTimer = new System.Timers.Timer
         {
             AutoReset = true,
             Interval = TimeSpan.FromSeconds(1).TotalMilliseconds
         };
+
         uptimeTimer.Elapsed += (_, _) =>
         {
-            serverUptimeLabel.Text = "Server uptime: " + TimeSpan.FromSeconds(elapsedSeconds);
+            if (serverUptimeLabel == null)
+            {
+                return;
+            }
+
+            serverUptimeLabel.Text = $"Server uptime: {TimeSpan.FromSeconds(elapsedSeconds)}";
             serverUptimeLabel.SetNeedsDisplay(serverUptimeLabel.Bounds);
             elapsedSeconds++;
         };
+
         uptimeTimer.Start();
-        
-        // Server logs panel
-        if (Program.Config.LogToConsole)
+    }
+
+    private async void ExecuteServerRepl()
+    {
+        var codeText = replTextField.Text;
+        replTextField.Text = "";
+
+        try
         {
-            Logger = message =>
+            var state = await CSharpScript.RunAsync(codeText, ScriptOptions.Default, this, typeof(ConsoleWindow));
+            if (state.ReturnValue != null)
             {
-                serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-            };
-            
-            Program.Server.Logger = message =>
-            {
-                serverLogs.Add("[ServerInstance " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-            };
+                logger?.Invoke(state.ReturnValue.ToString()!);
+            }
+        }
+        catch (Exception e)
+        {
+            logger?.Invoke(e.ToString());
+        }
+    }
 
-            Program.Server.SocketServer.Logger = message =>
-            {
-                serverLogs.Add("[SocketServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-            };
-
-            Program.Server.WebServer.Logger = message =>
-            {
-                serverLogs.Add("[WebServer " + DateTime.Now.ToString("hh:mm:ss") + "]: " + message);
-            };
+    private void SwapPrimaryPanel()
+    {
+        Remove(serverBottomPrimary);
+        if (serverBottomPrimary == serverLogPanel)
+        {
+            bottomActionButton.Text = "Exec-";
+            serverBottomPrimary = serverReplPanel;
         }
         else
         {
-            serverLogs.Add("[TKOfficial " + DateTime.Now.ToString("hh:mm:ss") + "]:" +
-                           "Server logging to console has been disabled. Logs will not appear here.");
+            bottomActionButton.Text = "Clear";
+            serverBottomPrimary = serverLogPanel;
+        }
+        Add(serverBottomPrimary);
+    }
+
+    private void ShowExpandCanvasDialog()
+    {
+        var wizard = new Wizard
+        {
+            Title = "Expand canvas",
+            Modal = true,
+            Width = 32,
+            Height = 12,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var expandXField = new TextField("0") { Width = Dim.Fill(), Y = 1 };
+        var expandYField = new TextField("0") { Width = Dim.Fill(), Y = 3 };
+        var colourIndexField = new TextField("0") { Width = Dim.Fill(), Y = 5 };
+        wizard.Add(
+            new Label { Text = "Expand X (Width)" },
+            expandXField,
+            new Label { Y = 2, Text = "Expand Y (Height)" },
+            expandYField,
+            new Label { Y = 4, Text = "Expand colour index" },
+            colourIndexField
+        );
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (sender, args) =>
+        {
+            if (!ValidateExpandCanvas(expandXField.Text, expandYField.Text, colourIndexField.Text,
+                    out var expandWidth, out var expandHeight, out var colourIndex))
+            {
+                return;
+            }
+
+            var formattedColour = RgbFormatColour(Server.GameData.Palette[colourIndex]);
+            var originalDimensions = (Server.GameData.BoardWidth, Server.GameData.BoardHeight);
+            var newDimensions = Server.SocketServer.ExpandCanvas((uint)expandWidth, (uint)expandHeight, colourIndex);
+            var difference = newDimensions.NewWidth * newDimensions.NewHeight -
+                           originalDimensions.BoardWidth * originalDimensions.BoardHeight;
+
+            logger?.Invoke($"Expanded canvas size to ({newDimensions.NewWidth}, {newDimensions.NewHeight}), " +
+                          $"with colour {formattedColour}, ({difference} pixels)");
+            CloseWizard(wizard);
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private bool ValidateExpandCanvas(string xText, string yText, string colorText,
+        out int expandWidth, out int expandHeight, out int colourIndex)
+    {
+        expandWidth = 0;
+        expandHeight = 0;
+        colourIndex = 0;
+
+        if (!int.TryParse(xText, out expandWidth))
+        {
+            logger?.Invoke("Failed to expand, invalid Expand X Parameter");
+            return false;
+        }
+        if (!int.TryParse(yText, out expandHeight))
+        {
+            logger?.Invoke("Failed to expand, invalid Expand Y Parameter");
+            return false;
+        }
+        if (!int.TryParse(colorText, out colourIndex) ||
+            colourIndex > (Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
+        {
+            logger?.Invoke("Failed to expand, invalid Colour Index Parameter");
+            return false;
         }
 
-        // Update clients panel with a list of all currently connected clients
-        Program.Server.SocketServer.PlayerConnected += (_, _) =>
-        {
-            clientsListView.SetSource(Program.Server.Clients
-                .Select(pair => pair.Value.IdIpPort)
-                .ToList());
-        };
-        Program.Server.SocketServer.PlayerDisconnected += (_, _) =>
-        {
-            clientsListView.SetSource(Program.Server.Clients
-                .Select(pair => pair.Value.IdIpPort)
-                .ToList());
-        };
-        
-        Logger?.Invoke("Server software started");
+        return true;
     }
-    
-    private static unsafe T CloneObject<T>(T source)
+
+    private void ShowFillCanvasDialog()
     {
-        var copyPtr = NativeMemory.Alloc((UIntPtr)sizeof(T));
-        *(T*) copyPtr = source;
-        
-        var clone = *(T*) copyPtr;
-        NativeMemory.Free(copyPtr);
-        return clone;
+        var wizard = new Wizard()
+        {
+            Title = "Fill canvas area",
+            Modal = true,
+            Width = 32,
+            Height = 13,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var xStartField = new TextField("0")
+        {
+            Width = Dim.Fill(),
+            Y = 1
+        };
+        var yStartField = new TextField("0")
+        {
+            Width = Dim.Fill(),
+            Y = 3
+        };
+        var xEndField = new TextField("0")
+        {
+            Width = Dim.Fill(),
+            Y = 5
+        };
+        var yEndField = new TextField("0")
+        {
+            Width = Dim.Fill(),
+            Y = 7
+        };
+        var colourIndexField = new TextField("0")
+        {
+            Width = Dim.Fill(),
+            Y = 9
+        };
+        wizard.Add(xStartField, new Label { Text = "Pixel X start" }, yStartField,
+            new Label { Y = 2, Text = "Pixel Y start" }, xEndField, new Label { Y = 4, Text = "Pixel X end" },
+            yEndField, new Label { Y = 6, Text = "Pixel Y end" },
+            new Label { Y = 8, Text = $"Palette colour index (0 - {Server.GameData.Palette?.Count ?? 31})" },
+            colourIndexField);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            if (!ValidateFillCanvas(xStartField.Text, yStartField.Text, xEndField.Text, yEndField.Text, colourIndexField.Text,
+                out var startX, out var startY, out var endX, out var endY, out var colourIndex))
+            {
+                return;
+            }
+
+            var formattedColour = colourIndex.ToString();
+            if (Server.GameData.Palette?.ElementAtOrDefault(colourIndex) is not null)
+            {
+                formattedColour = RgbFormatColour(Server.GameData.Palette[colourIndex]);
+            }
+            var areaFilled = Server.SocketServer.Fill(startX, startY, endX, endY, (byte) colourIndex);
+
+            logger?.Invoke($"Filled canvas area ({startX}, {startY}) to ({endX}, {endY}) with colour {formattedColour} ({areaFilled} pixels filled)");
+            CloseWizard(wizard);
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private bool ValidateFillCanvas(string xStartText, string yStartText, string xEndText, string yEndText,
+        string colourText, out int startX, out int startY, out int endX, out int endY, out int colourIndex)
+    {
+        startX = 0;
+        startY = 0;
+        endX = 0;
+        endY = 0;
+        colourIndex = 0;
+
+        if (!int.TryParse(xStartText, out startX) || startX < 0)
+        {
+            logger?.Invoke("Failed to fill, invalid Start X Parameter");
+            return false;
+        }
+        if (!int.TryParse(yStartText, out startY) || startY < 0)
+        {
+            logger?.Invoke("Failed to fill, invalid Start Y Parameter");
+            return false;
+        }
+        if (!int.TryParse(xEndText, out endX) || endX > Server.GameData.BoardWidth)
+        {
+            logger?.Invoke("Failed to fill, invalid End X Parameter");
+            return false;
+        }
+        if (!int.TryParse(yEndText, out endY) || endX > Server.GameData.BoardHeight)
+        {
+            logger?.Invoke("Failed to fill, invalid End Y Parameter");
+            return false;
+        }
+        if (!int.TryParse(colourText, out colourIndex) ||
+            colourIndex > (Server.GameData.Palette?.Count ?? 31) || colourIndex < 0)
+        {
+            logger?.Invoke("Failed to fill, invalid Colour Index Parameter");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void ShowChatCooldownDialog()
+    {
+        var wizard = new Wizard
+        {
+            Title = "Edit chat message cooldown",
+            Modal = true,
+            Width = 32,
+            Height = 4,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var cooldownField = new TextField(Server.GameData.ChatCooldownMs.ToString())
+        {
+            Width = Dim.Fill()
+        };
+        wizard.Add(cooldownField);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            if (int.TryParse(cooldownField.Text, out var cooldown))
+            {
+                Server.GameData.ChatCooldownMs = cooldown;
+                logger?.Invoke($"Updated game chat message cooldown to {Server.GameData.ChatCooldownMs}ms");
+                CloseWizard(wizard);
+            }
+            else
+            {
+                logger?.Invoke("Failed to update chat cooldown, invalid Cooldown Parameter");
+            }
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private void ShowBroadcastChatDialog()
+    {
+        var wizard = new Wizard
+        {
+            Title = "Broadcast chat message",
+            Modal = true,
+            Width = 32,
+            Height = 7,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var textInput = new TextField("Message from the server")
+        {
+            Width = Dim.Fill(),
+            Y = 1
+        };
+        var channelInput = new TextField("en")
+        {
+            Width = Dim.Fill(),
+            Y = 3
+        };
+        wizard.Add(new Label { Text = "Message:" }, textInput, new Label { Text = "Channel:", Y = 2 }, channelInput);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            Server.SocketServer.BroadcastChatMessage(textInput.Text, channelInput.Text);
+            logger?.Invoke($"Sent chat message '{textInput.Text}' in channel '{channelInput.Text}'");
+            CloseWizard(wizard);
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private void ShowPlaceCooldownDialog()
+    {
+        var wizard = new Wizard
+        {
+            Title = "Edit place cooldown",
+            Modal = true,
+            Width = 32,
+            Height = 4,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var cooldownField = new TextField(Server.GameData.CooldownMs.ToString())
+        {
+            Width = Dim.Fill()
+        };
+        wizard.Add(cooldownField);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            if (uint.TryParse(cooldownField.Text, out var cooldown))
+            {
+                Server.GameData.CooldownMs = cooldown;
+                logger?.Invoke($"Updated place cooldown to {Server.GameData.CooldownMs}ms");
+                CloseWizard(wizard);
+            }
+            else
+            {
+                logger?.Invoke("Failed to update chat cooldown, invalid CooldownMs Parameter");
+            }
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private void ShowPaletteDialog()
+    {
+        var wizard = new Wizard()
+        {
+            Title = "Edit colour palette",
+            Modal = true,
+            Width = 64,
+            Height = 5,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var paletteField = new TextField(string.Join(", ", Server.GameData.Palette ?? GameData.DefaultPalette))
+        {
+            Width = Dim.Fill(),
+            Y = 1
+        };
+        wizard.Add(new Label { Text = "Comma separated integer palette colours" }, paletteField);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            var newPalette = new List<uint>();
+            var split = paletteField.Text.Split(',');
+
+            if (split.Length == 0)
+            {
+                Server.GameData.Palette = null;
+                logger?.Invoke("Cleared colour palette, server will use default game palette");
+                CloseWizard(wizard);
+            }
+
+            for (var index = 0; index < split.Length; index++)
+            {
+                if (uint.TryParse(split[index].Trim(), out var uintValue))
+                {
+                    newPalette.Add(uintValue);
+                    continue;
+                }
+
+                logger?.Invoke($"Could not add beyond the {GetOrdinalSuffix(index + 1)} element due to it not being a correctly formatted number.");
+                break;
+            }
+
+            Program.Server.GameData.Palette = newPalette;
+            logger?.Invoke("Updated colour palette to: " +
+                            string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
+                            " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
+
+            CloseWizard(wizard);
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private void ShowRestoreBackupDialog()
+    {
+        var wizard = new Wizard()
+        {
+            Title = "Restore canvas from backup",
+            Modal = true,
+            Width = 64,
+            Height = 5,
+            BorderStyle = LineStyle.Rounded
+        };
+
+        var restoreField = new TextField(Program.Server.GameData.CanvasFolder)
+        {
+            Width = Dim.Fill(),
+            Y = 1
+        };
+        wizard.Add(new Label { Text = "Enter the path to the canvas backup to restore from" }, restoreField);
+        wizard.BackButton.Clicked += (sender, args) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            if (RestoreFromBackup(restoreField.Text) is { } unpackedInfo)
+            {
+                logger?.Invoke($"Successfully restored canvas from provided backup. Restored canvas length: : " +
+                    $"{unpackedInfo.Board.Length}, restored palette length: {string.Join(", ", unpackedInfo.Palette)}, " +
+                    $"restored canvas dimensions {unpackedInfo.Width}x{unpackedInfo.Board.Length/unpackedInfo.Width}");
+                CloseWizard(wizard);
+            }
+            else
+            {
+                logger?.Invoke("Could not restore canvas from provided backup. Make sure the path is pointing to a valid canvas backup.");
+            }
+        };
+
+        OpenWizard(wizard);
+    }
+
+    private void OpenWizard(Wizard wizard)
+    {
+        Application.Top.Add(wizard);
+    }
+
+    private void CloseWizard(Wizard wizard)
+    {
+        Application.Top.Remove(wizard);
     }
 
     private UnpackedBoard? RestoreFromBackup(string path)
@@ -869,10 +735,10 @@ closeWizard:
             }
 
             var boardInfo = BoardPacker.UnpackBoard(rawData);
-            Program.Server.Board = boardInfo.Board;
-            Program.Server.GameData.Palette = boardInfo.Palette.Count == 0 ? null : boardInfo.Palette;
-            Program.Server.GameData.BoardWidth = boardInfo.Width;
-            Program.Server.GameData.BoardHeight = (uint) (boardInfo.Board.Length / boardInfo.Width);
+            Server.Board = boardInfo.Board;
+            Server.GameData.Palette = boardInfo.Palette.Count == 0 ? null : boardInfo.Palette;
+            Server.GameData.BoardWidth = boardInfo.Width;
+            Server.GameData.BoardHeight = (uint) (boardInfo.Board.Length / boardInfo.Width);
             return boardInfo;
         }
         catch
@@ -883,6 +749,9 @@ closeWizard:
 
     private async Task PruneBackupList()
     {
+        logger.Invoke("Started pruning backup list task...");
+        var beforeLines = 0;
+        var afterLines = 0;
         var newListPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt." + DateTime.Now.ToFileTime());
         await using var newBackupList = new StreamWriter(newListPath);
         var listPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt");
@@ -891,21 +760,24 @@ closeWizard:
             var line = await reader.ReadLineAsync();
             while (line is not null)
             {
+                beforeLines++;
                 if (File.Exists(Path.Join(Program.Config.CanvasFolder, line)))
                 {
+                    afterLines++;
                     await newBackupList.WriteLineAsync(line);
                 }
-                
+
                 line = await reader.ReadLineAsync();
             }
         }
-        
+
         await newBackupList.FlushAsync();
         await newBackupList.DisposeAsync();
-        
+
         File.Move(newListPath, listPath, true);
+        logger.Invoke($"Backup list pruned successfully! Line count changed from {beforeLines} to {afterLines}.");
     }
-    
+
     private static string RgbFormatColour(uint colourValue)
     {
         var red = (byte) ((colourValue >> 16) & 0xFF);
@@ -914,7 +786,7 @@ closeWizard:
 
         return $"rgb({red}, {green}, {blue})";
     }
-    
+
     private static string GetOrdinalSuffix(int number)
     {
         return (number % 100 is 11 or 12 or 13 ? 9 : number % 10) switch

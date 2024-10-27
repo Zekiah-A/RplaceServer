@@ -25,8 +25,7 @@ public sealed class ServerInstance
     public byte[] Board = Array.Empty<byte>();
     public Dictionary<ClientMetadata, ClientData> Clients = new();
     public Dictionary<string, string> PendingCaptchas = new();
-    public Dictionary<string, long> Blacklist = new();
-    public Dictionary<string, long> Mutes = new();
+    public List<string> IpBlacklist = new();
     public List<string> VipKeys = [];
 
     public GameData GameData;

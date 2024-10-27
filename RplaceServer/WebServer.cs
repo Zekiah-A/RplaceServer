@@ -207,13 +207,13 @@ public sealed class WebServer
         await File.WriteAllBytesAsync(Path.Join(gameData.CanvasFolder, "place"), instance.Board);
 
         // Save a dated backup of the canvas to timestamp the place file at this point in time
-        var backupName = "place " + DateTime.Now.ToString("yyyy.MM.dd HH.mm.ss");
+        var backupName = "place " + DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss");
         await using var backupList = new StreamWriter(Path.Join(gameData.CanvasFolder, "backuplist.txt"), append: true);
         await backupList.WriteLineAsync(backupName);
         await backupList.FlushAsync();
 
         var boardPath = Path.Join(gameData.CanvasFolder, backupName);
-        var boardData = BoardPacker.PackBoard(instance.Board, gameData.Palette, gameData.BoardWidth);
+        var boardData = BoardPacker.PackBoard(instance.Board, gameData.Palette, gameData.BoardWidth, gameData.BoardHeight);
         await File.WriteAllBytesAsync(boardPath, boardData);
         backupsCount++;
         backupsSize += boardData.Length;
