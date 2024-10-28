@@ -8,7 +8,8 @@ public record ClientData
     DateTimeOffset ConnectDate
 )
 {
-    public DateTimeOffset LastChat { get; set; } = ConnectDate;
+    public DateTimeOffset LastNameChange { get; set; } = DateTimeOffset.MinValue;
+    public DateTimeOffset LastChat { get; set; } = DateTimeOffset.MinValue;
     public DateTimeOffset Cooldown { get; set; } = ConnectDate;
 
     public Permissions Permissions;

@@ -208,6 +208,7 @@ public sealed partial class SocketServer
     {
         var realIp = GetRealIp(args.Client);
         var data = new Span<byte>(args.Data.ToArray());
+        var client = instance.Clients[args.Client];
 
         switch ((ClientPacket) args.Data[0])
         {
@@ -263,10 +264,42 @@ public sealed partial class SocketServer
                 instance.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.CooldownMs);
                 var serverPixel = data[..6];
                 serverPixel[0] = (byte) ServerPacket.PixelPlace;
-                foreach (var client in app.Clients)
+                foreach (var wsClient in app.Clients)
                 {
-                    app.SendAsync(client, serverPixel.ToArray());
+                    app.SendAsync(wsClient, serverPixel.ToArray());
                 }
+                break;
+            }
+            case ClientPacket.SetChatName:
+            {
+                // TODO: This
+                /*
+                    const nameCooldown = chatNameCooldowns.get(ws.data.ip) ||  0
+                    if (nameCooldown > NOW) {
+                        return
+                    }
+                    chatNameCooldowns.set(ws.data.ip, NOW + chatNameCooldownMs)
+                    let name = decoderUTF8.decode(data.subarray(1))
+                    const resName = RESERVED_NAMES.getReverse(name) // reverse = valid code, use reserved name, forward = trying to use name w/out code, invalid
+                    name = resName ? resName + "✓" : censorText(name.replace(/\W+/g, "").toLowerCase()) + (RESERVED_NAMES.getForward(name) ? "~" : "")
+                    if (!name || name.length > 16) return
+
+                        // Update chatNames so new players joining will also see the name and pass to DB
+                        ws.data.chatName = name
+                    playerChatNames.set(ws.data.intId, name)
+                    postDbMessage("setUserChatName", { intId: ws.data.intId, newName: name })
+
+                    // Combine with player intId and alert all other clients of name change
+                    const nmInfoBuf = createNamePacket(name, ws.data.intId)
+                    wss.publish("all", nmInfoBuf)
+                    break
+                */
+                // TODO: Make GameData configuration for chat name change cooldown
+                if (client.LastNameChange + TimeSpan.FromSeconds(10) > DateTimeOffset.Now)
+                {
+                    break;
+                }
+                client.LastNameChange = DateTimeOffset.Now;
                 break;
             }
             case ClientPacket.ChatMessage:
@@ -333,9 +366,9 @@ public sealed partial class SocketServer
                 packet[0] = (byte) ServerPacket.ChatMessage;
                 messageData.CopyTo(packet, 1);
                 
-                foreach (var client in app.Clients)
+                foreach (var wsClient in app.Clients)
                 {
-                    app.SendAsync(client, packet);
+                    app.SendAsync(wsClient, packet);
                 }
 
                 gameData.WebhookService?.SendWebhook(

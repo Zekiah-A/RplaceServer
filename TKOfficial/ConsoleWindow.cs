@@ -103,7 +103,7 @@ public class ConsoleWindow : Window
         {
             Width = Dim.Fill(),
         };
-        //clientsListView.SelectedItemChanged += ShowClientInfoDialog;
+        clientsListView.SelectedItemChanged += ShowClientInfoDialog;
 
         var clientsPanel = new FrameView
         {
@@ -719,6 +719,73 @@ public class ConsoleWindow : Window
             }
         };
 
+        OpenWizard(wizard);
+    }
+
+    private void ShowClientInfoDialog(object? sender, ListViewItemEventArgs args)
+    {
+        // TODO: This is scuffed - perhaps use args.value to get the selected item in a more solid way
+        var selectedClient = Server.Clients.ElementAtOrDefault(args.Item);
+        if (selectedClient.Key == null || selectedClient.Value == null)
+        {
+            return;
+        }
+        
+        var wizard = new Wizard()
+        {
+            Modal = true,
+            Width = 64,
+            Height = 9,
+            Title = "Client info",
+            BorderStyle = LineStyle.Rounded
+        };
+        
+        var ipLabel = new Label
+        {
+            Text = "Player IP/Port: " + selectedClient.Value.IdIpPort,
+            Y = 0
+        };
+        
+        var vipLabel = new Label
+        {
+            Text = "Player permissions: " + selectedClient.Value.Permissions,
+            Y = 1
+        };
+        var lastChatLabel = new Label
+        {
+            Text = "Player last chat: " + selectedClient.Value.LastChat,
+            Y = 2
+        };
+        var kickButton = new Button
+        {
+            Text = "Kick player",
+            Y = 3
+        };
+        kickButton.Clicked += async (_, _) =>
+        {
+            logger?.Invoke($"Disconnected player {selectedClient.Value.IdIpPort}");
+            await Program.Server.SocketServer.KickPlayer(selectedClient.Key);
+        };
+        var banButton = new Button
+        {
+            Text = "Ban player",
+            Y = 4
+        };
+        banButton.Clicked += (_, _) =>
+        {
+            logger?.Invoke($"Banned player {selectedClient.Value.IdIpPort}");
+            Program.Server.SocketServer.BanPlayer(selectedClient.Key, 1000); //TODO: Add ban duration
+        };
+        wizard.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
+        wizard.BackButton.Clicked += (_, _) =>
+        {
+            CloseWizard(wizard);
+        };
+        wizard.Finished += (_, _) =>
+        {
+            CloseWizard(wizard);
+        };
+        
         OpenWizard(wizard);
     }
 
