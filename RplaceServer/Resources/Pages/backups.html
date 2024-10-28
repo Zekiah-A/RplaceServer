@@ -8,6 +8,7 @@
     <style>
         .highlight {
             border-radius: 4px;
+            padding: 4px;
             background-color: yellow;
             box-shadow: -2px -2px 4px darkkhaki inset;
         }
@@ -30,19 +31,23 @@
             flex-direction: row !important;
             column-gap: 64px;
         }
-        
+
+        #backupsContainer > a {
+            display: block;
+        }
+
         @media screen and (orientation: portrait) {
             .backups-section {
                 column-gap: 0px;
             }
         }
     </style>
-    <script>
+    <script defer>
         const mobile = window.matchMedia("(orientation: portrait)").matches
         const backupCache = new Map()
         function search(val) {
             let str = val.toLowerCase().trim()
-            let links = document.getElementsByTagName("a")
+            let links = backupsContainer.querySelectorAll("a")
             let scrolled = false
             for (let link of links) {
                 let text = link.innerText.toLowerCase()
@@ -54,6 +59,41 @@
                     }
                 }
                 else link.classList.remove("highlight")
+            }
+        }
+        function unpackBoard(packed) {
+            const view = new DataView(packed)
+            let position = 0
+
+            const created = view.getBigInt64(position)
+            position += 8
+            const width = view.getUint32(position)
+            position += 4
+            const height = view.getUint32(position)
+            position += 4
+
+            let palette = []
+            const paletteLength = view.getUint8(position++)
+            if (!palette.length) {
+                palette = [ 0xff1a006d, 0xff3900be, 0xff0045ff, 0xff00a8ff, 0xff35d6ff, 0xffb8f8ff, 0xff68a300, 0xff78cc00,
+                    0xff56ed7e, 0xff6f7500, 0xffaa9e00, 0xffc0cc00, 0xffa45024, 0xffea9036, 0xfff4e951, 0xffc13a49, 0xffff5c6a,
+                    0xffffb394, 0xff9f1e81, 0xffc04ab4, 0xffffabe4, 0xff7f10de, 0xff8138ff, 0xffaa99ff, 0xff2f486d, 0xff26699c,
+                    0xff70b4ff, 0xff000000, 0xff525251, 0xff908d89, 0xffd9d7d4, 0xffffffff] // argb
+            }
+            else {
+                for (let i = 0; i < paletteLength; i++) {
+                    palette.push(view.getUint32(position))
+                    position += 4
+                }
+            }
+
+            const board = new Uint8Array(packed.buffer, position)
+            return {
+                created,
+                width,
+                height,
+                board,
+                palette
             }
         }
         function backupLeft() {
@@ -79,40 +119,18 @@
                 return
             }
             
-            let placeView = new DataView(placeData)
-            let metadataLength = placeView.getInt16(placeView.byteLength - 2)
-            let boardLength = placeView.byteLength - metadataLength
-            const maxBoardLength = 16777216
-            if (boardLength > maxBoardLength) {
-                // Something is wrong
-                backupLeft()
-                console.error(`Could not render board, board length (${boardLength}) longer than limit (${maxBoardLength})`)
-                return 
-            }
-            let boardWidth = placeView.getUint32(boardLength)
-            let boardHeight = Math.floor(boardLength / boardWidth) 
-            previewCanvas.setAttribute("width", boardWidth)
-            previewCanvas.setAttribute("height", boardHeight)
-            
-            let palette = []
-            for (let i = boardLength + 4; i < boardLength - 2; i += 4) {
-                palette.push(placeView.getUint32(i))
-            }
-            if (!palette.length) {
-                palette = [0xff1a006d, 0xff3900be, 0xff0045ff, 0xff00a8ff, 0xff35d6ff, 0xffb8f8ff, 0xff68a300, 0xff78cc00,
-                    0xff56ed7e, 0xff6f7500, 0xffaa9e00, 0xffc0cc00, 0xffa45024, 0xffea9036, 0xfff4e951, 0xffc13a49, 0xffff5c6a,
-                    0xffffb394, 0xff9f1e81, 0xffc04ab4, 0xffffabe4, 0xff7f10de, 0xff8138ff, 0xffaa99ff, 0xff2f486d, 0xff26699c,
-                    0xff70b4ff, 0xff000000, 0xff525251, 0xff908d89, 0xffd9d7d4, 0xffffffff] // argb
-            }
+            const { board, width, height, palette } = unpackBoard(placeData)
+            previewCanvas.setAttribute("width", width)
+            previewCanvas.setAttribute("height", height)
             
             const pixelData = ctx.createImageData(1, 1)
-            for (let i = 0; i < boardLength; i++) {
-                let colour = palette[placeView.getUint8(i)]
+            for (let i = 0; i < board.byteLength; i++) {
+                let colour = palette[board[i]]
                 pixelData.data[0] = colour & 0xFF
                 pixelData.data[1] = (colour >> 8) & 0xFF
                 pixelData.data[2] = (colour >> 16) & 0xFF
                 pixelData.data[3] = (colour >> 24) & 0xFF
-                ctx.putImageData(pixelData, i % boardWidth, Math.floor(i / boardWidth));
+                ctx.putImageData(pixelData, i % width, Math.floor(i / width));
             }
         }
         window.onload = function() {
@@ -129,8 +147,9 @@
                     anchor.onmouseover = backupHovered
                     anchor.onmouseleave = backupLeft
                 }
-                backupsContainer.appendChild(anchor)
-                backupsContainer.appendChild(document.createElement("br"))
+                const listItem = document.createElement("li")
+                listItem.appendChild(anchor)
+                backupsContainer.appendChild(listItem)
             }
         }
         getList()
@@ -138,7 +157,9 @@
 </head>
 <body>
     <header>
-        <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png" alt="rplace_logo">
+        <a href="/">
+            <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png" height="64" alt="rplace logo">
+        </a>
         <h1>rplace canvas place file/backup list.</h1>
     </header>
     <div class="reddit-cards-container">
@@ -155,7 +176,7 @@
         <div>
             <div></div>
             <div class="backups-section">
-                <div id="backupsContainer"></div>
+                <ul id="backupsContainer"></ul>
                 <canvas id="previewCanvas" style="visibility: hidden;"></canvas>
             </div>
         </div>
