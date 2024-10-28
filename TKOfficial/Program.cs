@@ -184,14 +184,6 @@ public static class Program
         Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origin, Config.SocketPort,
             Config.HttpPort, Config.Ssl);
         
-        // Ensure server has created SaveData directory, etc
-        await Server.CreateRequiredFilesAsync();
-        
-        // Copy build resources into server software's StaticResources folder.
-        var buildContentPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
-            ?? Directory.GetCurrentDirectory(), "Resources");
-        FileUtils.RecursiveCopy(buildContentPath, Config.StaticResourcesFolder);
-
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
         {
             await Server.WebServer.SaveCanvasBackupAsync();

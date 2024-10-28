@@ -1,36 +1,35 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\WatsonWebsocketPlus\src\WatsonWebsocket\WatsonWebsocket.csproj" />
-    <ProjectReference Include="..\ZCaptcha\ZCaptcha.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="Pages\*">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="FFMpegCore" Version="5.1.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.9.2" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.10" />
-    <PackageReference Include="SkiaSharp" Version="3.0.0-preview.2.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.0.0-preview.2.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.0.0-preview.2.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.0.0-preview.2.1" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="CaptchaGeneration\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>Data\%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </Content>
-  </ItemGroup>
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\WatsonWebsocketPlus\src\WatsonWebsocket\WatsonWebsocket.csproj" />
+        <ProjectReference Include="..\ZCaptcha\ZCaptcha.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <Content Include="Pages\*">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="FFMpegCore" Version="5.1.0" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.9.2" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.10" />
+        <PackageReference Include="SkiaSharp" Version="3.0.0-preview.2.1" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.0.0-preview.2.1" />
+        <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.0.0-preview.2.1" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.0.0-preview.2.1" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Update="Resources\**\*">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 </Project>

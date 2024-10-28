@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using System.Reflection;
 using WatsonWebsocket;
 
 namespace RplaceServer;
@@ -93,6 +94,11 @@ public sealed class ServerInstance
             Directory.CreateDirectory(GameData.SaveDataFolder);
             Logger?.Invoke($"Could not find Save Data folder at {GameData.SaveDataFolder}. Regenerating.");
         }
+        
+        // Copy build resources into server software's StaticResources folder.
+        var buildContentPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+            ?? Directory.GetCurrentDirectory(), "Resources");
+        FileUtils.RecursiveCopy(buildContentPath, GameData.StaticResourcesFolder);
 
         createdRequiredFiles = true;
         return true;
