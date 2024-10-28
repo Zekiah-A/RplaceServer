@@ -1,24 +1,23 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk.Web">
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>preview</LangVersion>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="ObjectDumper.NET" Version="4.1.17" />
-    <PackageReference Include="Samboy063.Tomlet" Version="5.3.1" />
-    <PackageReference Include="Terminal.Gui" Version="2.0.0-v2-develop.1" />
-    <PackageReference Include="YamlDotNet" Version="15.1.2" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Update="censors.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>preview</LangVersion>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="ObjectDumper.NET" Version="4.1.17" />
+        <PackageReference Include="Samboy063.Tomlet" Version="5.3.1" />
+        <PackageReference Include="Terminal.Gui" Version="2.0.0-v2-develop.1" />
+        <PackageReference Include="YamlDotNet" Version="15.1.2" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\RplaceServer\RplaceServer.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Update="Resources\**\*">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 </Project>

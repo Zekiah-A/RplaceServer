@@ -21,48 +21,20 @@ public sealed partial class SocketServer
     private readonly HttpClient httpClient;
     private readonly EmojiCaptchaGenerator emojiCaptchaGenerator;
     private readonly WatsonWsServer app;
-    public readonly ServerInstance instance;
+    private readonly ServerInstance instance;
     private readonly GameData gameData;
     private readonly string origin;
-    private readonly List<string> allowedDomains =
-    [
-        "https://rplace.tk", "https://discord.com",
-        "https://twitter.com", "https://google.com",
-        "https://reddit.com", "https://github.com",
-        "https://wikipedia.org", "https://rplace.live"
-    ];
 
     public Action<string>? Logger;
     public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
     public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
-
-    private string blockedWordsPattern;
-    private Regex blockedWordsRegex;
-    public string BlockedWordsPattern
-    {
-        get => blockedWordsPattern;
-        set
-        {
-            blockedWordsPattern = value;
-            blockedWordsRegex = new Regex(value, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
-        }
-    }
-
-    private string blockedDomainsPattern;
-    private Regex blockedDomainsRegex;
-    public string BlockedDomainsPattern
-    {
-        get => blockedDomainsPattern;
-        set
-        {
-            blockedDomainsPattern = value;
-            blockedDomainsRegex = new Regex(value, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
-        }
-    }
     
-    [GeneratedRegex("\\W+")]
+    [GeneratedRegex(@"(?:https?:\/\/)([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)(\/?[^\s]*)")]
+    private static partial Regex DomainRegex();
+    
+    [GeneratedRegex(@"\W+")]
     private static partial Regex PlayerNameRegex();
 
     public SocketServer(ServerInstance parentInstance, GameData data, string? certPath, string? keyPath, string originHeader, bool ssl, int port)
@@ -73,11 +45,6 @@ public sealed partial class SocketServer
         origin = originHeader;
         httpClient = new HttpClient();
         emojiCaptchaGenerator = new EmojiCaptchaGenerator(Path.Combine(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
-        // TODO: Reimplement this!
-        blockedWordsPattern = "";
-        blockedWordsRegex = new Regex(blockedWordsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
-        blockedDomainsPattern = @"(https?:\/\/)?([\\da-z.-]+)\.([a-z.]{2,6})([/\\w .-]*)(\/?[^\s]*)";
-        blockedDomainsRegex = new Regex(blockedDomainsPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
 
         var dbPath = Path.Combine(gameData.SaveDataFolder, "Server.db");
         serverDb = new DatabaseContext(dbPath);
@@ -85,12 +52,11 @@ public sealed partial class SocketServer
     
     public async Task StartAsync()
     {
-        var captchaResources = Path.Combine(gameData.StaticResourcesFolder, @"CaptchaGeneration");
+        var captchaResources = Path.Combine(gameData.StaticResourcesFolder, "CaptchaGeneration");
         if (!Directory.Exists(captchaResources))
         {
-            Logger?.Invoke($"Could not find Resources Captcha Generation at {captchaResources}. Regenerating.");
-            Directory.CreateDirectory(captchaResources);
-            FileUtils.RecursiveCopy(Path.Combine(FileUtils.BuildContentPath, @"CaptchaGeneration"), captchaResources);
+            Logger?.Invoke($"Could not find StaticResources Captcha Generation files at {captchaResources}.");
+            throw new FileNotFoundException(captchaResources);
         }
         
         var blacklistPath = Path.Combine(gameData.SaveDataFolder, "bans.txt");
@@ -224,7 +190,7 @@ public sealed partial class SocketServer
             Buffer.BlockCopy(palette, 0, paletteBuffer, 1, palette.Length * 4);
             app.SendAsync(args.Client, paletteBuffer);
         }
-        
+
         // Send player cooldown + other data
         var canvasInfo = (Span<byte>) stackalloc byte[17];
         canvasInfo[0] = (byte) ServerPacket.CanvasInfo;
@@ -644,17 +610,21 @@ public sealed partial class SocketServer
     private string CensorText(string text)
     {
         // Censored words regex
-        var censoredText = blockedWordsRegex
-            .Replace(text, match => new string('*', match.Length));
-        
-        censoredText = blockedDomainsRegex.Replace(censoredText, match =>
+        foreach (var regex in gameData.ChatCensorRegexes)
         {
+            text = regex.Replace(text, match => new string('*', match.Length));
+        }
+        
+        text = DomainRegex().Replace(text, match =>
+        {
+            // Will include host & path (protocol is not captured)
             var url = match.ToString();
-            var domain = url.Replace("http://", "").Replace("https://", "");
-            return allowedDomains.Any(allowed => allowed.StartsWith(domain)) ? url : new string('*', url.Length);
+            return gameData.ChatAllowedDomainsRegexes.Any(allowed => allowed.IsMatch(url))
+                ? url
+                : new string('*', url.Length);
         });
 
-        return censoredText.Trim();
+        return text.Trim();
     }
 
     private static string HashSha256String(string text)

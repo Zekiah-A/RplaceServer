@@ -60,6 +60,8 @@
             previewCanvas.style.visibility = 'hidden'
         }
         async function backupHovered(event) {
+        console.log("lol")
+        return()
             const ctx = previewCanvas.getContext("2d")
             ctx.clearRect(0, 0, +previewCanvas.getAttribute("width") || 0, +previewCanvas.getAttribute("height") || 0)
             previewCanvas.style.visibility = 'visible'
@@ -82,6 +84,15 @@
             let placeView = new DataView(placeData)
             let metadataLength = placeView.getInt16(placeView.byteLength - 2)
             let boardLength = placeView.byteLength - metadataLength
+            const maxBoardLength = 16777216
+            console.log(boardLength)
+            return
+            if (boardLength > maxBoardLength) {
+                // Something is wrong
+                backupLeft()
+                console.error(`Could not render board, board length (${boardLength}) longer than limit (${maxBoardLength})`)
+                return 
+            }
             let boardWidth = placeView.getUint32(boardLength)
             let boardHeight = Math.floor(boardLength / boardWidth) 
             previewCanvas.setAttribute("width", boardWidth)

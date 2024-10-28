@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System;
+using System.Reflection;
 using System.Text.Json;
 using RplaceServer;
 using Terminal.Gui;
@@ -99,7 +100,7 @@ public static class Program
             ChatCooldownMs = defaultData.ChatCooldownMs,
             CaptchaEnabled = defaultData.CaptchaEnabled,
             CensorChatMessages = defaultData.CensorChatMessages,
-            CensorChatRegexes = defaultData.CensorChatRegexes,
+            ChatCensorRegexes = defaultData.ChatCensorRegexes,
             WebhookService = defaultData.WebhookService,
             TurnstileService = defaultData.TurnstileService,
         };
@@ -182,6 +183,14 @@ public static class Program
 
         Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origin, Config.SocketPort,
             Config.HttpPort, Config.Ssl);
+        
+        // Ensure server has created SaveData directory, etc
+        await Server.CreateRequiredFilesAsync();
+        
+        // Copy build resources into server software's StaticResources folder.
+        var buildContentPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+            ?? Directory.GetCurrentDirectory(), "Resources");
+        FileUtils.RecursiveCopy(buildContentPath, Config.StaticResourcesFolder);
 
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>
         {

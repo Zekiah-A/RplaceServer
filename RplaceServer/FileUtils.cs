@@ -5,20 +5,19 @@ namespace RplaceServer;
 
 public static class FileUtils
 {
-    public static string BuildContentPath;
-
-    static FileUtils()
-    {
-        BuildContentPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? Directory.GetCurrentDirectory();
-    }
-    
-    public static void RecursiveCopy(string sourceDir, string targetDir)
+    public static void RecursiveCopy(string sourceDir, string targetDir, bool overwrite = false)
     {
         Directory.CreateDirectory(targetDir);
 
         foreach (var file in Directory.GetFiles(sourceDir))
         {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
+            var destinationFile = Path.Combine(targetDir, Path.GetFileName(file));
+            if (File.Exists(destinationFile) && !overwrite)
+            {
+                continue;
+            }
+            
+            File.Copy(file, destinationFile, overwrite);
         }
 
         foreach (var directory in Directory.GetDirectories(sourceDir))

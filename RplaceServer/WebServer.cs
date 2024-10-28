@@ -34,9 +34,8 @@ public sealed class WebServer
         var pagesRoot = Path.Join(gameData.StaticResourcesFolder, @"Pages");
         if (!Directory.Exists(pagesRoot))
         {
-            Logger?.Invoke("Could not find Pages root in current working directory. Regenerating.");
-            Directory.CreateDirectory(pagesRoot);
-            FileUtils.RecursiveCopy(Path.Join(FileUtils.BuildContentPath, @"Pages"), pagesRoot);
+            Logger?.Invoke("Could not find StaticResources server Pages files.");
+            throw new FileNotFoundException(pagesRoot);
         }
         
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions

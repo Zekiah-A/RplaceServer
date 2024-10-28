@@ -41,8 +41,9 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
     public int ChatCooldownMs { get; set; }
     public bool CaptchaEnabled { get; set; }
     public bool CensorChatMessages { get; set; }
-    public List<Regex> CensorChatRegexes { get; set; }
-    
+    public List<Regex> ChatCensorRegexes { get; set; }
+    public List<Regex> ChatAllowedDomainsRegexes { get; set; }
+
     // External service configuration - Optional
     // These are config-settable, and live changeable, but not necessary 
     public IWebhookService? WebhookService { get; set; }
@@ -111,7 +112,8 @@ public class GameData : ICanvasConfiguration, IStorageConfiguration, IModeration
         ChatCooldownMs = options.ChatCooldownMs;
         CaptchaEnabled = options.CaptchaEnabled;
         CensorChatMessages = options.CensorChatMessages;
-        CensorChatRegexes = options.CensorChatRegexes;
+        ChatCensorRegexes = options.ChatCensorRegexes;
+        ChatAllowedDomainsRegexes = options.ChatAllowedDomainsRegexes;
         return this;
     }
     

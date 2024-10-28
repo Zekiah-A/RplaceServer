@@ -25,19 +25,22 @@ public sealed class ServerInstance
     public byte[] Board = Array.Empty<byte>();
     public Dictionary<ClientMetadata, ClientData> Clients = new();
     public Dictionary<string, string> PendingCaptchas = new();
-    public List<string> IpBlacklist = new();
+    public List<string> IpBlacklist = [];
     public List<string> VipKeys = [];
 
     public GameData GameData;
     public SocketServer SocketServer { get; set; }
     public WebServer WebServer { get; set; }
     public Action<string>? Logger;
+    
+    private bool createdRequiredFiles;
 
     public ServerInstance(GameData gameData, string? certPath, string? keyPath, string origin, int socketPort, int webPort, bool ssl)
     {
         GameData = gameData;
         SocketServer = new SocketServer(this, gameData, certPath, keyPath, origin, ssl, socketPort);
         WebServer = new WebServer(this, gameData, certPath, keyPath, origin, ssl, webPort);
+        createdRequiredFiles = false;
     }
 
     private async Task CreateNewBoardAsync()
@@ -52,9 +55,14 @@ public sealed class ServerInstance
             
         await File.WriteAllBytesAsync(Path.Join(GameData.CanvasFolder, "place"), Board);
     }
-    
-    public async Task StartAsync()
+
+    public async Task<bool> CreateRequiredFilesAsync()
     {
+        if (createdRequiredFiles)
+        {
+            return false;
+        }
+        
         var boardPath = Path.Join(GameData.CanvasFolder, "place");
         if (!File.Exists(boardPath))
         {
@@ -87,6 +95,17 @@ public sealed class ServerInstance
             Logger?.Invoke($"Could not find Save Data folder at {GameData.SaveDataFolder}. Regenerating.");
         }
 
+        createdRequiredFiles = true;
+        return true;
+    }
+    
+    public async Task StartAsync()
+    {
+        if (!createdRequiredFiles)
+        {
+            await CreateRequiredFilesAsync();
+        }
+        
         await Task.WhenAll(SocketServer.StartAsync(), WebServer.StartAsync());
     }
 
