@@ -5,12 +5,15 @@ namespace RplaceServer;
 
 public static class BoardPacker
 {
-    public static byte[] PackBoard(byte[] board, List<uint>? palette, uint boardWidth, uint boardHeight)
+    public static byte[] PackBoard(byte[] board, List<uint>? palette, uint boardWidth, uint boardHeight, long? creationDate = null)
     {
-        var metadataLength = sizeof(uint) + sizeof(uint) + sizeof(byte) + (palette?.Count ?? 0) * sizeof(uint);
+        var unixTime = creationDate ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var metadataLength = sizeof(long) + sizeof(uint) * 2 + sizeof(byte) + (palette?.Count ?? 0) * sizeof(uint);
         var packedBoard = (Span<byte>)stackalloc byte[metadataLength + board.Length];
     
         var position = 0;
+        BinaryPrimitives.WriteInt64BigEndian(packedBoard[position..], unixTime);
+        position += sizeof(long);
         BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..], boardWidth);
         position += sizeof(uint);
         BinaryPrimitives.WriteUInt32BigEndian(packedBoard[position..], boardHeight);
@@ -25,7 +28,7 @@ public static class BoardPacker
                 position += sizeof(uint);
             }
         }
-        
+    
         board.CopyTo(packedBoard[position..]);
         return packedBoard.ToArray();
     }
@@ -35,6 +38,8 @@ public static class BoardPacker
         var packedBoard = new Span<byte>(packed);
 
         var position = 0;
+        var unixTime = BinaryPrimitives.ReadInt64BigEndian(packedBoard[position..]);
+        position += sizeof(long);
         var boardWidth = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]);
         position += sizeof(uint);
         var boardHeight = BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]);
@@ -42,12 +47,12 @@ public static class BoardPacker
 
         var paletteLength = packedBoard[position++];
         var palette = new List<uint>();
-        for (var i = position; i < paletteLength; i += sizeof(uint))
+        for (var i = 0; i < paletteLength; i++)
         {
             palette.Add(BinaryPrimitives.ReadUInt32BigEndian(packedBoard[position..]));
             position += sizeof(uint);
         }
-    
+
         return new UnpackedBoard(packedBoard[position..].ToArray(), boardWidth, boardHeight, palette);
     }
 

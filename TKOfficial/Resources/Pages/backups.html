@@ -83,8 +83,6 @@
             let metadataLength = placeView.getInt16(placeView.byteLength - 2)
             let boardLength = placeView.byteLength - metadataLength
             const maxBoardLength = 16777216
-            console.log(boardLength)
-            return
             if (boardLength > maxBoardLength) {
                 // Something is wrong
                 backupLeft()
