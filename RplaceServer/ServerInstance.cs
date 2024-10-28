@@ -40,7 +40,6 @@ public sealed class ServerInstance
         GameData = gameData;
         SocketServer = new SocketServer(this, gameData, certPath, keyPath, origin, ssl, socketPort);
         WebServer = new WebServer(this, gameData, certPath, keyPath, origin, ssl, webPort);
-        createdRequiredFiles = false;
     }
 
     private async Task CreateNewBoardAsync()

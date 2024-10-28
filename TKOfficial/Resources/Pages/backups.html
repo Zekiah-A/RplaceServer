@@ -60,8 +60,6 @@
             previewCanvas.style.visibility = 'hidden'
         }
         async function backupHovered(event) {
-        console.log("lol")
-        return()
             const ctx = previewCanvas.getContext("2d")
             ctx.clearRect(0, 0, +previewCanvas.getAttribute("width") || 0, +previewCanvas.getAttribute("height") || 0)
             previewCanvas.style.visibility = 'visible'

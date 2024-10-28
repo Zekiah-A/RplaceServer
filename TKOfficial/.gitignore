@@ -1,6 +1,9 @@
 server_config.*
+Canvases
 Canvases/*
+StaticData
 StaticData/*
+SaveData
 SaveData/*
 Server.db
 Server.db-shm

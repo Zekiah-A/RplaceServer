@@ -55,7 +55,7 @@ public sealed partial class SocketServer
         var captchaResources = Path.Combine(gameData.StaticResourcesFolder, "CaptchaGeneration");
         if (!Directory.Exists(captchaResources))
         {
-            Logger?.Invoke($"Could not find StaticResources Captcha Generation files at {captchaResources}.");
+            Logger?.Invoke($"Could not find 'static resources' captcha generation files at {captchaResources}.");
             throw new FileNotFoundException(captchaResources);
         }
         
@@ -68,7 +68,6 @@ public sealed partial class SocketServer
         {
             Logger?.Invoke($"Could not find bans file at {Path.Combine(gameData.SaveDataFolder, "bans.txt")}. Will be regenerated when a player is banned.");
         }
-        
         
         var vipPath = Path.Combine(gameData.SaveDataFolder, "vip.txt");
         if (File.Exists(vipPath))

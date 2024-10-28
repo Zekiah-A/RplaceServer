@@ -1,5 +1,3 @@
-using System;
-using System.Runtime.InteropServices;
 using RplaceServer;
 using RplaceServer.Types;
 using Terminal.Gui;
@@ -34,8 +32,8 @@ public class ConsoleWindow : Window
         InitialiseServerLogging();
         InitialiseTimers();
 
-        _ = Task.Run(Server.StartAsync);
         logger?.Invoke("Server software started");
+        _ = Task.Run(Server.StartAsync);
     }
 
     private void InitialiseWindow()
@@ -125,7 +123,7 @@ public class ConsoleWindow : Window
 
     private void UpdateClientsList(object? sender, EventArgs e)
     {
-        clientsListView.SetSource(Server.Clients
+        clientsListView?.SetSource(Server.Clients
             .Select(pair => pair.Value.IdIpPort)
             .ToList());
     }
@@ -295,6 +293,11 @@ public class ConsoleWindow : Window
 
     private async void ExecuteServerRepl()
     {
+        if (replTextField == null)
+        {
+            return;
+        }
+        
         var codeText = replTextField.Text;
         replTextField.Text = "";
 
@@ -314,6 +317,11 @@ public class ConsoleWindow : Window
 
     private void SwapPrimaryPanel()
     {
+        if (bottomActionButton == null)
+        {
+            return;
+        }
+        
         Remove(serverBottomPrimary);
         if (serverBottomPrimary == serverLogPanel)
         {

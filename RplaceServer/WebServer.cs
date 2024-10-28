@@ -18,7 +18,8 @@ public sealed class WebServer
     private readonly GameData gameData;
     private readonly RateLimiter timelapseLimiter;
     public Action<string>? Logger;
-    
+
+    private string pagesRoot;
     private double cpuUsagePercentage;
     private long backupsSize;
     private int backupsCount;
@@ -31,13 +32,7 @@ public sealed class WebServer
         gameData = data;
         timelapseLimiter = new RateLimiter(TimeSpan.FromMilliseconds(gameData.TimelapseLimitPeriodS));
 
-        var pagesRoot = Path.Join(gameData.StaticResourcesFolder, @"Pages");
-        if (!Directory.Exists(pagesRoot))
-        {
-            Logger?.Invoke("Could not find StaticResources server Pages files.");
-            throw new FileNotFoundException(pagesRoot);
-        }
-        
+        pagesRoot = Path.Join(gameData.StaticResourcesFolder, "Pages");
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             WebRootPath = pagesRoot
@@ -111,6 +106,12 @@ public sealed class WebServer
     
     public async Task StartAsync()
     {
+        if (!Directory.Exists(pagesRoot))
+        {
+            Logger?.Invoke($"Could not find 'static resources' webserver pages files at {pagesRoot}.");
+            throw new FileNotFoundException(pagesRoot);
+        }
+        
         // Load backups from file
         var backups = new DirectoryInfo(gameData.CanvasFolder).GetFiles();
         backupsCount = backups.Length;
