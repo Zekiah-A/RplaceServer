@@ -285,7 +285,7 @@ void OnAuthServerMessageReceived(object? sender, MessageReceivedEventArgs args)
             var width = packet.ReadUInt();
             var height = packet.ReadUInt();
             var cooldownMs = packet.ReadUInt();
-            var gameData = GameData.CreateGameData()
+            var gameData = GameData.CreateBuilder()
                 .ConfigureCanvas(options =>
                 {
                     options.BoardWidth = width;

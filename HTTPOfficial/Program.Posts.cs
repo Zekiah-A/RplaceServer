@@ -109,7 +109,8 @@ internal static partial class Program
                 : null;
             if (postAccount is not null && submission.CanvasUser is not null)
             {
-                return Results.BadRequest(new ErrorResponse("Provided username and account are mutually exclusive", "post.upload.exclusive"));
+                return Results.BadRequest(
+                    new ErrorResponse("Provided canvas user and account are mutually exclusive", "post.upload.exclusive"));
             }
 
             if (postAccount is not null)
@@ -327,18 +328,13 @@ internal static partial class Program
                     content.HashType == ContentHashType.Perceptual && content.FileType == ContentFileType.Image);
                 foreach (var bannedContent in applicableBannedContents)
                 {
-                    if (!ulong.TryParse(bannedContent.Hash, out var bannedHash))
-                    {
-                        logger.LogWarning("{logPrefix} Banned content {id}'s hash could not be parsed as ulong",
-                            logPrefix, bannedContent.Id);
-                        continue;
-                    }
-                    
-                    var percentSimilarity = CompareHash.Similarity(contentHash, bannedHash);
-                    if (percentSimilarity > config.MinBannedContentPerceptualPercent)
+                    if (ulong.TryParse(bannedContent.Hash, out var bannedHash) && 
+                        CompareHash.Similarity(contentHash, bannedHash) > config.MinBannedContentPerceptualPercent)
                     {
                         return true;
                     }
+                    logger.LogWarning("{logPrefix} Banned content {id}'s hash could not be parsed as ulong",
+                        logPrefix, bannedContent.Id);
                 }
                 break;
             }

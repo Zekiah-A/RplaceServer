@@ -51,6 +51,6 @@ public class TurnstileService
 
 public class ConfigureServiceOptions : IServiceConfiguration
 {
-    public IWebhookService WebhookService { get; set; }
+    public IWebhookService? WebhookService { get; set; }
     public TurnstileService? TurnstileService { get; set; }
 }

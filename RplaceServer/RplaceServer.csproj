@@ -14,11 +14,6 @@
         <ProjectReference Include="..\ZCaptcha\ZCaptcha.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <Content Include="Pages\*">
-            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-        </Content>
-    </ItemGroup>
-    <ItemGroup>
         <PackageReference Include="FFMpegCore" Version="5.1.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.9.2" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.10" />

@@ -1,5 +1,5 @@
-// TKOfficial/RplaceServer
-//Copyright (C) 2022 Zekiah-A (https://github.com/Zekiah-A)
+// TKOfficial
+// Copyright (C) 2024 Zekiah-A (https://github.com/Zekiah-A)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -26,7 +26,12 @@ namespace TKOfficial;
 
 public static class Program
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        IndentCharacter = '\t',
+        IndentSize = 1
+    };
     public static ServerInstance Server { get; set; } = null!;
     public static Config Config { get; set; } = null!;
     private static string baseConfigPath = null!;
@@ -78,32 +83,14 @@ public static class Program
 
     private static async Task<string> WriteDefaultConfig(ConfigFormat format)
     {
-        var defaultData = GameData.CreateGameData()
+        var defaultConfig = IGameDataBuilder<Config>
+            .CreateBuilder()
             .ConfigureCanvas()
+            .ConfigureStorage()
             .ConfigureModeration()
             .ConfigureServices()
-            .ConfigureStorage();
+            .Build();
 
-        var defaultConfig = new Config
-        {
-            CooldownMs = defaultData.CooldownMs,
-            BoardWidth = defaultData.BoardWidth,
-            BoardHeight = defaultData.BoardHeight,
-            Palette = defaultData.Palette,
-            BackupFrequencyS = defaultData.BackupFrequencyS,
-            StaticResourcesFolder = defaultData.StaticResourcesFolder,
-            SaveDataFolder = defaultData.SaveDataFolder,
-            TimelapseLimitPeriodS = defaultData.TimelapseLimitPeriodS,
-            CanvasFolder = defaultData.CanvasFolder,
-            CreateBackups = defaultData.CreateBackups,
-            UseCloudflare = defaultData.UseCloudflare,
-            ChatCooldownMs = defaultData.ChatCooldownMs,
-            CaptchaEnabled = defaultData.CaptchaEnabled,
-            CensorChatMessages = defaultData.CensorChatMessages,
-            ChatCensorRegexes = defaultData.ChatCensorRegexes,
-            WebhookService = defaultData.WebhookService,
-            TurnstileService = defaultData.TurnstileService,
-        };
         switch (format)
         {
             case ConfigFormat.Json:

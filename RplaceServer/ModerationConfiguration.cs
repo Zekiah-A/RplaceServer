@@ -5,7 +5,7 @@ namespace RplaceServer;
 public interface IModerationConfiguration
 {
     // Will enable cloudflare cf-clearance headers checks if present to allow only cloudflare validated clients
-    public bool UseCloudflare { get; set; }
+    public bool UseCloudflare {  get; set; }
     public int ChatCooldownMs { get; set; }
     public bool CaptchaEnabled { get; set; }
     // By default will use regexes provided in censors.txt to censor chat messages for profanity

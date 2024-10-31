@@ -3,6 +3,7 @@ using RplaceServer.Types;
 using Terminal.Gui;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using WatsonWebsocket;
 
 namespace TKOfficial;
 
@@ -56,7 +57,7 @@ public class ConsoleWindow : Window
             CreateActionButton("Expand canvas", ShowExpandCanvasDialog),
             CreateActionButton("Fill canvas area", ShowFillCanvasDialog),
             CreateActionButton("Edit chat cooldown", ShowChatCooldownDialog),
-            CreateActionButton("Broadcast chat message", ShowBroadcastChatDialog),
+            CreateActionButton("Broadcast chat message", () => ShowBroadcastChatDialog()),
             CreateActionButton("Edit place cooldown", ShowPlaceCooldownDialog),
             CreateActionButton("Edit colour palette", ShowPaletteDialog),
             CreateActionButton("Restore canvas from backup", ShowRestoreBackupDialog),
@@ -103,7 +104,7 @@ public class ConsoleWindow : Window
         {
             Width = Dim.Fill(),
         };
-        clientsListView.SelectedItemChanged += ShowClientInfoDialog;
+        clientsListView.OpenSelectedItem += ShowClientInfoDialog;
 
         var clientsPanel = new FrameView
         {
@@ -554,11 +555,16 @@ public class ConsoleWindow : Window
         OpenWizard(wizard);
     }
 
-    private void ShowBroadcastChatDialog()
+    private void ShowBroadcastChatDialog(ClientMetadata? targetClient = null)
     {
+        var title = "Broadcast chat message";
+        if (targetClient is not null && Server.Clients.TryGetValue(targetClient, out var clientData))
+        {
+            title = "Message player " + clientData.IdIpPort;
+        }
         var wizard = new Wizard
         {
-            Title = "Broadcast chat message",
+            Title = title,
             Modal = true,
             Width = 32,
             Height = 7,
@@ -735,7 +741,7 @@ public class ConsoleWindow : Window
         {
             Modal = true,
             Width = 64,
-            Height = 9,
+            Height = 10,
             Title = "Client info",
             BorderStyle = LineStyle.Rounded
         };
@@ -753,7 +759,9 @@ public class ConsoleWindow : Window
         };
         var lastChatLabel = new Label
         {
-            Text = "Player last chat: " + selectedClient.Value.LastChat,
+            Text = "Player last chat: " + (selectedClient.Value.LastChat == DateTimeOffset.MinValue
+                ? "Never"
+                : selectedClient.Value.LastChat),
             Y = 2
         };
         var kickButton = new Button
@@ -776,7 +784,17 @@ public class ConsoleWindow : Window
             logger?.Invoke($"Banned player {selectedClient.Value.IdIpPort}");
             Program.Server.SocketServer.BanPlayer(selectedClient.Key, 1000); //TODO: Add ban duration
         };
-        wizard.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton);
+        var messageButton = new Button()
+        {
+            Text = "Message player",
+            Y = 5
+        };
+        messageButton.Clicked += (_, _) =>
+        {
+            CloseWizard(wizard);
+            ShowBroadcastChatDialog(selectedClient.Key);
+        };
+        wizard.Add(ipLabel, vipLabel, lastChatLabel, kickButton, banButton, messageButton);
         wizard.BackButton.Clicked += (_, _) =>
         {
             CloseWizard(wizard);
