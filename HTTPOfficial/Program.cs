@@ -128,7 +128,7 @@ internal static partial class Program
                     { AccountTier.Administrator, 50 }
                 }
             };
-            var newConfigText = JsonSerializer.Serialize(defaultConfiguration, new JsonSerializerOptions
+            var newConfigText = JsonSerializer.Serialize(defaultConfiguration, new JsonSerializerOptions()
             {
                 WriteIndented = true,
                 IndentSize = 1,
@@ -327,16 +327,16 @@ internal static partial class Program
 
             switch (code)
             {
-                case (byte)WorkerPackets.AnnounceExistence:
-                    {
-                        var instanceKey = packet.ReadString();
-                        var instanceUri = packet.ReadString();
-                        var workerInstanceCount = packet.ReadInt();
-                        var workerMaxInstances = packet.ReadInt();
-                        logger.LogInformation($"{instanceKey}, {instanceUri}, {workerInstanceCount}, {workerMaxInstances}");
+                case (byte) WorkerPackets.AnnounceExistence:
+                {
+                    var instanceKey = packet.ReadString();
+                    var instanceUri = packet.ReadString();
+                    var workerInstanceCount = packet.ReadInt();
+                    var workerMaxInstances = packet.ReadInt();
+                    logger.LogInformation($"{instanceKey}, {instanceUri}, {workerInstanceCount}, {workerMaxInstances}");
 
-                        break;
-                    }
+                    break;
+                }
             }
         };
         wsServer.ClientDisconnected += (_, args) =>

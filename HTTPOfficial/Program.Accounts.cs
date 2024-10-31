@@ -95,22 +95,31 @@ internal static partial class Program
             message.Subject = "rplace.live Account Creation Code";
             message.Body = new TextPart("html")
             {
-                Text = $"""
-                        <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;border-radius: 8px 8px 0px 0px;overflow: clip;">
-                            <h1 style="background: orangered;color: white;padding: 8px;box-shadow: 0px 2px 4px #0000002b;">👋 Hello there!</h1>
-                            <div style="margin: 8px;">
-                                <p>Someone used your email to register a new <a href="https://rplace.live" style="text-decoration: none;">rplace.live</a> account.</p>
-                                <p>If that's you, then cool, your code is:</p>
-                                <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
-                                <p>Otherwise, you can ignore this email, who cares anyway??</p>
-                                <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png">
-                                <p style="opacity: 0.6;">Email sent at {DateTime.Now} | Feel free to reply | Contact
-                                <a href="mailto:admin@rplace.live" style="text-decoration: none;">admin@rplace.live</a></p>
-                            <div>
-                        </div>
-                        """
+                Text = 
+                    $"""
+                     <div role="heading" style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;border-radius: 8px 8px 0px 0px;overflow: clip;height: 100%;display: flex;flex-direction: column;">
+                         <div style="background: orangered;color: white;padding: 8px;box-shadow: 0px 2px 4px #0000002b;display: flex;align-items: center;column-gap: 8px;">
+                             <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png" style="background: white;border-radius: 8px;" height="56">
+                             <h1 style="margin: 0px;">rplace.live: Account Creation Code</h1>
+                         </div>
+                         <div role="main" style="margin: 8px;flex-grow: 1;">
+                             <h1>👋 Hello there!</h1>
+                             <p>Someone used your email to register a new <a href="https://rplace.live" style="text-decoration: none;">rplace.live</a> account.</p>
+                             <p>If that's you, then cool, your code is:</p>
+                             <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {authCode} </h1>
+                             <p>Otherwise, you can ignore this email, we'll try not to message you again ❤️.</p>
+                         </div>
+                         <div role="contentinfo" style="opacity: 0.6;display: flex;flex-direction: row;padding: 16px;column-gap: 16px;">
+                             <span>Email sent at {DateTime.Now}</span>
+                             <hr>
+                             <span>Feel free to reply</span>
+                             <hr>
+                             <span>Contact <a href="mailto:admin@rplace.live" style="text-decoration: none;">admin@rplace.live</a></span>
+                         </div>
+                     </div>
+                     """
             };
-
+            
             try
             {
                 using var smtpClient = new SmtpClient();
@@ -286,7 +295,7 @@ internal static partial class Program
                     var success = await TerminateAccountData(verification.AccountId, database);
                     if (!success)
                     {
-                        logger.LogError("Failed to terminate account ${AccountId}, which expired before verification", verification.AccountId);
+                        logger.LogError("Failed to terminate account ${AccountId}, which expired before initial verification", verification.AccountId);
                     }
                 }
                 

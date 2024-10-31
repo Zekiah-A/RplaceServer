@@ -131,9 +131,7 @@ public class ConsoleWindow : Window
 
     private void InitializeStatisticsPanel()
     {
-        var labels = new[]
-        {
-            new Label
+        Add(new Label
             {
                 Text = "Server Statistics:",
                 X = Pos.Center(),
@@ -165,9 +163,7 @@ public class ConsoleWindow : Window
                 X = Pos.Center(),
                 Y = Pos.Center() + 4
             }
-        };
-
-        Add(labels);
+        );
     }
 
     private void InitialiseBottomPanels()
@@ -371,7 +367,8 @@ public class ConsoleWindow : Window
                 return;
             }
 
-            var formattedColour = RgbFormatColour(Server.GameData.Palette[colourIndex]);
+            var formattedColour = RgbFormatColour((Server.GameData.Palette ?? GameData.DefaultPalette)
+                .ElementAtOrDefault(colourIndex));
             var originalDimensions = (Server.GameData.BoardWidth, Server.GameData.BoardHeight);
             var newDimensions = Server.SocketServer.ExpandCanvas((uint)expandWidth, (uint)expandHeight, colourIndex);
             var difference = newDimensions.NewWidth * newDimensions.NewHeight -
@@ -680,9 +677,8 @@ public class ConsoleWindow : Window
 
             Program.Server.GameData.Palette = newPalette;
             logger?.Invoke("Updated colour palette to: " +
-                            string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
-                            " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
-
+                string.Join(", ", Program.Server.GameData.Palette ?? new List<uint>()) +
+                " with a length of " + (Program.Server.GameData.Palette?.Count ?? 0));
             CloseWizard(wizard);
         };
 
@@ -845,16 +841,16 @@ public class ConsoleWindow : Window
         logger.Invoke("Started pruning backup list task...");
         var beforeLines = 0;
         var afterLines = 0;
-        var newListPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt." + DateTime.Now.ToFileTime());
+        var newListPath = Path.Combine(Program.Config.CanvasFolder, "backuplist.txt." + DateTime.Now.ToFileTime());
         await using var newBackupList = new StreamWriter(newListPath);
-        var listPath = Path.Join(Program.Config.CanvasFolder, "backuplist.txt");
+        var listPath = Path.Combine(Program.Config.CanvasFolder, "backuplist.txt");
         using (var reader = new StreamReader(listPath))
         {
             var line = await reader.ReadLineAsync();
             while (line is not null)
             {
                 beforeLines++;
-                if (File.Exists(Path.Join(Program.Config.CanvasFolder, line)))
+                if (File.Exists(Path.Combine(Program.Config.CanvasFolder, line)))
                 {
                     afterLines++;
                     await newBackupList.WriteLineAsync(line);
@@ -865,7 +861,6 @@ public class ConsoleWindow : Window
         }
 
         await newBackupList.FlushAsync();
-        await newBackupList.DisposeAsync();
 
         File.Move(newListPath, listPath, true);
         logger.Invoke($"Backup list pruned successfully! Line count changed from {beforeLines} to {afterLines}.");
