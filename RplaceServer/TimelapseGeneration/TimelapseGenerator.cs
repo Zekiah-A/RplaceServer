@@ -76,7 +76,7 @@ internal static class TimelapseGenerator
             frames[i] = new SKBitmapFrame(bitmap);
         });
 
-        using var stream = new MemoryStream();
+        var stream = new MemoryStream();
         var framesSource = new RawVideoPipeSource(frames)
         {
             FrameRate = info.Fps

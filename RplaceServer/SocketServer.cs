@@ -1,13 +1,11 @@
 using System.Buffers.Binary;
-using System.Collections;
-using System.Net.Http.Json;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using RplaceServer.DataModel;
 using RplaceServer.Events;
 using RplaceServer.Types;
 using WatsonWebsocket;
@@ -17,15 +15,16 @@ namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
-    private readonly DatabaseContext? serverDb;
+    private readonly string dbPath;
+    private readonly DatabaseContext database;
     private readonly HttpClient httpClient;
-    private readonly EmojiCaptchaGenerator emojiCaptchaGenerator;
     private readonly WatsonWsServer app;
     private readonly ServerInstance instance;
     private readonly GameData gameData;
-    private readonly string origin;
+    private readonly string origins;
 
     public Action<string>? Logger;
+    public ICaptchaGenerator? CaptchaGenerator;
     public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
@@ -37,46 +36,77 @@ public sealed partial class SocketServer
     [GeneratedRegex(@"\W+")]
     private static partial Regex PlayerNameRegex();
 
-    public SocketServer(ServerInstance parentInstance, GameData data, string? certPath, string? keyPath, string originHeader, bool ssl, int port)
+    public SocketServer(ServerInstance parentInstance, GameData data, string? certPath, string? keyPath, string originsHeader, bool ssl, int port)
     {
         instance = parentInstance;
         gameData = data;
         app = new WatsonWsServer(port, ssl, certPath, keyPath, LogLevel.None, "localhost");
-        origin = originHeader;
+        origins = originsHeader;
         httpClient = new HttpClient();
-        emojiCaptchaGenerator = new EmojiCaptchaGenerator(Path.Combine(gameData.SaveDataFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
 
-        var dbPath = Path.Combine(gameData.SaveDataFolder, "Server.db");
-        serverDb = new DatabaseContext(dbPath);
+        // Create and initialise database
+        dbPath = Path.Combine(gameData.SaveDataFolder, "server.db");
+        database = new DatabaseContext(dbPath);
     }
     
     public async Task StartAsync()
     {
+        if (!await database.Database.CanConnectAsync())
+        {
+            Logger?.Invoke($"Couldn't find server database at {dbPath} creating...");
+            await database.Database.MigrateAsync();
+            Logger?.Invoke("Server database created successfully");
+        }
+        else
+        {
+            var pendingMigrationsAsync = await database.Database.GetPendingMigrationsAsync();
+            var pendingMigrations = pendingMigrationsAsync as string[] ?? pendingMigrationsAsync.ToArray();
+            if (pendingMigrations.Length != 0)
+            {
+                Logger?.Invoke($"Server database is outdated, applying {pendingMigrations.Length} pending migrations...");
+                await database.Database.MigrateAsync();
+                Logger?.Invoke("Server database updated successfully");
+            }
+        }
+
         var captchaResources = Path.Combine(gameData.StaticResourcesFolder, "CaptchaGeneration");
         if (!Directory.Exists(captchaResources))
         {
             Logger?.Invoke($"Could not find 'static resources' captcha generation files at {captchaResources}.");
             throw new FileNotFoundException(captchaResources);
         }
-        
+        CaptchaGenerator = new EmojiCaptchaGenerator(Path.Combine(gameData.StaticResourcesFolder, "CaptchaGeneration", "NotoColorEmoji-Regular.ttf"));
+
         var blacklistPath = Path.Combine(gameData.SaveDataFolder, "bans.txt");
         if (File.Exists(blacklistPath))
         {
-            FileUtils.ReadUrlSheet(httpClient, await File.ReadAllLinesAsync(blacklistPath), instance.IpBlacklist).GetAwaiter().GetResult();
+            var blacklistText = await File.ReadAllLinesAsync(blacklistPath);
+            await FileUtils.ReadUrlSheet(httpClient, blacklistText, instance.IpBlacklist);
         }
         else
         {
-            Logger?.Invoke($"Could not find bans file at {Path.Combine(gameData.SaveDataFolder, "bans.txt")}. Will be regenerated when a player is banned.");
+            Logger?.Invoke($"Could not find IP blacklist file at {Path.Combine(gameData.SaveDataFolder, "bans.txt")}");
         }
         
         var vipPath = Path.Combine(gameData.SaveDataFolder, "vip.txt");
         if (File.Exists(vipPath))
         {
-            instance.VipKeys.AddRange(await File.ReadAllLinesAsync(vipPath));
+            // TODO: Parse as list file, filtering out comments and empty lines
+            var vipText = await File.ReadAllLinesAsync(vipPath);
+            FileUtils.ReadListFile(vipText, instance.VipKeys);
         }
         else
         {
             Logger?.Invoke($"Could not find game VIPs file. Generating new VIP key file at '{vipPath}'");
+            await File.WriteAllTextAsync(vipPath, """
+                # VIP Key configuration file
+                # Below is the correct format of a VIP key configuration:
+                # MY_SHA256_HASHED_VIP_KEY { "perms": "canvasmod"|"chatmod"|"admin","vip", "cooldownMs": number, "enforceChatName": string|null }
+                
+                # Example VIP key configuration:
+                # 7eb65b1afd96609903c54851eb71fbdfb0e3bb2889b808ef62659ed5faf09963 { "perms": "admin", "cooldownMs": 30, "enforceChatName": "<ADMIN> zekiah" }
+                # Make sure all VIP keys stored here are sha256 hashes of the real keys you hand out
+                """);
         }
         
         app.ClientConnected += ClientConnected;
@@ -111,7 +141,8 @@ public sealed partial class SocketServer
         }
         
         // Reject
-        if (!string.IsNullOrEmpty(origin) && args.HttpRequest.Headers.Origin.First() != origin)
+        if (!string.IsNullOrEmpty(origins) && origins != "*" && 
+            !args.HttpRequest.Headers.Origin.Any(origin => origin != null && origins.Contains(origin)))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks.");
             _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
@@ -141,10 +172,61 @@ public sealed partial class SocketServer
             }
         }
         
+        // Try resolve their user, otherwise we allocate client a new user
+        string? token;
+        if (args.HttpRequest.Query.TryGetValue("token", out var queryToken))
+        {
+            token = queryToken.ToString();
+        }
+        else if (!args.HttpRequest.Cookies.TryGetValue("token", out var cookieToken))
+        {
+            token = cookieToken;
+        }
+        else
+        {
+            token = args.HttpRequest.Headers.Authorization;
+        }
+        var user = database.Users.SingleOrDefault(u => u.Token == token);
+        if (user is null || string.IsNullOrEmpty(token))
+        {
+            token = RandomNumberGenerator.GetHexString(64, true);
+            user = new User
+            {
+                AccountId = null,
+                ChatName = null,
+                PixelsPlaced = 0,
+                PlayTimeSeconds = 0,
+                Token = token
+            };
+            database.Users.Add(user);
+        }
+        
+        // Create user session entry
+        var session = new Session()
+        {
+            UserId = user.Id,
+            StartDate = DateTime.Now,
+            FinishDate = default,
+            Ip = realIp,
+            UserAgent = args.HttpRequest.Headers.UserAgent.ToString()
+        };
+        database.Sessions.Add(session);
+        
+        // Append UidToken cookie to response
+        args.Client.HttpContext.Response.Cookies.Append("token", token, new CookieOptions
+        {
+            Domain = args.HttpRequest.Host.ToString(),
+            Expires = DateTimeOffset.MaxValue,
+            HttpOnly = true, // Inaccessible from JS
+            SameSite = SameSiteMode.None,
+            Secure = true,
+            Path = "/"
+        });
+        
         // Accept - Create a player instance
-        var playerSocketClient = new ClientData(realIpPort, DateTimeOffset.Now);
+        var playerSocketClient = new ClientData(realIpPort, user.Id, session.Id, DateTimeOffset.Now);
         var uriKey = args.HttpRequest.Path.ToUriComponent().Split("/").FirstOrDefault();
-        if (uriKey is not null && uriKey.Length != 0)
+        if (!string.IsNullOrEmpty(uriKey))
         {
             var codeHash = HashSha256String(uriKey[1..]);
             if (!instance.VipKeys.Contains(codeHash))
@@ -165,9 +247,9 @@ public sealed partial class SocketServer
         instance.Clients.Add(args.Client, playerSocketClient);
         instance.PlayerCount++;
         
-        if (gameData.CaptchaEnabled)
+        if (gameData.CaptchaEnabled && CaptchaGenerator is not null)
         {
-            var result = emojiCaptchaGenerator.Generate();
+            var result = CaptchaGenerator.Generate();
             instance.PendingCaptchas[realIp] = result.Answer;
 
             var dummiesSize = Encoding.UTF8.GetByteCount(result.Dummies);
@@ -218,7 +300,7 @@ public sealed partial class SocketServer
                 if (data.Length < 6)
                 {
                     Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for invalid packet length ({data.Length})");
-                    return;
+                    break;
                 }
 
                 var index = BinaryPrimitives.ReadUInt32BigEndian(data[1..]);
@@ -228,7 +310,7 @@ public sealed partial class SocketServer
                 if (index >= instance.Board.Length || colour >= (gameData.Palette?.Count ?? 32))
                 {
                     Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for exceeding canvas size or palette ({index}, {colour})");
-                    return;
+                    break;
                 }
                 var clientCooldown = instance.Clients[args.Client].Cooldown;
 
@@ -242,7 +324,7 @@ public sealed partial class SocketServer
                     BinaryPrimitives.WriteInt32BigEndian(buffer[5..], (int) index);
                     buffer[9] = instance.Board[index];
                     app.SendAsync(args.Client, buffer.ToArray());
-                    return;
+                    break;
                 }
                 
                 var inhibitor = new EventInhibitor();
@@ -256,7 +338,7 @@ public sealed partial class SocketServer
                 if (inhibitor.Raised)
                 {
                     Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} inhibited by event handler");
-                    return;
+                    break;
                 }
 
                 // Accept
@@ -272,34 +354,32 @@ public sealed partial class SocketServer
             }
             case ClientPacket.SetChatName:
             {
-                // TODO: This
-                /*
-                    const nameCooldown = chatNameCooldowns.get(ws.data.ip) ||  0
-                    if (nameCooldown > NOW) {
-                        return
-                    }
-                    chatNameCooldowns.set(ws.data.ip, NOW + chatNameCooldownMs)
-                    let name = decoderUTF8.decode(data.subarray(1))
-                    const resName = RESERVED_NAMES.getReverse(name) // reverse = valid code, use reserved name, forward = trying to use name w/out code, invalid
-                    name = resName ? resName + "✓" : censorText(name.replace(/\W+/g, "").toLowerCase()) + (RESERVED_NAMES.getForward(name) ? "~" : "")
-                    if (!name || name.length > 16) return
-
-                        // Update chatNames so new players joining will also see the name and pass to DB
-                        ws.data.chatName = name
-                    playerChatNames.set(ws.data.intId, name)
-                    postDbMessage("setUserChatName", { intId: ws.data.intId, newName: name })
-
-                    // Combine with player intId and alert all other clients of name change
-                    const nmInfoBuf = createNamePacket(name, ws.data.intId)
-                    wss.publish("all", nmInfoBuf)
-                    break
-                */
                 // TODO: Make GameData configuration for chat name change cooldown
                 if (client.LastNameChange + TimeSpan.FromSeconds(10) > DateTimeOffset.Now)
                 {
                     break;
                 }
                 client.LastNameChange = DateTimeOffset.Now;
+
+                // Validate name
+                var name = Encoding.UTF8.GetString(data[1..]);
+                if (string.IsNullOrWhiteSpace(name) || name.Length > 16)
+                {
+                    break;
+                }
+
+                // Update database
+                var user = database.Users.Find(client.UserId);
+                if (user is null)
+                {
+                    break;
+                }
+                user.ChatName = name;
+                database.SaveChanges();
+
+                // Distribute new chat name
+                var nameInfoBuffer = CreateNamePacket(name, user.Id);
+                SendToAll(nameInfoBuffer);
                 break;
             }
             case ClientPacket.ChatMessage:
@@ -308,9 +388,9 @@ public sealed partial class SocketServer
                 if (instance.Clients[args.Client].LastChat.AddMilliseconds(gameData.ChatCooldownMs) > DateTimeOffset.Now || data.Length > 400)
                 {
                     Logger?.Invoke($"Chat from client {GetRealIpPort(args.Client)} rejected for breaching length/cooldown rules");
-                    return;
+                    break;
                 }
-                
+
                 instance.Clients[args.Client].LastChat = DateTimeOffset.Now;
 
                 var rawText = Encoding.UTF8.GetString(data.ToArray(), 1, data.Length - 1);
@@ -322,7 +402,7 @@ public sealed partial class SocketServer
                 // Reject
                 if (message is null || name is null || channel is null)
                 {
-                    return;
+                    break;
                 }
 
                 message = gameData.CensorChatMessages ? message : CensorText(message);
@@ -350,7 +430,7 @@ public sealed partial class SocketServer
                 if (inhibitor.Raised)
                 {
                     Logger?.Invoke($"Chat message from client {GetRealIpPort(args.Client)} inhibited by event handler");
-                    return;
+                    break;
                 }
                 
                 // Accept
@@ -383,7 +463,7 @@ public sealed partial class SocketServer
                 {
                     Logger?.Invoke($"Client {GetRealIpPort(args.Client)} disconnected for invalid captcha response");
                     _ = app.DisconnectClientAsync(args.Client, "Captcha fail");
-                    return;
+                    break;
                 }
                 
                 // Accept
@@ -398,7 +478,7 @@ public sealed partial class SocketServer
                 if (!instance.Clients.TryGetValue(args.Client, out var clientData) || clientData.Permissions != Permissions.Admin)
                 {
                     Logger?.Invoke($"Unauthenticated client {GetRealIpPort(args.Client)} attempted to initiate a mod action");
-                    return;
+                    break;
                 }
 
                 // TODO: Mod action
@@ -414,7 +494,7 @@ public sealed partial class SocketServer
                 if (data.Length < 7)
                 {
                     Logger?.Invoke($"Rollback from client {GetRealIpPort(args.Client)} rejected for invalid packet length ({data.Length})");
-                    return;
+                    break;
                 }
 
                 var regionWidth = data[1];
@@ -425,7 +505,7 @@ public sealed partial class SocketServer
                 {
                     Logger?.Invoke($"Rollback from client {GetRealIpPort(args.Client)
                         } rejected for invalid parameters (w: {regionWidth}, h: {regionHeight}, pos: {boardPos})");
-                    return;
+                    break;
                 }
 
                 var boardSpan = new Span<byte>(instance.Board);
@@ -458,11 +538,60 @@ public sealed partial class SocketServer
         var gameInfo = (Span<byte>) stackalloc byte[3];
         gameInfo[0] = (byte) ServerPacket.PlayerCount;
         BinaryPrimitives.TryWriteUInt16BigEndian(gameInfo[1..], (ushort) instance.PlayerCount);
+        SendToAll(gameInfo);
+    }
 
+    public void SendToAll(Span<byte> data)
+    {
+        var dataArray = data.ToArray();
         foreach (var client in app.Clients)
         {
-            app.SendAsync(client, gameInfo.ToArray());
+            app.SendAsync(client, dataArray);
         }
+    }
+    
+    public static byte[] CreateNamesPacket(Dictionary<int, string> names)
+    {
+        var size = 1;
+        var encodedNames = new Dictionary<int, byte[]>();
+
+        foreach (var (intId, name) in names)
+        {
+            var encName = Encoding.UTF8.GetBytes(name);
+            encodedNames[intId] = encName;
+            size += encName.Length + 5;
+        }
+
+        var infoBuffer = new byte[size];
+        var span = infoBuffer.AsSpan();
+        span[0] = 12;
+        var i = 1;
+
+        foreach (var (intId, encName) in encodedNames)
+        {
+            BinaryPrimitives.WriteInt32BigEndian(span.Slice(i, 4), intId);
+            i += 4;
+        
+            span[i++] = (byte)encName.Length;
+            encName.CopyTo(span[i..]);
+            i += encName.Length;
+        }
+
+        return infoBuffer;
+    }
+
+    public static byte[] CreateNamePacket(string name, int intId)
+    {
+        var encName = Encoding.UTF8.GetBytes(name);
+        var nmInfoBuf = new byte[6 + encName.Length];
+        var span = nmInfoBuf.AsSpan();
+
+        span[0] = 12;
+        BinaryPrimitives.WriteInt32BigEndian(span.Slice(1, 4), intId);
+        span[5] = (byte)encName.Length;
+        encName.CopyTo(span[6..]);
+
+        return nmInfoBuf;
     }
     
     /// <summary>
@@ -675,10 +804,9 @@ public sealed partial class SocketServer
         await app.StopAsync();
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string GetRealIpPort(ClientMetadata client)
     {
-        return instance.Clients.GetValueOrDefault(client)?.IdIpPort ?? client.IpPort;
+        return instance.Clients.GetValueOrDefault(client)?.IpPort ?? client.IpPort;
     }
 
     private string GetRealIp(ClientMetadata client)

@@ -67,4 +67,19 @@ public static class FileUtils
             }
         }
     }
+
+
+    public static void ReadListFile(IEnumerable<string> text, List<string> targetList)
+    {
+        foreach (var line in text)
+        {
+            var entry = line.Trim();
+            if (string.IsNullOrWhiteSpace(entry) || entry.StartsWith('#'))
+            {
+                continue;
+            }
+            
+            targetList.Add(entry);
+        }
+    }
 }

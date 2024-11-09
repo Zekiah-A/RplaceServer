@@ -168,7 +168,7 @@ public static class Program
             Environment.Exit(0);
         }
 
-        Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origin, Config.SocketPort,
+        Server = new ServerInstance(Config, Config.CertPath, Config.KeyPath, Config.Origins, Config.SocketPort,
             Config.HttpPort, Config.Ssl);
         
         AppDomain.CurrentDomain.ProcessExit += async (_, _) =>

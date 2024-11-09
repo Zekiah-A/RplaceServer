@@ -9,6 +9,9 @@ public class LiveChatReport
     public User? Reporter { get; set; }
     
     public int MessageId { get; set; }
+    // Navigation property to reported message
+    public LiveChatMessage Message { get; set; }
+    
     public string Reason { get; set; }
     public DateTime Date { get; set; }
 }

@@ -5,7 +5,7 @@ namespace ZCaptcha;
 public class EmojiCaptchaGenerator : ICaptchaGenerator
 {
     private static int entropy = 0;
-    private static readonly Random Random = new Random();
+    private static readonly Random Random = new();
     private static readonly string[] Emojis =
     {
         "😎", "🤖", "🔥", "🏠", "🤡", "👋", "💩", "⚽", "👅", "🧠", "🕶", "🌳", "🌍", "🌈", "🎅", "👶", "👼",
@@ -14,15 +14,15 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
         "🐥", "🔍", "🎹", "🚻", "🚗", "🏁", "🥚", "🔪", "🍕", "🐑", "🖱", "😷", "🌱", "🏀", "🛠", "🤮", "💂", "📎",
         "🎄", "🕯️", "🔔", "⛪", "☃", "🍷", "❄", "🎁", "🩸"
     };
-    
-    private static readonly int DummiesCount = 10;
-    private static readonly int Width = 96;
-    private static readonly int Height = 96;
-    private static readonly int FontSize = 48;
-    private static readonly int Noise1Size = 3;
-    private static readonly float Noise1Opacity = 0.35f;
-    private static readonly float TextShift = 32;
-    private static readonly float TextRotateRad = 0.4f;
+
+    private const int DummiesCount = 10;
+    private const int Width = 96;
+    private const int Height = 96;
+    private const int FontSize = 48;
+    private const float Noise1Size = 3.0f;
+    private const byte Noise1Alpha = 90;
+    private const float TextShift = 32;
+    private const float TextRotateRad = 0.4f;
     private readonly SKTypeface captchaFont;
     private readonly SKBitmap bitmap;
     private readonly SKCanvas canvas;
@@ -34,11 +34,11 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
         canvas = new SKCanvas(bitmap);
     }
     
-    private static SKColor RandomColor()
+    private static SKColor RandomColour(byte alpha = 255)
     {
-        byte[] colorBytes = new byte[3];
-        Random.NextBytes(colorBytes);
-        return new SKColor(colorBytes[0], colorBytes[1], colorBytes[2]);
+        var colourBytes = new byte[3];
+        Random.NextBytes(colourBytes);
+        return new SKColor(colourBytes[0], colourBytes[1], colourBytes[2], alpha);
     }
 
     // Mirrors genEmojiCaptcha2 https://github.com/Zekiah-A/rslashplace2.github.io/blob/main/zcaptcha/server.js
@@ -63,53 +63,52 @@ public class EmojiCaptchaGenerator : ICaptchaGenerator
             canvas.Clear(SKColors.Transparent);
         }
 
-        using (var paint = new SKPaint())
+        using var paint = new SKPaint();
+        paint.IsAntialias = true;
+        paint.Color = SKColors.Black;
+        paint.IsStroke = false;
+
+        // Draw noise
+        for (float x = 0; x < Width / Noise1Size; x++)
         {
-            paint.IsAntialias = true;
-
-            // Draw noise
-            for (float x = 0; x < Width / Noise1Size; x++)
+            for (float y = 0; y < Height / Noise1Size; y++)
             {
-                for (float y = 0; y < Height / Noise1Size; y++)
-                {
-                    paint.Color = RandomColor();
-                    canvas.DrawRect(x * Noise1Size, y * Noise1Size, Noise1Size, Noise1Size, paint);
-                }
+                paint.Color = RandomColour(Noise1Alpha);
+                canvas.DrawRect(x * Noise1Size, y * Noise1Size, Noise1Size, Noise1Size, paint);
             }
+        }
 
-            // Draw text
-            var textX = Width / 2 + (float)(Random.NextDouble() * TextShift - (TextShift / 2));
-            var textY = Height / 2 + (float)(Random.NextDouble() * TextShift - (TextShift / 2));
-            var textR = (float)(Random.NextDouble() * TextRotateRad - TextRotateRad / 2);
+        // Draw text
+        var textX = Width / 2.0f + (float)(Random.NextDouble() * TextShift - (TextShift / 2));
+        var textY = Height / 2.0f + (float)(Random.NextDouble() * TextShift - (TextShift / 2));
+        var textR = (float)(Random.NextDouble() * TextRotateRad - TextRotateRad / 2);
 
-            paint.TextSize = FontSize;
-            paint.Color = SKColors.Black;
-            paint.IsStroke = false;
-            paint.Typeface = captchaFont;
+        using var font = new SKFont();
+        font.Size = FontSize;
+        font.Typeface = captchaFont;
 
-            using (var autoRestore = new SKAutoCanvasRestore(canvas, true))
-            {
-                canvas.Translate(Width / 2, Height / 2);
-                canvas.RotateDegrees(textR);
-                canvas.Translate(-Width / 2, -Height / 2);
-                canvas.Translate(textX, textY);
-                canvas.DrawText(answer, 0, 0, paint);
-            }
+        using (new SKAutoCanvasRestore(canvas, true))
+        {
+            canvas.Translate(Width / 2.0f, Height / 2.0f);
+            canvas.RotateDegrees(textR);
+            canvas.Translate(-Width / 2.0f, -Height / 2.0f);
+            canvas.Translate(textX, textY);
+            canvas.DrawText(answer, 0, 0, SKTextAlign.Center, font, paint);
+        }
 
-            // Draw lines
-            for (var i = 0; i < 8; i++)
-            {
-                paint.Color = RandomColor();
-                paint.IsStroke = true;
-                paint.StrokeWidth = 1;
+        // Draw lines
+        for (var i = 0; i < 8; i++)
+        {
+            paint.Color = RandomColour();
+            paint.IsStroke = true;
+            paint.StrokeWidth = 1;
 
-                var startX = (float)(Random.NextDouble() * Width);
-                var startY = (float)(Random.NextDouble() * Height);
-                var endX = (float)(Random.NextDouble() * Width);
-                var endY = (float)(Random.NextDouble() * Height);
+            var startX = (float)(Random.NextDouble() * Width);
+            var startY = (float)(Random.NextDouble() * Height);
+            var endX = (float)(Random.NextDouble() * Width);
+            var endY = (float)(Random.NextDouble() * Height);
 
-                canvas.DrawLine(startX, startY, endX, endY, paint);
-            }
+            canvas.DrawLine(startX, startY, endX, endY, paint);
         }
 
         using var image = SKImage.FromBitmap(bitmap);

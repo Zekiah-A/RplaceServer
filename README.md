@@ -31,12 +31,15 @@ Clone the repository with `git lfs clone --recursive https://github.com/Zekiah-A
 
 Once cloned, enter the root RplaceServer directory, with `cd RplaceServer` and ensure all submodules are updated with `git submodule update --remote`
 
-Enter the TKOfficial directory, for example, with `cd TKOfficial`.
+Enter the TKOfficial directory with `cd TKOfficial`.
+
+> **Note:** In order to pre-prepare migrations for the database, such as when publishing a release, use the following:
+> `dotnet ef database migrations add $(git rev-parse HEAD) --project ../RplaceServer --startup-project .`
 
 Run `dotnet run` to start the server. When running with SSL/on an admin restricted port, you may need to run this command with administrator privileges.
 
 ### Project Aims:
- - Open, contributable and easy to use
+ - Open, contribute and easy to use
  - Faster than bunJS server
  - Moddable and easily extendable
  - Daemonisable

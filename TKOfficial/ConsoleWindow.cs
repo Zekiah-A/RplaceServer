@@ -125,7 +125,7 @@ public class ConsoleWindow : Window
     private void UpdateClientsList(object? sender, EventArgs e)
     {
         clientsListView?.SetSource(Server.Clients
-            .Select(pair => pair.Value.IdIpPort)
+            .Select(pair => pair.Value.IpPort)
             .ToList());
     }
 
@@ -557,7 +557,7 @@ public class ConsoleWindow : Window
         var title = "Broadcast chat message";
         if (targetClient is not null && Server.Clients.TryGetValue(targetClient, out var clientData))
         {
-            title = "Message player " + clientData.IdIpPort;
+            title = "Message player " + clientData.IpPort;
         }
         var wizard = new Wizard
         {
@@ -744,7 +744,7 @@ public class ConsoleWindow : Window
         
         var ipLabel = new Label
         {
-            Text = "Player IP/Port: " + selectedClient.Value.IdIpPort,
+            Text = "Player IP/Port: " + selectedClient.Value.IpPort,
             Y = 0
         };
         
@@ -767,7 +767,7 @@ public class ConsoleWindow : Window
         };
         kickButton.Clicked += async (_, _) =>
         {
-            logger?.Invoke($"Disconnected player {selectedClient.Value.IdIpPort}");
+            logger?.Invoke($"Disconnected player {selectedClient.Value.IpPort}");
             await Program.Server.SocketServer.KickPlayer(selectedClient.Key);
         };
         var banButton = new Button
@@ -777,7 +777,7 @@ public class ConsoleWindow : Window
         };
         banButton.Clicked += (_, _) =>
         {
-            logger?.Invoke($"Banned player {selectedClient.Value.IdIpPort}");
+            logger?.Invoke($"Banned player {selectedClient.Value.IpPort}");
             Program.Server.SocketServer.BanPlayer(selectedClient.Key, 1000); //TODO: Add ban duration
         };
         var messageButton = new Button()

@@ -36,11 +36,11 @@ public sealed class ServerInstance
     
     private bool createdRequiredFiles;
 
-    public ServerInstance(GameData gameData, string? certPath, string? keyPath, string origin, int socketPort, int webPort, bool ssl)
+    public ServerInstance(GameData gameData, string? certPath, string? keyPath, string origins, int socketPort, int webPort, bool ssl)
     {
         GameData = gameData;
-        SocketServer = new SocketServer(this, gameData, certPath, keyPath, origin, ssl, socketPort);
-        WebServer = new WebServer(this, gameData, certPath, keyPath, origin, ssl, webPort);
+        SocketServer = new SocketServer(this, gameData, certPath, keyPath, origins, ssl, socketPort);
+        WebServer = new WebServer(this, gameData, certPath, keyPath, origins, ssl, webPort);
     }
 
     private async Task CreateNewBoardAsync()
