@@ -750,7 +750,7 @@ public class ConsoleWindow : Window
         
         var vipLabel = new Label
         {
-            Text = "Player permissions: " + selectedClient.Value.Permissions,
+            Text = "Player permissions: " + selectedClient.Value.PermissionsLevel,
             Y = 1
         };
         var lastChatLabel = new Label

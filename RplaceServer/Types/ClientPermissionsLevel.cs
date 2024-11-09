@@ -1,8 +1,8 @@
 namespace RplaceServer.Types;
 
-public enum Permissions
+public enum ClientPermissionsLevel
 {
-    None,
+    Default,
     Vip,
     ChatMod,
     CanvasMod,

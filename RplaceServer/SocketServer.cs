@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
@@ -15,6 +16,15 @@ namespace RplaceServer;
 
 public sealed partial class SocketServer
 {
+    // Publicly modifiable runtime properties
+    public Action<string>? Logger { get; set; }
+    public ICaptchaGenerator? CaptchaGenerator { get; set; } = null;
+    public Dictionary<string, VipInfo> VipInfos { get; set; }  = [];
+    public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
+    public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
+    public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
+    public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
+    
     private readonly string dbPath;
     private readonly DatabaseContext database;
     private readonly HttpClient httpClient;
@@ -22,13 +32,6 @@ public sealed partial class SocketServer
     private readonly ServerInstance instance;
     private readonly GameData gameData;
     private readonly string origins;
-
-    public Action<string>? Logger;
-    public ICaptchaGenerator? CaptchaGenerator;
-    public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
-    public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
-    public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
-    public event EventHandler<PlayerDisconnectedEventArgs>? PlayerDisconnected;
     
     [GeneratedRegex(@"(?:https?:\/\/)([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)(\/?[^\s]*)")]
     private static partial Regex DomainRegex();
@@ -91,9 +94,11 @@ public sealed partial class SocketServer
         var vipPath = Path.Combine(gameData.SaveDataFolder, "vip.txt");
         if (File.Exists(vipPath))
         {
-            // TODO: Parse as list file, filtering out comments and empty lines
-            var vipText = await File.ReadAllLinesAsync(vipPath);
-            FileUtils.ReadListFile(vipText, instance.VipKeys);
+            await FileUtils.ReadJsonMapFile(vipPath, VipInfos, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true
+            });
         }
         else
         {
@@ -101,10 +106,10 @@ public sealed partial class SocketServer
             await File.WriteAllTextAsync(vipPath, """
                 # VIP Key configuration file
                 # Below is the correct format of a VIP key configuration:
-                # MY_SHA256_HASHED_VIP_KEY { "perms": "canvasmod"|"chatmod"|"admin","vip", "cooldownMs": number, "enforceChatName": string|null }
+                # MY_SHA256_HASHED_VIP_KEY { "perms": "CanvasMod"|"ChatMod"|"Admin","Vip", "cooldownMs": number, "enforcedChatName": string|null }
                 
                 # Example VIP key configuration:
-                # 7eb65b1afd96609903c54851eb71fbdfb0e3bb2889b808ef62659ed5faf09963 { "perms": "admin", "cooldownMs": 30, "enforceChatName": "<ADMIN> zekiah" }
+                # 7eb65b1afd96609903c54851eb71fbdfb0e3bb2889b808ef62659ed5faf09963 { "perms": "Admin", "cooldownMs": 30, "enforcedChatName": "<ADMIN> zekiah" }
                 # Make sure all VIP keys stored here are sha256 hashes of the real keys you hand out
                 """);
         }
@@ -136,7 +141,7 @@ public sealed partial class SocketServer
         if (instance.IpBlacklist.Contains(realIp))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks.");
-            _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
+            _ = app.DisconnectClientAsync(args.Client, "Failed initial connection checks");
             return;
         }
         
@@ -145,7 +150,7 @@ public sealed partial class SocketServer
             !args.HttpRequest.Headers.Origin.Any(origin => origin != null && origins.Contains(origin)))
         {
             Logger?.Invoke($"Client {realIpPort} disconnected for violating initial headers checks.");
-            _ = app.DisconnectClientAsync(args.Client, "Initial connection checks fail");
+            _ = app.DisconnectClientAsync(args.Client, "Failed initial connection checks");
             return;
         }
         
@@ -172,7 +177,7 @@ public sealed partial class SocketServer
             }
         }
         
-        // Try resolve their user, otherwise we allocate client a new user
+        // Accept - Try resolve their user, otherwise we allocate client a new user
         string? token;
         if (args.HttpRequest.Query.TryGetValue("token", out var queryToken))
         {
@@ -199,8 +204,8 @@ public sealed partial class SocketServer
                 Token = token
             };
             database.Users.Add(user);
+            database.SaveChanges();
         }
-        
         // Create user session entry
         var session = new Session()
         {
@@ -211,6 +216,7 @@ public sealed partial class SocketServer
             UserAgent = args.HttpRequest.Headers.UserAgent.ToString()
         };
         database.Sessions.Add(session);
+        database.SaveChanges();
         
         // Append UidToken cookie to response
         args.Client.HttpContext.Response.Cookies.Append("token", token, new CookieOptions
@@ -223,26 +229,23 @@ public sealed partial class SocketServer
             Path = "/"
         });
         
-        // Accept - Create a player instance
+        // Create a player instance
         var playerSocketClient = new ClientData(realIpPort, user.Id, session.Id, DateTimeOffset.Now);
         var uriKey = args.HttpRequest.Path.ToUriComponent().Split("/").FirstOrDefault();
         if (!string.IsNullOrEmpty(uriKey))
         {
             var codeHash = HashSha256String(uriKey[1..]);
-            if (!instance.VipKeys.Contains(codeHash))
+            if (!VipInfos.TryGetValue(codeHash, out var vipInfo))
             {
                 Logger?.Invoke($"Client with IP {GetRealIp(args.Client)} attempted to use an invalid VIP key {codeHash}");
                 _ = app.DisconnectClientAsync(args.Client, "Invalid VIP key. Do not try again");
                 return;
             }
-            if (uriKey[0] == '!')
-            {
-                playerSocketClient.Permissions = Permissions.Admin;
-            }
-            else
-            {
-                playerSocketClient.Permissions = Permissions.Vip;
-            }
+
+            playerSocketClient.PermissionsLevel = vipInfo.Perms;
+            playerSocketClient.OverrideCooldownMs = vipInfo.CooldownMs;
+            user.ChatName = vipInfo.EnforcedChatName;
+            database.SaveChangesAsync();
         }
         instance.Clients.Add(args.Client, playerSocketClient);
         instance.PlayerCount++;
@@ -282,6 +285,7 @@ public sealed partial class SocketServer
         BinaryPrimitives.WriteUInt32BigEndian(canvasInfo[13..], gameData.BoardHeight);
         app.SendAsync(args.Client, canvasInfo.ToArray());
         
+        // Update player count and emit event
         DistributePlayerCount();
         PlayerConnected?.Invoke(this, new PlayerConnectedEventArgs(instance, args.Client));
     }
@@ -312,15 +316,14 @@ public sealed partial class SocketServer
                     Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for exceeding canvas size or palette ({index}, {colour})");
                     break;
                 }
-                var clientCooldown = instance.Clients[args.Client].Cooldown;
 
-                if (clientCooldown > DateTimeOffset.Now)
+                if (client.Cooldown > DateTimeOffset.Now)
                 {
                     // Reject
-                    Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for breaching cooldown ({clientCooldown})");
+                    Logger?.Invoke($"Pixel from client {GetRealIpPort(args.Client)} rejected for breaching cooldown ({client.Cooldown})");
                     var buffer = (Span<byte>) stackalloc byte[10];
                     buffer[0] = (byte) ServerPacket.RejectPixel;
-                    BinaryPrimitives.WriteInt32BigEndian(buffer[1..], (int) clientCooldown.ToUnixTimeMilliseconds());
+                    BinaryPrimitives.WriteInt32BigEndian(buffer[1..], (int) client.Cooldown.ToUnixTimeMilliseconds());
                     BinaryPrimitives.WriteInt32BigEndian(buffer[5..], (int) index);
                     buffer[9] = instance.Board[index];
                     app.SendAsync(args.Client, buffer.ToArray());
@@ -343,7 +346,7 @@ public sealed partial class SocketServer
 
                 // Accept
                 instance.Board[index] = colour;
-                instance.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(gameData.CooldownMs);
+                instance.Clients[args.Client].Cooldown = DateTimeOffset.Now.AddMilliseconds(client.OverrideCooldownMs ?? gameData.CooldownMs);
                 var serverPixel = data[..6];
                 serverPixel[0] = (byte) ServerPacket.PixelPlace;
                 foreach (var wsClient in app.Clients)
@@ -475,7 +478,7 @@ public sealed partial class SocketServer
             }
             case ClientPacket.ModAction:
             {
-                if (!instance.Clients.TryGetValue(args.Client, out var clientData) || clientData.Permissions != Permissions.Admin)
+                if (!instance.Clients.TryGetValue(args.Client, out var clientData) || clientData.PermissionsLevel != ClientPermissionsLevel.Admin)
                 {
                     Logger?.Invoke($"Unauthenticated client {GetRealIpPort(args.Client)} attempted to initiate a mod action");
                     break;
@@ -486,7 +489,7 @@ public sealed partial class SocketServer
             }
             case ClientPacket.Rollback:
             {
-                if (!instance.Clients.TryGetValue(args.Client, out var clientData) || clientData.Permissions != Permissions.Admin)
+                if (!instance.Clients.TryGetValue(args.Client, out var clientData) || clientData.PermissionsLevel != ClientPermissionsLevel.Admin)
                 {
                     Logger?.Invoke($"Unauthenticated client {GetRealIpPort(args.Client)} attempted to initiate a rollback");
                     return;

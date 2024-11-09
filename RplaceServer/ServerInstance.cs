@@ -27,7 +27,6 @@ public sealed class ServerInstance
     public Dictionary<ClientMetadata, ClientData> Clients = new();
     public Dictionary<string, string> PendingCaptchas = new();
     public List<string> IpBlacklist = [];
-    public List<string> VipKeys = [];
 
     public GameData GameData;
     public SocketServer SocketServer { get; set; }

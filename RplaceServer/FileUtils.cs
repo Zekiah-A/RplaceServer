@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Text.Json;
 
 namespace RplaceServer;
 
@@ -40,34 +41,57 @@ public static class FileUtils
             }
 
             var sections = line.Split(" ");
-            switch (sections.Length)
+            if (sections.Length == 0)
             {
-                case 0:
+                continue;
+            }
+            if (sections.Length == 1)
+            {
+                if (Uri.TryCreate(sections[0], UriKind.Absolute, out var sheetUri) &&
+                    (sheetUri.Scheme == Uri.UriSchemeHttp || sheetUri.Scheme == Uri.UriSchemeHttps))
                 {
-                    continue;
+                    var response = await httpClient.GetAsync(sections[0]);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var linkSheet = await response.Content.ReadAsStringAsync();
+                        await ReadUrlSheet(httpClient, linkSheet.Split("\n"), targetList);
+                    }
                 }
-                case 1:
+                else
                 {
-                    if (Uri.TryCreate(sections[0], UriKind.Absolute, out var sheetUri) &&
-                        (sheetUri.Scheme == Uri.UriSchemeHttp || sheetUri.Scheme == Uri.UriSchemeHttps))
-                    {
-                        var response = await httpClient.GetAsync(sections[0]);
-                        if (response.IsSuccessStatusCode)
-                        {
-                            var linkSheet = await response.Content.ReadAsStringAsync();
-                            await ReadUrlSheet(httpClient, linkSheet.Split("\n"), targetList);
-                        }
-                    }
-                    else
-                    {
-                        targetList.Add(sections[0]);
-                    }
-                    break;
+                    targetList.Add(sections[0]);
                 }
             }
         }
     }
 
+    public static async Task ReadJsonMapFile<T>(string path, Dictionary<string, T> targetDictionary, JsonSerializerOptions jsonOptions)
+    {
+        await using var file = File.OpenRead(path);
+        using var reader = new StreamReader(file);
+        var line = await reader.ReadLineAsync();
+        while (line is not null)
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#'))
+            {
+                continue;
+            }
+
+            var sections = line.Split(" ");
+            if (sections.Length > 2)
+            {
+                continue;
+            }
+            var valueObject = JsonSerializer.Deserialize<T>(sections[1], jsonOptions);
+            if (valueObject == null)
+            {
+                return;
+            }
+            targetDictionary.Add(sections[0], valueObject);
+            
+            line = await reader.ReadLineAsync();
+        }
+    }
 
     public static void ReadListFile(IEnumerable<string> text, List<string> targetList)
     {

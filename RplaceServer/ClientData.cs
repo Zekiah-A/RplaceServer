@@ -17,8 +17,9 @@ public class ClientData
     public DateTimeOffset LastChat { get; set; }
     public DateTimeOffset Cooldown { get; set; }
     public DateTimeOffset ConnectDate { get; init; }
+    public uint? OverrideCooldownMs { get; set; }
     
-    public Permissions Permissions;
+    public ClientPermissionsLevel PermissionsLevel;
 
     public ClientData(string ipPort, int userId, int sessionId, DateTimeOffset connectDate)
     {
