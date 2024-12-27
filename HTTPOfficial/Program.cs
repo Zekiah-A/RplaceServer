@@ -16,6 +16,7 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -24,6 +25,7 @@ using CensorCore;
 using DataProto;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
+using HTTPOfficial.Services;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using WatsonWebsocket;
@@ -37,7 +39,7 @@ namespace HTTPOfficial;
 /// </summary>
 internal static partial class Program
 {
-    private static Configuration config;
+    private static Configuration globalConfig;
     private static WebApplication app;
     private static ILogger logger;
     private static HttpClient httpClient;
@@ -61,7 +63,7 @@ internal static partial class Program
             Directory.CreateDirectory(logsPath);
         }
 
-        using var factory = LoggerFactory.Create(builder =>
+        using var loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.AddFile(options =>
@@ -69,7 +71,7 @@ internal static partial class Program
                 options.RootPath = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
             });
         });
-        logger = factory.CreateLogger("Program");
+        logger = loggerFactory.CreateLogger("Program");
 
         void CreateNewConfig()
         {
@@ -78,15 +80,6 @@ internal static partial class Program
             var defaultConfiguration = new Configuration
             {
                 Version = Configuration.CurrentVersion,
-                Port = 8080,
-                UseHttps = false,
-                CertPath = "PATH_TO_CA_CERT",
-                KeyPath = "PATH_TO_CA_KEY",
-                SmtpHost = "smtp.gmail.com",
-                SmtpPort = 587,
-                EmailUsername = "username@example.com",
-                EmailPassword = "password",
-                KnownWorkers = [],
                 InstanceKey = RandomNumberGenerator.GetHexString(96),
                 DefaultInstances =
                 [
@@ -103,30 +96,63 @@ internal static partial class Program
                         Legacy = true
                     }
                 ],
-                RedditAuthClientId = "MY_REDDIT_API_APPLICATION_CLIENT_ID",
-                Logger = true,
-                PostsFolder = "Posts",
-                PostLimitSeconds = 60,
-                PostContentAllowedDomains = [ 
-                    "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
-                    "reddit.com", "discord.com", "x.com", "youtube.com", "t.me", "discord.com",
-                    "tiktok.com", "twitch.tv", "fandom.com", "instagram.com", "canv.tk", "chit.cf",
-                    "github.com", "openmc.pages.dev", "count.land"
-                ],
-                MinBannedContentPerceptualPercent = 80,
-                SignupLimitSeconds = 60,
-                VerifyLimitSeconds = 2,
-                VerifyExpiryMinutes = 15,
-                Origin = "https://rplace.live",
-                SocketPort = 450,
-                AccountTierInstanceLimits = new Dictionary<AccountTier, int>
+                ServerConfiguration = new ServerConfiguration
                 {
-                    { AccountTier.Free, 2 },
-                    { AccountTier.Bronze, 5 },
-                    { AccountTier.Silver, 10 },
-                    { AccountTier.Gold, 25 },
-                    { AccountTier.Administrator, 50 }
-                }
+                    Origin = "https://rplace.live",
+                    Port = 8080,
+                    SocketPort = 450,
+                    UseHttps = false,
+                    CertPath = "PATH_TO_CA_CERT",
+                    KeyPath = "PATH_TO_CA_KEY",
+                },
+                PostsConfiguration = new PostsConfiguration
+                {
+                    PostsFolder = "Posts",
+                    PostLimitSeconds = 60,
+                    PostContentAllowedDomains = [ 
+                        "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
+                        "reddit.com", "discord.com", "x.com", "youtube.com", "t.me", "discord.com",
+                        "tiktok.com", "twitch.tv", "fandom.com", "instagram.com", "canv.tk", "chit.cf",
+                        "github.com", "openmc.pages.dev", "count.land"
+                    ],
+                    MinBannedContentPerceptualPercent = 80
+                },
+                AccountConfiguration = new AccountConfiguration
+                {
+                    AccountTierInstanceLimits = new Dictionary<AccountTier, int>
+                    {
+                        { AccountTier.Free, 2 },
+                        { AccountTier.Bronze, 5 },
+                        { AccountTier.Silver, 10 },
+                        { AccountTier.Gold, 25 },
+                        { AccountTier.Administrator, 50 }
+                    }
+                },
+                EmailConfiguration = new EmailConfiguration
+                {
+                    SmtpHost = "SMTP_HOST",
+                    SmtpPort = 587,
+                    Username = "EMAIL_USERNAME",
+                    Password = "EMAIL_PASSWORD",
+                    FromEmail = "EMAIL_FROM",
+                    FromName = "admin",
+                    UseStartTls = true,
+                    TimeoutSeconds = 30,
+                    WebsiteUrl = "https://rplace.live",
+                    SupportEmail = "admin@rplace.live"
+                },
+                AuthConfiguration = new AuthConfiguration
+                {
+                    JwtSecret = "JWT_SECRET",
+                    JwtIssuer = "JWT_ISSUER",
+                    JwtAudience = "WT_AUDIENCE",
+                    JwtExpirationMinutes = 60,
+                    RefreshTokenExpirationDays = 30,
+                    VerificationCodeExpirationMinutes = 15,
+                    MaxFailedVerificationAttempts = 5,
+                    SignupRateLimitSeconds = 300,
+                    FailedVerificationAttemptResetMinutes = 5
+                },
             };
             var newConfigText = JsonSerializer.Serialize(defaultConfiguration, new JsonSerializerOptions()
             {
@@ -159,7 +185,7 @@ internal static partial class Program
             CreateNewConfig();
             Environment.Exit(0);
         }
-        config = configData;
+        globalConfig = configData;
 
         // Main server
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -170,12 +196,34 @@ internal static partial class Program
             Args = args
         });
 
-        builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+        // Register config
+        builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: true);
+
+        // Register Configuration class with default values and bind from configuration
+        builder.Configuration.Bind(globalConfig);
+        builder.Services.Configure<Configuration>(builder.Configuration);
+        builder.Services.Configure<ServerConfiguration>(builder.Configuration.GetSection("ServerConfiguration"));
+        builder.Services.Configure<PostsConfiguration>(builder.Configuration.GetSection("PostsConfiguration"));
+        builder.Services.Configure<AccountConfiguration>(builder.Configuration.GetSection("AccountConfiguration"));
+        builder.Services.Configure<AuthConfiguration>(builder.Configuration.GetSection("AuthConfiguration"));
+        builder.Services.Configure<EmailConfiguration>(builder.Configuration.GetSection("EmailConfiguration"));
+
+        // Swagger service
+        if (builder.Environment.IsDevelopment())
+        {
+            builder.Services.AddSwaggerGen();
+            builder.Services.AddEndpointsApiExplorer();
+        }
+
+        // Logger service
+        builder.Services.AddSingleton<ILogger>(logger);
+
+        // SMTP email sending service
+        builder.Services.AddSingleton<EmailService>();
 
         builder.Services.AddDbContext<DatabaseContext>(options =>
         {
-            options.UseSqlite("Data Source=Server.db");
+            options.UseSqlite("Data Source=server.db");
         });
 
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -193,11 +241,27 @@ internal static partial class Program
             });
         });
 
-        builder.Configuration["Kestrel:Certificates:Default:Path"] = config.CertPath;
-        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = config.KeyPath;
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            var certPath = globalConfig.ServerConfiguration.CertPath;
+            var keyPath = globalConfig.ServerConfiguration.KeyPath;
+            if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(keyPath))
+            {
+                return;
+            }
+
+            var certificate = LoadCertificate(certPath, keyPath);
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ServerCertificate = certificate;
+            });
+        });
+
+        builder.Configuration["Kestrel:Certificates:Default:Path"] = globalConfig.ServerConfiguration.CertPath;
+        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = globalConfig.ServerConfiguration.KeyPath;
 
         app = builder.Build();
-        app.Urls.Add($"{(config.UseHttps ? "https" : "http")}://*:{config.Port}");
+        app.Urls.Add($"{(globalConfig.ServerConfiguration.UseHttps ? "https" : "http")}://*:{globalConfig.ServerConfiguration.Port}");
         app.UseStaticFiles();
 
         app.UseCors(policy =>
@@ -220,7 +284,7 @@ internal static partial class Program
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
         });
 
-        var wsServer = new WatsonWsServer(config.SocketPort, config.UseHttps, config.CertPath, config.KeyPath);
+        var wsServer = new WatsonWsServer(globalConfig.ServerConfiguration.SocketPort, globalConfig.ServerConfiguration.UseHttps, globalConfig.ServerConfiguration.CertPath, globalConfig.ServerConfiguration.KeyPath);
 
         // Vanity -> URL of actual socket server & board, done by worker clients on startup
         httpClient = new HttpClient();
@@ -230,8 +294,8 @@ internal static partial class Program
         // Used by worker servers + async communication
         var registeredVanities = new Dictionary<string, string>();
         var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
-        var workerRequestQueue = new ConcurrentDictionary<int, TaskCompletionSource<byte[]>>(); // ID, Data callback
         var workerRequestId = 0;
+        var workerRequestQueue = new ConcurrentDictionary<int, TaskCompletionSource<byte[]>>(); // ID, Data callback
 
         // Auth - Used when transitioning client from open to message handlers, periodic routines, etc
         var authorisedClients = new Dictionary<ClientMetadata, int>();
@@ -263,87 +327,7 @@ internal static partial class Program
         // Default canvas instances
         await InsertDefaultInstancesAsync();
 
-        async Task<Account?> AuthenticateReddit(string refreshToken, DatabaseContext database)
-        {
-            throw new NotImplementedException();
-            // TODO: Reimplement
-            /*var accessToken = await GetOrUpdateRedditAccessToken(refreshToken);
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            var meResponse = await httpClient.GetAsync("https://oauth.reddit.com/api/v1/me");
-            var meData = await meResponse.Content.ReadFromJsonAsync<RedditMeResponse>(redditSerialiserOptions);
-            httpClient.DefaultRequestHeaders.Authorization = null;
-            if (!meResponse.IsSuccessStatusCode || meData is null)
-            {
-                logger.LogWarning("Could not request me data for authentication (reason {ReasonPhrase})",
-                    meResponse.ReasonPhrase);
-                return null;
-            }
-
-            var accountData = await database.Accounts.FirstOrDefaultAsync(account => account.RedditId == meData.Id);
-            return accountData;*/
-        }
-
-        async Task<string?> GetOrUpdateRedditAccessToken(string refreshToken)
-        {
-            // If we already have their auth token cached,and it is within date, then we just return that
-            if (refreshTokenAuthDates.TryGetValue(refreshToken, out var expiryDate) &&
-                expiryDate - DateTime.Now <= TimeSpan.FromHours(1))
-            {
-                return refreshTokenAccessTokens[refreshToken];
-            }
-
-            // Otherwise, we need to refresh their auth token and update our caches respectively
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic",
-                Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes($"{config.RedditAuthClientId}:{config.RedditAuthClientSecret}")));
-            var contentPayload = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                { "grant_type", "refresh_token" },
-                { "refresh_token", refreshToken }
-            });
-
-            var tokenResponse =
-                await httpClient.PostAsync("https://www.reddit.com/api/v1/access_token", contentPayload);
-            var tokenData = await tokenResponse.Content.ReadFromJsonAsync<RedditTokenResponse>(redditSerialiserOptions);
-            httpClient.DefaultRequestHeaders.Authorization = null;
-            if (!tokenResponse.IsSuccessStatusCode || tokenData is null)
-            {
-                logger.LogWarning(
-                    "Could not get or update access token, token response was non-positive ({ReasonPhrase}) ",
-                    tokenResponse.ReasonPhrase);
-                return null;
-            }
-
-            refreshTokenAuthDates.Add(refreshToken, DateTime.Now);
-            refreshTokenAccessTokens.Add(refreshToken, tokenData.AccessToken);
-            return tokenData.AccessToken;
-        }
-
-        wsServer.MessageReceived += (_, args) =>
-        {
-            var data = args.Data.ToArray();
-            var packet = new ReadablePacket(data);
-            var code = packet.ReadByte();
-
-            switch (code)
-            {
-                case (byte) WorkerPackets.AnnounceExistence:
-                {
-                    var instanceKey = packet.ReadString();
-                    var instanceUri = packet.ReadString();
-                    var workerInstanceCount = packet.ReadInt();
-                    var workerMaxInstances = packet.ReadInt();
-                    logger.LogInformation($"{instanceKey}, {instanceUri}, {workerInstanceCount}, {workerMaxInstances}");
-
-                    break;
-                }
-            }
-        };
-        wsServer.ClientDisconnected += (_, args) =>
-        {
-            authorisedClients.Remove(args.Client);
-        };
-
+        // Shutdown and exceptions
         serverShutdownToken = new CancellationTokenSource();
 
         Console.CancelKeyPress += async (_, _) =>
@@ -361,11 +345,11 @@ internal static partial class Program
             Environment.Exit(1);
         };
 
+        ConfigureAuthEndpoints();
         ConfigureAccountEndpoints();
         ConfigurePostEndpoints();
         ConfigureInstanceEndpoints();
 
-        wsServer.Logger = message => logger.LogInformation("{message}", message);
         await Task.WhenAll(app.RunAsync(), wsServer.StartAsync(serverShutdownToken.Token));
         await Task.Delay(-1, serverShutdownToken.Token);
     }
@@ -379,7 +363,7 @@ internal static partial class Program
             throw new Exception("Couldn't insert default instances, db was null");
         }
 
-        foreach (var defaultInstance in config.DefaultInstances)
+        foreach (var defaultInstance in globalConfig.DefaultInstances)
         {
             if (!await database.Instances.AnyAsync(instance => instance.VanityName == defaultInstance.VanityName))
             {
@@ -388,6 +372,13 @@ internal static partial class Program
         }
 
         await database.SaveChangesAsync();
+    }
+
+
+    public static X509Certificate2 LoadCertificate(string certPath, string keyPath)
+    {
+        var cert = X509Certificate2.CreateFromPemFile(certPath, keyPath);
+        return cert;
     }
 
     private static List<string> ReadTxtListFile(string path)

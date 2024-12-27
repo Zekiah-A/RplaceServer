@@ -2,7 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace HTTPOfficial.DataModel;
 
-public class AccountRedditAuth
+// TODO: Reimplement
+/*public class AccountRedditAuth
 {
     public int Id { get; set; }
     public string RedditId { get; set; } = null!;
@@ -11,4 +12,4 @@ public class AccountRedditAuth
     // Navigation property to account instance
     [JsonIgnore]
     public Account Account { get; set; } = null!;
-}
+}*/

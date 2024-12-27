@@ -8,7 +8,10 @@ public class DatabaseContext : DbContext
     // Global auth server accounts
     public DbSet<Account> Accounts { get; set; } = null!;
     public DbSet<AccountPendingVerification> PendingVerifications { get; set; } = null!;
-    public DbSet<AccountRedditAuth> AccountRedditAuths { get; set; } = null!;
+    //public DbSet<AccountRedditAuth> AccountRedditAuths { get; set; } = null!;
+    public DbSet<AccountRefreshToken> AccountRefreshTokens { get; set; } = null!;
+    public DbSet<CanvasUserRefreshToken> CanvasUserRefreshTokens { get; set; } = null!;
+
 
     // Federated canvas/instance accounts
     public DbSet<CanvasUser> CanvasUsers { get; set; } = null!;
@@ -24,13 +27,15 @@ public class DatabaseContext : DbContext
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
         // Primary keys
         modelBuilder.Entity<Account>()
             .HasKey(account => account.Id);
         modelBuilder.Entity<AccountPendingVerification>()
             .HasKey(verification => verification.Id);
-        modelBuilder.Entity<AccountRedditAuth>()
-            .HasKey(redditAuth => redditAuth.Id);
+        //modelBuilder.Entity<AccountRedditAuth>()
+        //    .HasKey(redditAuth => redditAuth.Id);
         modelBuilder.Entity<Post>()
             .HasKey(post => post.Id);
         modelBuilder.Entity<Instance>()
@@ -56,9 +61,9 @@ public class DatabaseContext : DbContext
             .HasIndex(account => account.Token)
             .IsUnique();
         // Unique reddit account bindings (multiple accounts can't bind to the same reddit user)
-        modelBuilder.Entity<AccountRedditAuth>()
-            .HasIndex(verification => verification.RedditId)
-            .IsUnique();
+        //modelBuilder.Entity<AccountRedditAuth>()
+        //    .HasIndex(verification => verification.RedditId)
+        //    .IsUnique();
         // Unique authentication verification codes
         modelBuilder.Entity<AccountPendingVerification>()
             .HasIndex(verification => verification.Code)
@@ -88,10 +93,10 @@ public class DatabaseContext : DbContext
             .WithOne(badge => badge.Owner)
             .HasForeignKey(badge => badge.OwnerId);
         // Reddit auth
-        modelBuilder.Entity<Account>()
-            .HasOne(account => account.RedditAuth)
-            .WithOne(redditAuth => redditAuth.Account)
-            .HasForeignKey<AccountRedditAuth>(redditAuth => redditAuth.AccountId);
+        //modelBuilder.Entity<Account>()
+        //    .HasOne(account => account.RedditAuth)
+        //    .WithOne(redditAuth => redditAuth.Account)
+        //    .HasForeignKey<AccountRedditAuth>(redditAuth => redditAuth.AccountId);
         // Post auth accounts
         modelBuilder.Entity<Account>()
             .HasMany(account => account.Posts)
@@ -131,5 +136,40 @@ public class DatabaseContext : DbContext
             .HasMany(user => user.Posts)
             .WithOne(post => post.CanvasUser)
             .HasForeignKey(post => post.CanvasUserId);
+
+        // Expiration date
+        modelBuilder.Entity<AccountPendingVerification>()
+            .Property(verification => verification.ExpirationDate)
+            .IsRequired();
+        
+        // AccountRefreshToken configuration
+        modelBuilder.Entity<AccountRefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Token)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            entity.HasOne(e => e.Account)
+                .WithMany(a => a.RefreshTokens)
+                .HasForeignKey(e => e.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // CanvasUserRefreshToken configuration
+        modelBuilder.Entity<CanvasUserRefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Token)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            entity.HasOne(e => e.CanvasUser)
+                .WithMany(c => c.RefreshTokens)
+                .HasForeignKey(e => e.CanvasUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

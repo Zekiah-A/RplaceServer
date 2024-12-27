@@ -1,8 +1,7 @@
-server_config.json
-server_config.json.old
-Server.db
-Server.db-shm
-Server.db-wal
+server_config.json*
+server.db
+server.db-shm
+server.db-wal
 
 ServerData/*
 Posts/*

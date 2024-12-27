@@ -1,3 +1,3 @@
 namespace HTTPOfficial.ApiModel;
 
-public record AccountVerifyRequest(string Code);
+public record AccountVerifyRequest(int AccountId, string Code);

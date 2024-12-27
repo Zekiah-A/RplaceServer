@@ -8,12 +8,13 @@ public class Account : ProfileBase
     // Must be unique
     public string Token { get; set; } = null!;
     public AccountTier Tier { get; set; }
-    public bool Terminated { get; set; } = false;
+    public AccountStatus Status { get; set; } = AccountStatus.Pending;
+    public string SecurityStamp { get; set; } = null!;
     
-    public int? RedditAuthId { get; set; }
+    //public int? RedditAuthId { get; set; }
     // Navigation property to account reddit auth properties
-    [JsonIgnore]
-    public AccountRedditAuth? RedditAuth { get; set; } 
+    //[JsonIgnore]
+    //public AccountRedditAuth? RedditAuth { get; set; } 
     
     // Navigation property to account pending verifications
     [JsonIgnore]
@@ -32,7 +33,10 @@ public class Account : ProfileBase
     // Navigation property to account linked users
     [JsonIgnore]
     public List<CanvasUser> LinkedUsers { get; set; } = [];
-    
+    // Navigation property to refresh tokens
+    [JsonIgnore]
+    public List<AccountRefreshToken> RefreshTokens { get; set; } = new();
+
 
     public Account() { }
 

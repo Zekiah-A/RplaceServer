@@ -14,4 +14,9 @@ public static class Extensions
         );
         return builder;
     }
+
+    public static string ToSentenceCase(this string str)
+    {
+        return Regex.Replace(str, "[a-z][A-Z]", match => match.Value[0] + " " + char.ToLower(match.Value[1]));
+    }
 }

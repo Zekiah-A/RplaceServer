@@ -84,8 +84,17 @@ internal static partial class Program
             return Results.Ok(post);
         });
 
-        app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, DatabaseContext database) =>
+        app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, PostsConfiguration config, DatabaseContext database) =>
         {
+            var userId = context.User.FindFirst("AccountId")?.Value;
+            var canvasUserId = context.User.FindFirst("CanvasUserId")?.Value;
+
+            if (userId is null && canvasUserId is null)
+            {
+                // new ErrorResponse("Authentication required", "post.upload.unauthorized")
+                return Results.Unauthorized();
+            }
+
             if (submission.Title.Length is < 1 or > 64)
             {
                 return Results.BadRequest(
@@ -104,59 +113,18 @@ internal static partial class Program
                 CreationDate = DateTime.Now.ToUniversalTime(),
             };
 
-            var postAccount = submission.AccountId is not null
-                ? await database.Accounts.FindAsync(submission.AccountId)
-                : null;
-            if (postAccount is not null && submission.CanvasUser is not null)
+            if (userId is not null)
             {
-                return Results.BadRequest(
-                    new ErrorResponse("Provided canvas user and account are mutually exclusive", "post.upload.exclusive"));
+                newPost.AccountId = int.Parse(userId);
+            }
+            else if (canvasUserId is not null)
+            {
+                newPost.CanvasUserId = int.Parse(canvasUserId);
             }
 
-            if (postAccount is not null)
-            {
-                newPost.AccountId = postAccount.Id;
-            }
-            else if (submission.CanvasUser is not null)
-            {
-                // We need to perform
-                var userIntId = await VerifyCanvasUserIntId(submission.CanvasUser.InstanceId, submission.CanvasUser.LinkKey, database);
-                if (userIntId is null)
-                {
-                    // User did not own this userId, or could not be authorised by canvas server
-                    return Results.Unauthorized();
-                }
-
-                // Lookup if there is a CanvasUser with this intId, if not we can create it
-                int? canvasUserId = null;
-                var canvasUser = await database.CanvasUsers.FirstOrDefaultAsync(user => user.UserIntId == userIntId);
-                if (canvasUser is null)
-                {
-                    var newCanvasUser = new CanvasUser()
-                    {
-                        InstanceId = submission.CanvasUser.InstanceId,
-                        UserIntId = (int) userIntId
-                    };
-                    await database.CanvasUsers.AddAsync(newCanvasUser);
-                    await database.SaveChangesAsync();
-                    // Use canvas user ID from newly created record
-                    canvasUserId = newCanvasUser.Id;
-                }
-                else
-                {
-                    canvasUserId = canvasUser.Id;
-                }
-
-                newPost.CanvasUserId = canvasUserId;
-            }
-            else
-            {
-                return Results.BadRequest(new ErrorResponse("No username or account provided", "post.upload.noUsernameOrAccount"));
-            }
-            
             // Spam filtering
-            newPost.Title = CensorBannedUrls(newPost.Title);
-            newPost.Description = CensorBannedUrls(newPost.Description);
+            newPost.Title = CensorBannedUrls(newPost.Title, config);
+            newPost.Description = CensorBannedUrls(newPost.Description, config);
             
             // Automatic sensitive content detection - (Thanks to https://profanity.dev)
             if (await ProbablyHasProfanity(newPost.Title) || await ProbablyHasProfanity(newPost.Description))
@@ -174,9 +142,10 @@ internal static partial class Program
 
             return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
         })
-        .UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds));
+        //.UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds))
+        .RequireAuthorization();
 
-        app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, DatabaseContext database) =>
+        app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, PostsConfiguration config, DatabaseContext database) =>
         {
             if (await database.PostContents.FindAsync(postContentId) is not { } postContent)
             {
@@ -193,7 +162,7 @@ internal static partial class Program
             return Results.File(stream, postContent.ContentType, postContent.ContentKey);
         });
 
-        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, DatabaseContext database) =>
+        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, PostsConfiguration config, DatabaseContext database) =>
         {
             var address = context.Connection.RemoteIpAddress;
             if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey)
@@ -253,7 +222,7 @@ internal static partial class Program
             
             // Banned content match check
             memoryStream.Seek(0L, SeekOrigin.Begin);
-            if (IsContentBanned(memoryStream, request.File.ContentType, database))
+            if (IsContentBanned(memoryStream, request.File.ContentType, config, database))
             {
                 logger.LogTrace("Denied uploading post content {contentKey} from {address}, banned content hash match detected",
                     contentKey, address);
@@ -307,7 +276,7 @@ internal static partial class Program
         .DisableAntiforgery();
     }
 
-    private static bool IsContentBanned(Stream data, string contentType, DatabaseContext database)
+    private static bool IsContentBanned(Stream data, string contentType, PostsConfiguration config, DatabaseContext database)
     {
         const string logPrefix = "Could not check if content is banned:";
         
@@ -412,7 +381,7 @@ internal static partial class Program
         return null;
     }
 
-    private static string CensorBannedUrls(string text)
+    private static string CensorBannedUrls(string text, PostsConfiguration config)
     {
         return BannedUrlsRegex().Replace(text, match => 
             {

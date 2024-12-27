@@ -6,5 +6,6 @@ public enum AccountTier
     Bronze,
     Silver,
     Gold,
+    Moderator,
     Administrator
 }
