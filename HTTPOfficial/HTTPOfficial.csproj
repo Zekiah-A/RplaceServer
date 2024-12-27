@@ -21,6 +21,7 @@
     <PackageReference Include="Fastenshtein" Version="1.0.10" />
     <PackageReference Include="Karambolo.Extensions.Logging.File" Version="3.6.0" />
     <PackageReference Include="MailKit" Version="4.9.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <!--These code analysis packages are required in order to alleviate a dependency conflict-->
     <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.12.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />

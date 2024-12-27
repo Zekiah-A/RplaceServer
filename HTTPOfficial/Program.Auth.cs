@@ -33,7 +33,8 @@ internal static partial class Program
         trustedEmailDomains = ReadTxtListFile("trusted_domains.txt");
         emailAttributes = new EmailAddressAttribute();
 
-        app.MapPost("/auth/signup", async (EmailUsernameRequest request, HttpContext context, EmailService email, AuthConfiguration config, DatabaseContext database) => {
+        app.MapPost("/auth/signup", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, AuthConfiguration config, DatabaseContext database) =>
+        {
             // Rate limiting check
             var ipAddress = context.Connection.RemoteIpAddress?.ToString();
             if (ipAddress is null)
@@ -89,34 +90,30 @@ internal static partial class Program
                 Status = AccountStatus.Pending,
                 SecurityStamp = GenerateSecurityStamp()
             };
-
-            // Generate verification code
-            var verificationCode = await CreateVerificationCodeAsync(account.Id, config, database);
-            
-            // Store account
             await database.Accounts.AddAsync(account);
             await database.SaveChangesAsync();
 
-            // Send verification email
+            // Generate and send verification code
+            var verificationCode = await CreateVerificationCodeAsync(account.Id, config, database);
             await email.SendVerificationEmailAsync(account.Email, account.Username, verificationCode);
-
-            // Generate initial JWT (limited capabilities until email is verified)
-            var (token, refreshToken) = GenerateTokens(account, emailVerified: false, config);
             
-            // Store refresh token
+            // Generate initial JWT (limited capabilities until email is verified)
+            var (accessToken, refreshToken) = GenerateTokens(account, emailVerified: false, config);
             await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            tokenService.SetTokenCookies(accessToken, refreshToken);
 
+            // Send response success
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(
                 account.Id,
-                token,
-                refreshToken,
                 account.Username,
-                account.Email
+                account.Email,
+                emailVerified: false
             ));
         });
 
-        app.MapPost("/auth/login", async (EmailUsernameRequest request, HttpContext context, EmailService email, AuthConfiguration config, DatabaseContext database) => {
+        app.MapPost("/auth/login", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, AuthConfiguration config, DatabaseContext database) =>
+        {
             var account = await database.Accounts
                 .FirstOrDefaultAsync(a => a.Email == request.Email && a.Username == request.Username);
 
@@ -130,13 +127,17 @@ internal static partial class Program
 
             // Generate and send verification code
             var verificationCode = await CreateVerificationCodeAsync(account.Id, config, database);
-            await email.SendLoginVerificationEmailAsync(account.Email, account.Username, verificationCode, context);
+            await email.SendLoginVerificationEmailAsync(account.Email, account.Username, verificationCode);
 
+            // Generate initial JWT (limited capabilities until email is verified)
+            var (accessToken, refreshToken) = GenerateTokens(account, emailVerified: false, config);
+            await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            tokenService.SetTokenCookies(accessToken, refreshToken);
+
+            // Send response success
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(
                 account.Id,
-                token: null,
-                refreshToken: null,
                 account.Username,
                 account.Email,
                 emailVerified: false
@@ -144,7 +145,8 @@ internal static partial class Program
             return;
         });
 
-        app.MapPost("/auth/verify", async (VerifyCodeRequest request, HttpContext context, AuthConfiguration config, DatabaseContext database) => {
+        app.MapPost("/auth/verify", async (VerifyCodeRequest request, HttpContext context, TokenService tokenService, AuthConfiguration config, DatabaseContext database) =>
+        {
             // Check for too many failed attempts
             var attemptKey = $"verify_{request.AccountId}";
             if (failedAttempts.TryGetValue(attemptKey, out var attempts))
@@ -200,18 +202,15 @@ internal static partial class Program
             verification.Used = true;
             await database.SaveChangesAsync();
 
-            // Generate tokens
-            var (token, refreshToken) = GenerateTokens(account, true, config);
-            
-            // Store refresh token
+            // Generate full JWT
+            var (accessToken, refreshToken) = GenerateTokens(account, true, config);
             await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            tokenService.SetTokenCookies(accessToken, refreshToken);
 
-            // Send the LoginDetailsResponse as json and return 200
+            // Send response success
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(
                 account.Id,
-                token,
-                refreshToken,
                 account.Username,
                 account.Email,
                 emailVerified: true
@@ -220,9 +219,9 @@ internal static partial class Program
         });
 
         // Authenticate a client as a Canvas User
-        app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, AuthConfiguration config, DatabaseContext database) =>
+        app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, TokenService tokenService, AuthConfiguration config, DatabaseContext database) =>
         {
-            // We need to perform
+            // Attempt to verify the Canvas User with the given link key 
             var userIntId = await VerifyCanvasUserIntId(request.InstanceId, request.LinkKey, database);
             if (userIntId is null)
             {
@@ -248,15 +247,16 @@ internal static partial class Program
                 canvasUser = newCanvasUser;
             }
 
-            // Generate JWT token
-            var (token, refreshToken) = GenerateTokens(canvasUser, config);
+            // Generate full JWT
+            var (accessToken, refreshToken) = GenerateTokens(canvasUser, config);
             await StoreRefreshTokenAsync(canvasUser, refreshToken, config, database);
+            tokenService.SetTokenCookies(accessToken, refreshToken);
 
-            // Send the LoginDetailsResponse as json and return 200
+            // Send response success
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new AuthLinkResponse(
                 canvasUser.Id,
-                token,
+                accessToken,
                 refreshToken,
                 canvasUser.UserIntId,
                 canvasUser.InstanceId
@@ -285,12 +285,47 @@ internal static partial class Program
         return emailAttribute.IsValid(email) && trustedEmailDomains.Contains(email.Split('@')[1]);
     }
 
+    // Uses the linkage API to prove that with a given link key, a client owns an instance user account
+    private static async Task<int?> VerifyCanvasUserIntId(int instanceId, string linkKey, DatabaseContext database)
+    {
+        var logPrefix = $"Could not verify canvas user with instanceId {instanceId}.";
+
+        // Lookup instance
+        var instance = await database.Instances.FindAsync(instanceId);
+        if (instance is null)
+        {
+            logger.LogInformation("{logPrefix} Instance not found", logPrefix);
+            return null;
+        }
+
+        // Verify with instance that they do own given link key
+        var instanceUri = (instance.UsesHttps ? "https://" : "http://") + instance.ServerLocation;
+        var linkVerifyUri = $"{instanceUri}/link/{linkKey}";
+        var linkResponse = await httpClient.GetAsync(linkVerifyUri);
+        if (linkResponse.IsSuccessStatusCode)
+        {
+            var linkData = await linkResponse.Content.ReadFromJsonAsync<LinkData>(defaultJsonOptions);
+            if (linkData is null)
+            {
+                logger.LogInformation("{logPrefix} JSON data returned by server was invalid", logPrefix);
+                return null;
+            }
+
+            // The user's int ID according to the canvas server
+            return linkData.IntId;
+        }
+
+        logger.LogInformation("{logPrefix} Server denied linkage request ({statusCode} {content})",
+            logPrefix, linkResponse.StatusCode, await linkResponse.Content.ReadAsStringAsync());
+        return null;
+    }
+
     private static (string token, string refreshToken) GenerateTokens(CanvasUser user, AuthConfiguration config)
     {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new("type", AuthType.CanvasUser.ToString()),
+            new("type", AuthenticationTypeFlags.CanvasUser.ToString()),
             new("userIntId", user.UserIntId.ToString()),
             new("instanceId", user.InstanceId.ToString()),
             new("securityStamp", user.SecurityStamp)
@@ -307,7 +342,7 @@ internal static partial class Program
             new(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, account.Email),
             new(JwtRegisteredClaimNames.Name, account.Username),
-            new("type", AuthType.Account.ToString()),
+            new("type", AuthenticationTypeFlags.Account.ToString()),
             new("tier", account.Tier.ToString()),
             new("emailVerified", emailVerified.ToString()),
             new("securityStamp", account.SecurityStamp)

@@ -9,6 +9,7 @@ namespace HTTPOfficial.Services;
 
 public class EmailService
 {
+    private readonly IHttpContextAccessor httpContextAccessor;
     private readonly IOptionsMonitor<EmailConfiguration> config;
     private readonly ILogger logger;
 
@@ -17,8 +18,9 @@ public class EmailService
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutPeriod = TimeSpan.FromHours(1);
 
-    public EmailService(IOptionsMonitor<EmailConfiguration> config, ILogger logger)
+    public EmailService(IHttpContextAccessor httpContextAccessor, IOptionsMonitor<EmailConfiguration> config, ILogger logger)
     {
+        this.httpContextAccessor = httpContextAccessor;
         this.config = config;
         this.logger = logger;
     }
@@ -37,11 +39,12 @@ public class EmailService
         await SendEmailAsync(toEmail, username, subject, body);
     }
 
-    public async Task SendLoginVerificationEmailAsync(string toEmail, string username, string code, HttpContext context)
+    public async Task SendLoginVerificationEmailAsync(string toEmail, string username, string code)
     {
         // Get client information for security context
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown IP";
-        var userAgent = context.Request.Headers["User-Agent"].ToString() ?? "Unknown Device";
+        var clientIp = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "Unknown IP";
+        var userAgent = httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString() ?? "Unknown Device";
+
         
         var subject = "Login Verification Code";
         var body = GenerateEmailTemplate("LoginVerification", new Dictionary<string, string>

@@ -6,6 +6,8 @@ using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using MediaTypeHeaderValue = System.Net.Http.Headers.MediaTypeHeaderValue;
 
 namespace HTTPOfficial;
@@ -142,8 +144,9 @@ internal static partial class Program
 
             return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
         })
-        //.UseMiddleware<RateLimiterMiddleware>(app, PostUploadEndpointRegex, TimeSpan.FromSeconds(config.PostLimitSeconds))
-        .RequireAuthorization();
+        .RequireAuthorization()
+        //.RateLimit(TimeSpan.FromSeconds(config.PostLimitSeconds))
+        .RequireAuthentication(AuthenticationTypeFlags.Account | AuthenticationTypeFlags.CanvasUser);
 
         app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, PostsConfiguration config, DatabaseContext database) =>
         {
@@ -272,6 +275,8 @@ internal static partial class Program
             await database.SaveChangesAsync();
             return Results.Ok();
         })
+        .RequireAuthorization()
+        .RequireAuthentication(AuthenticationTypeFlags.Account | AuthenticationTypeFlags.CanvasUser)
         // TODO: Harden this if necessary, https://andrewlock.net/exploring-the-dotnet-8-preview-form-binding-in-minimal-apis
         .DisableAntiforgery();
     }
@@ -282,28 +287,34 @@ internal static partial class Program
         
         switch (contentType)
         {
-            // We need to compute hashes for every frame / every n frames and compare against the database
             case "image/gif":
             {
-                // TODO: Handle this
+                using (var gifImage = Image.Load<Rgba32>(data))
+                {
+                    var frameCount = gifImage.Frames.Count;
+                    var maxFramesToProcess = Math.Min(config.MaxBannedContentProcessGifFrames, frameCount);
+                    var frameInterval = frameCount / maxFramesToProcess;
+                    var perceptualHash = new PerceptualHash();
+
+                    for (int i = 0; i < frameCount; i += frameInterval)
+                    {
+                        var frame = gifImage.Frames.CloneFrame(i);
+                        var frameHash = perceptualHash.Hash(frame);
+                        if (IsHashBanned(frameHash, config, database, logPrefix))
+                        {
+                            return true;
+                        }
+                    }
+                }
                 break;
             }
-            // Compute all hashes and then compare against database
             case "image/jpeg" or "image/png" or "image/webp":
             {
                 var perceptualHash = new PerceptualHash();
                 var contentHash = perceptualHash.Hash(data);
-                var applicableBannedContents = database.BlockedContents.Where(content =>
-                    content.HashType == ContentHashType.Perceptual && content.FileType == ContentFileType.Image);
-                foreach (var bannedContent in applicableBannedContents)
+                if (IsHashBanned(contentHash, config, database, logPrefix))
                 {
-                    if (ulong.TryParse(bannedContent.Hash, out var bannedHash) && 
-                        CompareHash.Similarity(contentHash, bannedHash) > config.MinBannedContentPerceptualPercent)
-                    {
-                        return true;
-                    }
-                    logger.LogWarning("{logPrefix} Banned content {id}'s hash could not be parsed as ulong",
-                        logPrefix, bannedContent.Id);
+                    return true;
                 }
                 break;
             }
@@ -314,6 +325,23 @@ internal static partial class Program
             }
         }
 
+        return false;
+    }
+
+    private static bool IsHashBanned(ulong contentHash, PostsConfiguration config, DatabaseContext database, string logPrefix = "Could not check if content's hash is banned:")
+    {
+        var applicableBannedContents = database.BlockedContents.Where(content =>
+            content.HashType == ContentHashType.Perceptual && content.FileType == ContentFileType.Image);
+        foreach (var bannedContent in applicableBannedContents)
+        {
+            if (ulong.TryParse(bannedContent.Hash, out var bannedHash) && 
+                CompareHash.Similarity(contentHash, bannedHash) > config.MinBannedContentPerceptualPercent)
+            {
+                return true;
+            }
+            logger.LogWarning("{logPrefix} Content's {id}'s hash could not be parsed as ulong",
+                logPrefix, bannedContent.Id);
+        }
         return false;
     }
 
@@ -344,41 +372,6 @@ internal static partial class Program
             logger.LogError("{logPrefix} {error}", logPrefix, error);
             return false;
         }
-    }
-    
-    // Uses the linkage API to prove that with a given link key, a client owns an instance user account
-    private static async Task<int?> VerifyCanvasUserIntId(int instanceId, string linkKey, DatabaseContext database)
-    {
-        var logPrefix = $"Could not verify canvas user with instanceId {instanceId}.";
-
-        // Lookup instance
-        var instance = await database.Instances.FindAsync(instanceId);
-        if (instance is null)
-        {
-            logger.LogInformation("{logPrefix} Instance not found", logPrefix);
-            return null;
-        }
-
-        // Verify with instance that they do own given link key
-        var instanceUri = (instance.UsesHttps ? "https://" : "http://") + instance.ServerLocation;
-        var linkVerifyUri = $"{instanceUri}/link/{linkKey}";
-        var linkResponse = await httpClient.GetAsync(linkVerifyUri);
-        if (linkResponse.IsSuccessStatusCode)
-        {
-            var linkData = await linkResponse.Content.ReadFromJsonAsync<LinkData>(defaultJsonOptions);
-            if (linkData is null)
-            {
-                logger.LogInformation("{logPrefix} JSON data returned by server was invalid", logPrefix);
-                return null;
-            }
-
-            // The user's int ID according to the canvas server
-            return linkData.IntId;
-        }
-
-        logger.LogInformation("{logPrefix} Server denied linkage request ({statusCode} {content})",
-            logPrefix, linkResponse.StatusCode, await linkResponse.Content.ReadAsStringAsync());
-        return null;
     }
 
     private static string CensorBannedUrls(string text, PostsConfiguration config)

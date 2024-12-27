@@ -57,9 +57,11 @@ internal static partial class Program
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(account);
-        });
+        })
+        .RequireAuthorization()
+        .RequireAuthentication(AuthenticationTypeFlags.Account);
 
-        app.MapDelete("/accounts/{id:int}/delete", async (int id, HttpContext context, DatabaseContext database) =>
+        app.MapDelete("/accounts/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
         {
             var token = context.Items["Token"]?.ToString();
             if (token is null)
@@ -84,7 +86,9 @@ internal static partial class Program
 
             await database.SaveChangesAsync();
             context.Response.StatusCode = StatusCodes.Status200OK;
-        });
+        })
+        .RequireAuthorization()
+        .RequireAuthentication(AuthenticationTypeFlags.Account);
         
         app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
         {

@@ -25,10 +25,15 @@ using CensorCore;
 using DataProto;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
+using HTTPOfficial.Middlewares;
 using HTTPOfficial.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.IdentityModel.Tokens;
+using static Microsoft.Extensions.DependencyInjection.JwtBearerExtensions;
 using Microsoft.EntityFrameworkCore;
 using WatsonWebsocket;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace HTTPOfficial;
 
@@ -187,7 +192,7 @@ internal static partial class Program
         }
         globalConfig = configData;
 
-        // Main server
+        // Create server builder
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             ApplicationName = typeof(Program).Assembly.FullName,
@@ -196,10 +201,25 @@ internal static partial class Program
             Args = args
         });
 
+        // Configure webserver
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            var certPath = globalConfig.ServerConfiguration.CertPath;
+            var keyPath = globalConfig.ServerConfiguration.KeyPath;
+            if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(keyPath))
+            {
+                return;
+            }
+
+            var certificate = LoadCertificate(certPath, keyPath);
+            options.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                httpsOptions.ServerCertificate = certificate;
+            });
+        });
+
         // Register config
         builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: true);
-
-        // Register Configuration class with default values and bind from configuration
         builder.Configuration.Bind(globalConfig);
         builder.Services.Configure<Configuration>(builder.Configuration);
         builder.Services.Configure<ServerConfiguration>(builder.Configuration.GetSection("ServerConfiguration"));
@@ -221,16 +241,19 @@ internal static partial class Program
         // SMTP email sending service
         builder.Services.AddSingleton<EmailService>();
 
+        // EFCore database service
         builder.Services.AddDbContext<DatabaseContext>(options =>
         {
             options.UseSqlite("Data Source=server.db");
         });
 
+        // Configure JSON options
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         });
 
+        // CORS service
         builder.Services.AddCors(cors =>
         {
             cors.AddDefaultPolicy(policy =>
@@ -241,29 +264,49 @@ internal static partial class Program
             });
         });
 
-        builder.WebHost.ConfigureKestrel(options =>
+        // Configure cookia auth
+        builder.Services.Configure<CookieAuthenticationOptions>(options =>
         {
-            var certPath = globalConfig.ServerConfiguration.CertPath;
-            var keyPath = globalConfig.ServerConfiguration.KeyPath;
-            if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(keyPath))
-            {
-                return;
-            }
-
-            var certificate = LoadCertificate(certPath, keyPath);
-            options.ConfigureHttpsDefaults(httpsOptions =>
-            {
-                httpsOptions.ServerCertificate = certificate;
-            });
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
         });
 
-        builder.Configuration["Kestrel:Certificates:Default:Path"] = globalConfig.ServerConfiguration.CertPath;
-        builder.Configuration["Kestrel:Certificates:Default:KeyPath"] = globalConfig.ServerConfiguration.KeyPath;
+        // Authentication service
+        builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = globalConfig.AuthConfiguration.JwtIssuer,
+                ValidAudience = globalConfig.AuthConfiguration.JwtAudience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(globalConfig.AuthConfiguration.JwtSecret))
+            };
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    context.Token = context.Request.Cookies["AccessToken"];
+                    return Task.CompletedTask;
+                }
+            };
+        });
 
         app = builder.Build();
         app.Urls.Add($"{(globalConfig.ServerConfiguration.UseHttps ? "https" : "http")}://*:{globalConfig.ServerConfiguration.Port}");
+        
+        // Static files middlewares
         app.UseStaticFiles();
 
+        // CORS middleware
         app.UseCors(policy =>
         {
             policy.AllowAnyMethod()
@@ -272,6 +315,7 @@ internal static partial class Program
                 .AllowCredentials();
         });
 
+        // Swagger and dev middleware
         if (app.Environment.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -279,6 +323,11 @@ internal static partial class Program
             app.UseSwaggerUI();
         }
 
+        // Authentication middleware
+        app.UseAuthentication();
+        app.UseMiddleware<RequireAuthenticationMiddleware>();
+
+        // Forwarded headers middleware
         app.UseForwardedHeaders(new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto

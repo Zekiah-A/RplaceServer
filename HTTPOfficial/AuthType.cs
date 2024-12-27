@@ -1,7 +1,8 @@
 namespace HTTPOfficial;
 
-public enum AuthType
+[Flags]
+public enum AuthenticationTypeFlags
 {
-    Account,
-    CanvasUser
+    Account = 0,
+    CanvasUser = 1
 }

@@ -45,6 +45,7 @@ public class PostsConfiguration
     public int PostLimitSeconds { get; init; }
     public List<string> PostContentAllowedDomains { get; init; }
     public int MinBannedContentPerceptualPercent { get; set; }
+    public int MaxBannedContentProcessGifFrames { get; set; }
 }
 
 public class AccountConfiguration
