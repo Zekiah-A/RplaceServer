@@ -5,8 +5,6 @@ public class Account : ProfileBase
 {
     // Must be unique
     public string Email { get; set; } = null!;
-    // Must be unique
-    public string Token { get; set; } = null!;
     public AccountTier Tier { get; set; }
     public AccountStatus Status { get; set; } = AccountStatus.Pending;
     public string SecurityStamp { get; set; } = null!;
@@ -40,11 +38,10 @@ public class Account : ProfileBase
 
     public Account() { }
 
-    public Account(string username, string email, string token, AccountTier tier, DateTime creationDate)
+    public Account(string username, string email, AccountTier tier, DateTime creationDate)
     {
         Email = email;
         Tier = tier;
-        Token = token;
 
         // Profile fields
         Username = username;

@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace HTTPOfficial.DataModel;
 
 // TODO: Reimplement

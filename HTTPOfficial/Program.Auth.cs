@@ -1,19 +1,16 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
-using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
-using Microsoft.AspNetCore.Http;
 using HTTPOfficial.Services;
-using Microsoft.AspNetCore.Identity.Data;
 using System.Collections.Concurrent;
+using HTTPOfficial.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace HTTPOfficial;
@@ -27,13 +24,13 @@ internal static partial class Program
     private static List<string> trustedEmailDomains = null!;
     private static EmailAddressAttribute emailAttributes = null!;
 
-    private static void ConfigureAuthEndpoints()
+    private static void MapAuthEndpoints(this WebApplication app)
     {
         // Email and trusted domains
         trustedEmailDomains = ReadTxtListFile("trusted_domains.txt");
         emailAttributes = new EmailAddressAttribute();
 
-        app.MapPost("/auth/signup", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, AuthConfiguration config, DatabaseContext database) =>
+        app.MapPost("/auth/signup", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>
         {
             // Rate limiting check
             var ipAddress = context.Connection.RemoteIpAddress?.ToString();
@@ -46,7 +43,7 @@ internal static partial class Program
             }
             if (signupAttempts.TryGetValue(ipAddress, out var lastAttempt))
             {
-                if (DateTime.UtcNow.Subtract(lastAttempt).TotalSeconds < config.SignupRateLimitSeconds)
+                if (DateTime.UtcNow.Subtract(lastAttempt).TotalSeconds < config.Value.SignupRateLimitSeconds)
                 {
                     context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                     await context.Response.WriteAsJsonAsync(
@@ -94,8 +91,8 @@ internal static partial class Program
             await database.SaveChangesAsync();
 
             // Generate and send verification code
-            var verificationCode = await CreateVerificationCodeAsync(account.Id, config, database);
-            await email.SendVerificationEmailAsync(account.Email, account.Username, verificationCode);
+            var verificationCode = await CreateVerificationCodeAsync(account.Id, config, database, true);
+            await email.SendVerificationEmailAsync(account.Email, verificationCode);
             
             // Generate initial JWT (limited capabilities until email is verified)
             var (accessToken, refreshToken) = GenerateTokens(account, emailVerified: false, config);
@@ -112,12 +109,12 @@ internal static partial class Program
             ));
         });
 
-        app.MapPost("/auth/login", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, AuthConfiguration config, DatabaseContext database) =>
+        app.MapPost("/auth/login", async (EmailUsernameRequest request, HttpContext context, TokenService tokenService, EmailService email, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>
         {
             var account = await database.Accounts
-                .FirstOrDefaultAsync(a => a.Email == request.Email && a.Username == request.Username);
+                .FirstOrDefaultAsync(account => account.Email == request.Email && account.Username == request.Username);
 
-            if (account == null || account.Status != AccountStatus.Active)
+            if (account is not { Status: AccountStatus.Active })
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(
@@ -134,7 +131,7 @@ internal static partial class Program
             await StoreRefreshTokenAsync(account, refreshToken, config, database);
             tokenService.SetTokenCookies(accessToken, refreshToken);
 
-            // Send response success
+            // Send response sxuccess
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(new LoginDetailsResponse(
                 account.Id,
@@ -142,18 +139,17 @@ internal static partial class Program
                 account.Email,
                 emailVerified: false
             ));
-            return;
         });
 
-        app.MapPost("/auth/verify", async (VerifyCodeRequest request, HttpContext context, TokenService tokenService, AuthConfiguration config, DatabaseContext database) =>
+        app.MapPost("/auth/verify", async (VerifyCodeRequest request, HttpContext context, TokenService tokenService, AccountService accountService, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>
         {
             // Check for too many failed attempts
             var attemptKey = $"verify_{request.AccountId}";
             if (failedAttempts.TryGetValue(attemptKey, out var attempts))
             {
-                if (attempts.Attempts >= config.MaxFailedVerificationAttempts)
+                if (attempts.Attempts >= config.Value.MaxFailedVerificationAttempts)
                 {
-                    if (DateTime.UtcNow.Subtract(attempts.LastAttempt).TotalMinutes < config.FailedVerificationAttemptResetMinutes)
+                    if (DateTime.UtcNow.Subtract(attempts.LastAttempt).TotalMinutes < config.Value.FailedVerificationAttemptResetMinutes)
                     {
                         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                         await context.Response.WriteAsJsonAsync(
@@ -190,12 +186,19 @@ internal static partial class Program
             }
 
             var account = await database.Accounts.FindAsync(request.AccountId);
-            if (account == null || account.Status != AccountStatus.Active)
+            if (account == null)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Account not found or inactive", "auth.verify.accountNotFound"));
+                    new ErrorResponse("Account not found", "auth.verify.accountNotFound"));
                 return;
+            }
+            await accountService.RunPostAuthentication(account);
+
+            // Mark account as verified & active
+            if (verification.Initial && account.Status == AccountStatus.Pending)
+            {
+                account.Status = AccountStatus.Active;
             }
 
             // Mark verification as used
@@ -215,11 +218,10 @@ internal static partial class Program
                 account.Email,
                 emailVerified: true
             ));
-            return;
         });
 
         // Authenticate a client as a Canvas User
-        app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, TokenService tokenService, AuthConfiguration config, DatabaseContext database) =>
+        app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, TokenService tokenService, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>
         {
             // Attempt to verify the Canvas User with the given link key 
             var userIntId = await VerifyCanvasUserIntId(request.InstanceId, request.LinkKey, database);
@@ -320,12 +322,12 @@ internal static partial class Program
         return null;
     }
 
-    private static (string token, string refreshToken) GenerateTokens(CanvasUser user, AuthConfiguration config)
+    private static (string token, string refreshToken) GenerateTokens(CanvasUser user, IOptionsSnapshot<AuthConfiguration> config)
     {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new("type", AuthenticationTypeFlags.CanvasUser.ToString()),
+            new("type", AuthTypeFlags.CanvasUser.ToString()),
             new("userIntId", user.UserIntId.ToString()),
             new("instanceId", user.InstanceId.ToString()),
             new("securityStamp", user.SecurityStamp)
@@ -335,14 +337,14 @@ internal static partial class Program
         return (new JwtSecurityTokenHandler().WriteToken(token), refreshToken);
     }
 
-    private static (string token, string refreshToken) GenerateTokens(Account account, bool emailVerified, AuthConfiguration config)
+    private static (string token, string refreshToken) GenerateTokens(Account account, bool emailVerified, IOptionsSnapshot<AuthConfiguration> config)
     {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, account.Email),
             new(JwtRegisteredClaimNames.Name, account.Username),
-            new("type", AuthenticationTypeFlags.Account.ToString()),
+            new("type", AuthTypeFlags.Account.ToString()),
             new("tier", account.Tier.ToString()),
             new("emailVerified", emailVerified.ToString()),
             new("securityStamp", account.SecurityStamp)
@@ -352,16 +354,16 @@ internal static partial class Program
         return (new JwtSecurityTokenHandler().WriteToken(token), refreshToken);
     }
 
-    private static JwtSecurityToken GenerateSecurityToken(List<Claim> claims, AuthConfiguration config)
+    private static JwtSecurityToken GenerateSecurityToken(List<Claim> claims, IOptionsSnapshot<AuthConfiguration> config)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config.JwtSecret));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config.Value.JwtSecret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
         var token = new JwtSecurityToken(
-            issuer: config.JwtIssuer,
-            audience: config.JwtAudience,
+            issuer: config.Value.JwtIssuer,
+            audience: config.Value.JwtAudience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(config.JwtExpirationMinutes),
+            expires: DateTime.UtcNow.AddMinutes(config.Value.JwtExpirationMinutes),
             signingCredentials: creds);
 
         return token;
@@ -383,7 +385,7 @@ internal static partial class Program
         return Convert.ToBase64String(randomNumber);
     }
 
-    private static async Task<string> CreateVerificationCodeAsync(int accountId, AuthConfiguration config, DatabaseContext database)
+    private static async Task<string> CreateVerificationCodeAsync(int accountId, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database, bool initial = false)
     {
         var code = RandomNumberGenerator.GetInt32(100_000, 999_999).ToString();
         
@@ -392,8 +394,9 @@ internal static partial class Program
             AccountId = accountId,
             Code = code,
             CreationDate = DateTime.UtcNow,
-            ExpirationDate = DateTime.UtcNow.AddMinutes(config.VerificationCodeExpirationMinutes),
-            Used = false
+            ExpirationDate = DateTime.UtcNow.AddMinutes(config.Value.VerificationCodeExpirationMinutes),
+            Used = false,
+            Initial = initial
         };
 
         await database.PendingVerifications.AddAsync(verification);
@@ -402,28 +405,28 @@ internal static partial class Program
         return code;
     }
 
-    private static async Task StoreRefreshTokenAsync(CanvasUser canvasUser, string refreshToken, AuthConfiguration config, DatabaseContext database)
+    private static async Task StoreRefreshTokenAsync(CanvasUser canvasUser, string refreshToken, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database)
     {
         var canvasUserToken = new CanvasUserRefreshToken
         {
             CanvasUserId = canvasUser.Id,
             Token = refreshToken,
             CreationDate = DateTime.UtcNow,
-            ExpirationDate = DateTime.UtcNow.AddDays(config.RefreshTokenExpirationDays)
+            ExpirationDate = DateTime.UtcNow.AddDays(config.Value.RefreshTokenExpirationDays)
         };
 
         await database.CanvasUserRefreshTokens.AddAsync(canvasUserToken);
         await database.SaveChangesAsync();
     }
 
-    private static async Task StoreRefreshTokenAsync(Account account, string refreshToken, AuthConfiguration config, DatabaseContext database)
+    private static async Task StoreRefreshTokenAsync(Account account, string refreshToken, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database)
     {
         var accountToken = new AccountRefreshToken
         {
             AccountId = account.Id,
             Token = refreshToken,
             CreationDate = DateTime.UtcNow,
-            ExpirationDate = DateTime.UtcNow.AddDays(config.RefreshTokenExpirationDays)
+            ExpirationDate = DateTime.UtcNow.AddDays(config.Value.RefreshTokenExpirationDays)
         };
 
         await database.AccountRefreshTokens.AddAsync(accountToken);

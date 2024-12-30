@@ -1,52 +1,31 @@
-using System.ComponentModel.DataAnnotations;
-using System.Security.Cryptography;
-using System.Text.Json;
-using System.Text.RegularExpressions;
+using System.Security.Claims;
+using FluentValidation;
 using HTTPOfficial.ApiModel;
 using HTTPOfficial.DataModel;
-using MailKit.Net.Smtp;
-using MailKit.Security;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using MimeKit;
-using Timer = System.Timers.Timer;
+using HTTPOfficial.Services;
+
 
 namespace HTTPOfficial;
 
 internal static partial class Program
 {
-    [GeneratedRegex(@"^\w{4,16}$")]
-    private static partial Regex UsernameRegex();
-
-    [GeneratedRegex(@"^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$")]
-    private static partial Regex EmailRegex();
-
-    // /accounts/{id:int}/delete
-    [GeneratedRegex(@"^\/accounts\/\d+\/delete\/*$")]
-    private static partial Regex AccountDeleteEndpointRegex();
-
-    // /accounts/{id:int}
-    [GeneratedRegex(@"^\/accounts\/\d+\/*$")]
-    private static partial Regex AccountEndpointRegex();
-
-    [GeneratedRegex(@"^\/account\/login\/token")]
-    private static partial Regex AccountLoginTokenRegex();
-
-    private static void ConfigureAccountEndpoints()
+    private static void MapAccountEndpoints(this WebApplication app)
     {
-        app.MapGet("/accounts/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
+        app.MapGet("/accounts/{identifier}", async (string identifier, HttpContext context, DatabaseContext database) =>
         {
-            var token = context.Items["Token"]?.ToString();
-            if (token is null)
+            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountTier = context.User.Claims.FindFirstAs<AccountTier>("tier");
+
+            var targetId = identifier == "me" ? accountId : int.Parse(identifier);
+            if (targetId != accountId && accountTier != AccountTier.Administrator)
             {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
+                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.forbidden"));
                 return;
             }
-
-            var account = await database.Accounts.FindAsync(id);
+            
+            var account = await database.Accounts.FindAsync(targetId);
             if (account is null)
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -59,23 +38,78 @@ internal static partial class Program
             await context.Response.WriteAsJsonAsync(account);
         })
         .RequireAuthorization()
-        .RequireAuthentication(AuthenticationTypeFlags.Account);
-
-        app.MapDelete("/accounts/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
+        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireClaims(ClaimTypes.NameIdentifier, "tier");
+        
+        app.MapPatch("/accounts/{identifier}/profile", async (string identifier, IValidator<ProfileUpdateRequest> validator, ProfileUpdateRequest profileUpdate, HttpContext context, CensorService censor, DatabaseContext database) =>
         {
-            var token = context.Items["Token"]?.ToString();
-            if (token is null)
+            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+
+            var targetId = identifier == "me" ? accountId : int.Parse(identifier);
+            var account = await database.Accounts.FindAsync(targetId);
+            if (account is not { Status: AccountStatus.Active })
             {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("No token provided in header or auth body", "accounts.login.noToken"));
+                    new ErrorResponse("Account not found", "account.notFound"));
+                return;
+            }
+
+            var validationResult = await validator.ValidateAsync(profileUpdate);
+            if (!validationResult.IsValid)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(new ErrorResponse(
+                    "Specified profile update was invalid", 
+                    "account.profile.invalidUpdate",
+                    validationResult.ToDictionary()));
+            }
+
+            // Update fields if provided
+            if (profileUpdate.DiscordHandle != null)
+            {
+                account.DiscordHandle = profileUpdate.DiscordHandle;
+            }
+            if (profileUpdate.TwitterHandle != null)
+            {
+                account.TwitterHandle = profileUpdate.TwitterHandle;
+            }
+            if (profileUpdate.RedditHandle != null)
+            {
+                account.RedditHandle = profileUpdate.RedditHandle;
+            }
+            if (profileUpdate.Biography != null)
+            {
+                account.Biography = censor.CensorBanned(profileUpdate.Biography);
+            }
+
+            // Save changes to the database
+            await database.SaveChangesAsync();
+
+            context.Response.StatusCode = StatusCodes.Status200OK;
+        })
+        .RequireAuthorization()
+        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireClaims(ClaimTypes.NameIdentifier);
+
+        app.MapDelete("/accounts/{identifier}", async (string identifier, HttpContext context, AccountService accountService, DatabaseContext database) =>
+        {
+            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountTier = context.User.Claims.FindFirstAs<AccountTier>("tier");
+
+            var targetId = identifier == "me" ? accountId : int.Parse(identifier);
+            if (targetId != accountId && accountTier != AccountTier.Administrator)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.forbidden"));
                 return;
             }
 
             // TODO: Research account deletion standards further
             // Fully deleting the account record can cause a lot of DB issues if all relations are not handled,
             // for now, all account data will simply be wiped (termination), but the record will remain
-            var success = await TerminateAccountData(id, database);
+            var success = await accountService.TerminateAccount(targetId);
             if (!success)
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -88,9 +122,10 @@ internal static partial class Program
             context.Response.StatusCode = StatusCodes.Status200OK;
         })
         .RequireAuthorization()
-        .RequireAuthentication(AuthenticationTypeFlags.Account);
+        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireClaims(ClaimTypes.NameIdentifier, "tier");
         
-        app.MapGet("/profiles/{id:int}", async (int id, DatabaseContext database) =>
+        app.MapGet("/profiles/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
         {
             var account = await database.Accounts.FindAsync(id);
             if (account is null)
@@ -102,78 +137,5 @@ internal static partial class Program
             var profile = account.ToProfile();
             return Results.Ok(profile);
         });
-        
-        // Delete accounts that have not verified within the valid timespan
-        /*var expiredAccountCodeTimer = new Timer(TimeSpan.FromMinutes(config.UnverifiedAccountExpiryMinutes))
-        {
-            Enabled = true,
-            AutoReset = true
-        };
-        expiredAccountCodeTimer.Elapsed += async (_, _) =>
-        {
-            using var scope = app.Services.CreateScope();
-            var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-
-            var pendingVerifications = database.PendingVerifications.AsAsyncEnumerable();
-            await foreach (var verification in pendingVerifications)
-            {
-                if (DateTime.Now - verification.CreationDate < TimeSpan.FromMinutes(config.UnverifiedAccountExpiryMinutes))
-                {
-                    continue;
-                }
-                
-                if (verification.Initial)
-                {
-                    // Delete the account associated as well (assume it's a stranded a throwaway that can't be logged into again)
-                    var success = await TerminateAccountData(verification.AccountId, database);
-                    if (!success)
-                    {
-                        logger.LogError("Failed to terminate account ${AccountId}, which expired before initial verification", verification.AccountId);
-                    }
-                }
-                
-                database.PendingVerifications.Remove(verification);
-            }
-            await database.SaveChangesAsync();
-        };*/
-    }
-
-    private static async Task<bool> TerminateAccountData(int accountId, DatabaseContext database)
-    {
-        var accountData = await database.Accounts.FindAsync(accountId);
-        if (accountData is null)
-        {
-            return false;
-        }
-        accountData.Username = "Deleted Account";
-        accountData.Email = "";
-        accountData.Token = "";
-        accountData.TwitterHandle = null;
-        accountData.TwitterHandle = null;
-        accountData.TwitterHandle = null;
-        accountData.Status = AccountStatus.Deleted;
-        return true;
-    }
-
-    // ReSharper disable once SuggestBaseTypeForParameter
-    private static async Task RunPostAuthentication(Account accountData, DatabaseContext database)
-    {
-        // If they have been on the site for 20+ days, we remove their noob badge
-        var noobBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
-            accountBadge.OwnerId == accountData.Id && accountBadge.Type == BadgeType.Newbie);
-        if (noobBadge is not null && DateTime.Now - accountData.CreationDate >= TimeSpan.FromDays(20))
-        {
-            database.Badges.Remove(noobBadge);
-        }
-
-        // If they have been on the site for more than a year, they get awarded a veteran badge
-        var veteranBadge = await database.Badges.FirstOrDefaultAsync(accountBadge =>
-            accountBadge.OwnerId == accountData.Id && accountBadge.Type == BadgeType.Veteran);
-        if (veteranBadge is not null && DateTime.Now - accountData.CreationDate >= TimeSpan.FromDays(365))
-        {
-            database.Badges.Add(new Badge(BadgeType.Veteran, DateTime.Now));
-        }
-
-        await database.SaveChangesAsync();
     }
 }

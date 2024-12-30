@@ -57,9 +57,6 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<Account>()
             .HasIndex(account => account.Email)
             .IsUnique();
-        modelBuilder.Entity<Account>()
-            .HasIndex(account => account.Token)
-            .IsUnique();
         // Unique reddit account bindings (multiple accounts can't bind to the same reddit user)
         //modelBuilder.Entity<AccountRedditAuth>()
         //    .HasIndex(verification => verification.RedditId)

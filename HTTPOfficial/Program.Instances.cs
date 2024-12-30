@@ -5,7 +5,7 @@ namespace HTTPOfficial;
 
 internal static partial class Program
 {
-    private static void ConfigureInstanceEndpoints()
+    private static void MapInstanceEndpoints(this WebApplication app)
     {
         app.MapGet("/instances/vanity/{vanityName}", async (string vanityName, DatabaseContext database) =>
         {

@@ -2,8 +2,7 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 using Microsoft.Extensions.Options;
-using System.Threading.Tasks;
-using System.Text.RegularExpressions;
+using HTTPOfficial.Configuration;
 
 namespace HTTPOfficial.Services;
 
@@ -25,18 +24,17 @@ public class EmailService
         this.logger = logger;
     }
 
-    public async Task SendVerificationEmailAsync(string toEmail, string username, string code)
+    public async Task SendVerificationEmailAsync(string toEmail, string code)
     {
         var subject = "Verify Your Account";
         var body = GenerateEmailTemplate("AccountVerification", new Dictionary<string, string>
         {
-            { "Username", username },
             { "Code", code },
             { "ExpirationMinutes", "15" },
             { "WebsiteUrl", config.CurrentValue.WebsiteUrl }
         });
 
-        await SendEmailAsync(toEmail, username, subject, body);
+        await SendEmailAsync(toEmail, subject, body);
     }
 
     public async Task SendLoginVerificationEmailAsync(string toEmail, string username, string code)
@@ -57,10 +55,10 @@ public class EmailService
             { "WebsiteUrl", config.CurrentValue.WebsiteUrl }
         });
 
-        await SendEmailAsync(toEmail, username, subject, body);
+        await SendEmailAsync(toEmail, subject, body);
     }
 
-    private async Task SendEmailAsync(string toEmail, string toName, string subject, string htmlBody)
+    private async Task SendEmailAsync(string toEmail, string subject, string htmlBody)
     {
         // Check for too many failed attempts
         if (!CanSendEmail(toEmail))
@@ -71,7 +69,7 @@ public class EmailService
 
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(config.CurrentValue.FromName, config.CurrentValue.FromEmail));
-        message.To.Add(new MailboxAddress(toName, toEmail));
+        message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
 
         var bodyBuilder = new BodyBuilder
@@ -172,7 +170,7 @@ public class EmailService
     private string GetEmailTemplate(string templateName) => templateName switch
     {
         "AccountVerification" => """
-                <h1>👋 Hello {Username}!</h1>
+                <h1>👋 Hello there!</h1>
                 <p>Someone used your email to register a new <a href="https://rplace.live" style="text-decoration: none;">rplace.live</a> account.</p>
                 <p>If that's you, then cool, your code is:</p>
                 <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {Code} </h1>

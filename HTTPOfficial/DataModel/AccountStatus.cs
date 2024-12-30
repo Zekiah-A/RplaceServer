@@ -5,5 +5,5 @@ public enum AccountStatus
     Pending,
     Active,
     Suspended,
-    Deleted
+    Terminated
 }

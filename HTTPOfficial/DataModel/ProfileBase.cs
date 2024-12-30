@@ -10,12 +10,16 @@ public abstract class ProfileBase
     public int Id { get; set; }
     // Must be unique
     public string Username { get; set; } = null!;
-    
+
+    // Customisable
     public string? DiscordHandle { get; set; }
     public string? TwitterHandle { get; set; }
     public string? RedditHandle { get; set; }
-    public int PixelsPlaced { get; set; }
+    public string? Biography { get; set; }
+
+    // Meta
     public DateTime CreationDate { get; set; }
+    public int PixelsPlaced { get; set; }
 
     // Navigation property to badges
     public List<Badge> Badges { get; set; } = [];

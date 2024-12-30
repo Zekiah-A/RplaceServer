@@ -14,23 +14,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 using System.Collections.Concurrent;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using AuthWorkerShared;
 using CensorCore;
-using DataProto;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using HTTPOfficial.ApiModel;
+using HTTPOfficial.Configuration;
 using HTTPOfficial.DataModel;
 using HTTPOfficial.Middlewares;
 using HTTPOfficial.Services;
+using HTTPOfficial.Validation;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
-using static Microsoft.Extensions.DependencyInjection.JwtBearerExtensions;
 using Microsoft.EntityFrameworkCore;
 using WatsonWebsocket;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -44,8 +44,6 @@ namespace HTTPOfficial;
 /// </summary>
 internal static partial class Program
 {
-    private static Configuration globalConfig;
-    private static WebApplication app;
     private static ILogger logger;
     private static HttpClient httpClient;
     private static JsonSerializerOptions defaultJsonOptions;
@@ -76,16 +74,17 @@ internal static partial class Program
                 options.RootPath = Path.Combine(Directory.GetCurrentDirectory(), "Logs");
             });
         });
-        logger = loggerFactory.CreateLogger("Program");
+        logger = loggerFactory.CreateLogger("HTTPOfficial");
 
         void CreateNewConfig()
         {
             // Create config
             logger.LogWarning("Could not find server config file, at {configPath}", configPath);
-            var defaultConfiguration = new Configuration
+            var defaultConfiguration = new Configuration.Config
             {
-                Version = Configuration.CurrentVersion,
-                InstanceKey = RandomNumberGenerator.GetHexString(96),
+                Version = Configuration.Config.CurrentVersion,
+                // TODO: Consider migrating instances to authenticate themselves with JWTs
+                InstanceKey = RandomNumberGenerator.GetHexString(64, true),
                 DefaultInstances =
                 [
                     new Instance("server.rplace.live", true)
@@ -114,13 +113,6 @@ internal static partial class Program
                 {
                     PostsFolder = "Posts",
                     PostLimitSeconds = 60,
-                    PostContentAllowedDomains = [ 
-                        "rplace.tk", "rplace.live", "discord.gg", "twitter.com", "wikipedia.org",
-                        "reddit.com", "discord.com", "x.com", "youtube.com", "t.me", "discord.com",
-                        "tiktok.com", "twitch.tv", "fandom.com", "instagram.com", "canv.tk", "chit.cf",
-                        "github.com", "openmc.pages.dev", "count.land"
-                    ],
-                    MinBannedContentPerceptualPercent = 80
                 },
                 AccountConfiguration = new AccountConfiguration
                 {
@@ -148,9 +140,9 @@ internal static partial class Program
                 },
                 AuthConfiguration = new AuthConfiguration
                 {
-                    JwtSecret = "JWT_SECRET",
-                    JwtIssuer = "JWT_ISSUER",
-                    JwtAudience = "WT_AUDIENCE",
+                    JwtSecret = RandomNumberGenerator.GetHexString(64, true),
+                    JwtIssuer = "JWT_ISSUER", // e.g https://server.rplace.live/auth
+                    JwtAudience = "WT_AUDIENCE", // e.g https://server.rplace.live/auth
                     JwtExpirationMinutes = 60,
                     RefreshTokenExpirationDays = 30,
                     VerificationCodeExpirationMinutes = 15,
@@ -158,6 +150,20 @@ internal static partial class Program
                     SignupRateLimitSeconds = 300,
                     FailedVerificationAttemptResetMinutes = 5
                 },
+                CensorConfiguration = new CensorConfiguration
+                {
+                    DefaultFilterAlllowedDomains = [ 
+                        "bilibili.com", "canv.tk", "chit.cf", "count.land", "discordapp.com", "discord.com",
+                        "discord.gg", "douban.com", "fandom.com", "github.com", "hippo.casino", "instagram.com",
+                        "kookapp.cn", "line.me", "medium.com", "openmc.pages.dev", "pinterest.com", "quora.com",
+                        "reddit.com", "rplace.live", "rplace.tk", "snapchat.com", "stackexchange.com",
+                        "stackoverflow.com", "t.me", "tiktok.com", "tumblr.com", "twitch.tv", "twitter.com",
+                        "vk.com", "wechat.com", "weibo.com", "wikipedia.org", "x.com", "youtube.com"
+                    ],
+                    DefaultFilterBannedWords = [],
+                    DefaultFilterMinPerceptualPercent = 80,
+                    DefaultProcessMaxGifFrames = 100
+                }
             };
             var newConfigText = JsonSerializer.Serialize(defaultConfiguration, new JsonSerializerOptions()
             {
@@ -180,17 +186,17 @@ internal static partial class Program
             Directory.CreateDirectory(instancesPath);
         }
 
-        var configData = JsonSerializer.Deserialize<Configuration>(await File.ReadAllTextAsync(configPath));
-        if (configData is null || configData.Version < Configuration.CurrentVersion)
+        var configData = JsonSerializer.Deserialize<Configuration.Config>(await File.ReadAllTextAsync(configPath));
+        if (configData is null || configData.Version < Configuration.Config.CurrentVersion)
         {
-            var oldConfigPath = configPath + ".old";
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+            var oldConfigPath = $"{configPath}.{timestamp}.old";
             logger.LogWarning("Current config file is invalid or outdated, moving to {oldConfigDirectory}. Config files recreated. Check {currentDirectory} and run this program again.",
                 oldConfigPath, Directory.GetCurrentDirectory());
             File.Move(configPath, oldConfigPath);
             CreateNewConfig();
             Environment.Exit(0);
         }
-        globalConfig = configData;
 
         // Create server builder
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -201,32 +207,39 @@ internal static partial class Program
             Args = args
         });
 
-        // Configure webserver
-        builder.WebHost.ConfigureKestrel(options =>
-        {
-            var certPath = globalConfig.ServerConfiguration.CertPath;
-            var keyPath = globalConfig.ServerConfiguration.KeyPath;
-            if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(keyPath))
-            {
-                return;
-            }
-
-            var certificate = LoadCertificate(certPath, keyPath);
-            options.ConfigureHttpsDefaults(httpsOptions =>
-            {
-                httpsOptions.ServerCertificate = certificate;
-            });
-        });
-
-        // Register config
+        // Add config file to server configuration & DI sections
         builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: true);
-        builder.Configuration.Bind(globalConfig);
-        builder.Services.Configure<Configuration>(builder.Configuration);
+        builder.Services.Configure<Config>(builder.Configuration);
         builder.Services.Configure<ServerConfiguration>(builder.Configuration.GetSection("ServerConfiguration"));
         builder.Services.Configure<PostsConfiguration>(builder.Configuration.GetSection("PostsConfiguration"));
         builder.Services.Configure<AccountConfiguration>(builder.Configuration.GetSection("AccountConfiguration"));
         builder.Services.Configure<AuthConfiguration>(builder.Configuration.GetSection("AuthConfiguration"));
         builder.Services.Configure<EmailConfiguration>(builder.Configuration.GetSection("EmailConfiguration"));
+        builder.Services.Configure<CensorConfiguration>(builder.Configuration.GetSection("CensorConfiguration"));
+        var config = builder.Configuration.Get<Config>()!;
+
+        // Configure webserver
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            var certPath = config.ServerConfiguration.CertPath;
+            var keyPath = config.ServerConfiguration.KeyPath;
+            if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(keyPath) && config.ServerConfiguration.UseHttps)
+            {
+                var certificate = LoadCertificate(certPath, keyPath);
+                options.ConfigureHttpsDefaults(httpsOptions =>
+                {
+                    httpsOptions.ServerCertificate = certificate;
+                });
+            }
+
+            options.ListenAnyIP(config.ServerConfiguration.Port, listenOptions =>
+            {
+                if (config.ServerConfiguration.UseHttps)
+                {
+                    listenOptions.UseHttps();
+                }
+            });
+        });
 
         // Swagger service
         if (builder.Environment.IsDevelopment())
@@ -240,12 +253,27 @@ internal static partial class Program
 
         // SMTP email sending service
         builder.Services.AddSingleton<EmailService>();
+        
+        // Token service
+        builder.Services.AddSingleton<TokenService>();
+        
+        // Content filters / censors service
+        builder.Services.AddSingleton<CensorService>();
+        
+        // Account service
+        builder.Services.AddSingleton<AccountService>();
+
+        // Account background hosted service
+        builder.Services.AddHostedService<AccountBackgroundService>();
 
         // EFCore database service
         builder.Services.AddDbContext<DatabaseContext>(options =>
         {
             options.UseSqlite("Data Source=server.db");
         });
+        
+        // Context accessor service
+        builder.Services.AddHttpContextAccessor();
 
         // Configure JSON options
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -273,6 +301,7 @@ internal static partial class Program
         });
 
         // Authentication service
+        builder.Services.AddAuthorization();
         builder.Services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -286,9 +315,9 @@ internal static partial class Program
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = globalConfig.AuthConfiguration.JwtIssuer,
-                ValidAudience = globalConfig.AuthConfiguration.JwtAudience,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(globalConfig.AuthConfiguration.JwtSecret))
+                ValidIssuer = config.AuthConfiguration.JwtIssuer,
+                ValidAudience = config.AuthConfiguration.JwtAudience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config.AuthConfiguration.JwtSecret))
             };
             options.Events = new JwtBearerEvents
             {
@@ -299,9 +328,12 @@ internal static partial class Program
                 }
             };
         });
+        
+        // Validation service
+        builder.Services.AddScoped<IValidator<ProfileUpdateRequest>, ProfileUpdateRequestValidator>();
+        builder.Services.AddFluentValidationAutoValidation();
 
-        app = builder.Build();
-        app.Urls.Add($"{(globalConfig.ServerConfiguration.UseHttps ? "https" : "http")}://*:{globalConfig.ServerConfiguration.Port}");
+        var app = builder.Build();
         
         // Static files middlewares
         app.UseStaticFiles();
@@ -325,7 +357,9 @@ internal static partial class Program
 
         // Authentication middleware
         app.UseAuthentication();
-        app.UseMiddleware<RequireAuthenticationMiddleware>();
+        app.UseAuthorization();
+        app.UseMiddleware<AuthTypeMiddleware>();
+        app.UseMiddleware<ClaimsMiddleware>();
 
         // Forwarded headers middleware
         app.UseForwardedHeaders(new ForwardedHeadersOptions
@@ -333,7 +367,7 @@ internal static partial class Program
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
         });
 
-        var wsServer = new WatsonWsServer(globalConfig.ServerConfiguration.SocketPort, globalConfig.ServerConfiguration.UseHttps, globalConfig.ServerConfiguration.CertPath, globalConfig.ServerConfiguration.KeyPath);
+        var wsServer = new WatsonWsServer(config.ServerConfiguration.SocketPort, config.ServerConfiguration.UseHttps, config.ServerConfiguration.CertPath, config.ServerConfiguration.KeyPath);
 
         // Vanity -> URL of actual socket server & board, done by worker clients on startup
         httpClient = new HttpClient();
@@ -345,9 +379,6 @@ internal static partial class Program
         var workerClients = new Dictionary<ClientMetadata, WorkerInfo>();
         var workerRequestId = 0;
         var workerRequestQueue = new ConcurrentDictionary<int, TaskCompletionSource<byte[]>>(); // ID, Data callback
-
-        // Auth - Used when transitioning client from open to message handlers, periodic routines, etc
-        var authorisedClients = new Dictionary<ClientMetadata, int>();
 
         // Used by reddit auth
         var refreshTokenAuthDates = new Dictionary<string, DateTime>();
@@ -374,7 +405,7 @@ internal static partial class Program
         nudeNetAiService = AIService.Create(modelBytes, handler, false);
 
         // Default canvas instances
-        await InsertDefaultInstancesAsync();
+        await InsertDefaultInstancesAsync(app, config);
 
         // Shutdown and exceptions
         serverShutdownToken = new CancellationTokenSource();
@@ -394,16 +425,17 @@ internal static partial class Program
             Environment.Exit(1);
         };
 
-        ConfigureAuthEndpoints();
-        ConfigureAccountEndpoints();
-        ConfigurePostEndpoints();
-        ConfigureInstanceEndpoints();
+        // Map all HTTPOfficial endopoints
+        app.MapAuthEndpoints();
+        app.MapAccountEndpoints();
+        app.MapPostEndpoints();
+        app.MapInstanceEndpoints();
 
         await Task.WhenAll(app.RunAsync(), wsServer.StartAsync(serverShutdownToken.Token));
         await Task.Delay(-1, serverShutdownToken.Token);
     }
 
-    private static async Task InsertDefaultInstancesAsync()
+    private static async Task InsertDefaultInstancesAsync(WebApplication app, Configuration.Config config)
     {
         using var scope = app.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
@@ -412,7 +444,7 @@ internal static partial class Program
             throw new Exception("Couldn't insert default instances, db was null");
         }
 
-        foreach (var defaultInstance in globalConfig.DefaultInstances)
+        foreach (var defaultInstance in config.DefaultInstances)
         {
             if (!await database.Instances.AnyAsync(instance => instance.VanityName == defaultInstance.VanityName))
             {

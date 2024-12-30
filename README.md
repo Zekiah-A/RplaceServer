@@ -39,14 +39,14 @@ Enter the TKOfficial directory with `cd TKOfficial`.
 Run `dotnet run` to start the server. When running with SSL/on an admin restricted port, you may need to run this command with administrator privileges.
 
 ### Project Aims:
- - Open, contribute and easy to use
- - Faster than bunJS server
+ - Open, contributable and easy to use
+ - Faster than JS server
  - Moddable and easily extendable
  - Daemonisable
  - Linux shell scripts such as used in board shrinking made cross platform and built in
  - Library makes use of events and abstract methods to allow customisation of server functions
  - Compatible with both GUI, and CLI
- - Decoupled unlike bunJS server, abstracted and simplified
+ - Decoupled unlike JS server, abstracted and simplified
  - Scalable
 
 ## Plugins:

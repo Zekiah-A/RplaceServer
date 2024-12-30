@@ -1,14 +1,12 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using CoenM.ImageHash;
-using CoenM.ImageHash.HashAlgorithms;
 using HTTPOfficial.ApiModel;
+using HTTPOfficial.Configuration;
 using HTTPOfficial.DataModel;
+using HTTPOfficial.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using MediaTypeHeaderValue = System.Net.Http.Headers.MediaTypeHeaderValue;
+using Microsoft.Extensions.Options;
 
 namespace HTTPOfficial;
 
@@ -18,10 +16,7 @@ internal static partial class Program
     [GeneratedRegex(@"^\/posts\/upload\/*$")]
     private static partial Regex PostUploadEndpointRegex();
     
-    [GeneratedRegex(@"https?:\/\/(\w+\.)+\w{2,15}(\/\S*)?|(\w+\.)+\w{2,15}\/\S*|(\w+\.)+(tk|ga|gg|gq|cf|ml|fun|xxx|webcam|sexy?|tube|cam|p[o]rn|adult|com|net|org|online|ru|co|info|link)")]
-    private static partial Regex BannedUrlsRegex();
-    
-    private static void ConfigurePostEndpoints()
+    private static void MapPostEndpoints(this WebApplication app)
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
             [FromQuery] int? beforeUpvotes, [FromQuery] int? sinceUpvotes, [FromQuery] int? beforeDownvotes,
@@ -86,7 +81,7 @@ internal static partial class Program
             return Results.Ok(post);
         });
 
-        app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, PostsConfiguration config, DatabaseContext database) =>
+        app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
             var userId = context.User.FindFirst("AccountId")?.Value;
             var canvasUserId = context.User.FindFirst("CanvasUserId")?.Value;
@@ -125,11 +120,11 @@ internal static partial class Program
             }
 
             // Spam filtering
-            newPost.Title = CensorBannedUrls(newPost.Title, config);
-            newPost.Description = CensorBannedUrls(newPost.Description, config);
+            newPost.Title = censor.CensorBanned(newPost.Title);
+            newPost.Description = censor.CensorBanned(newPost.Description);
             
             // Automatic sensitive content detection - (Thanks to https://profanity.dev)
-            if (await ProbablyHasProfanity(newPost.Title) || await ProbablyHasProfanity(newPost.Description))
+            if (await censor.ProbablyHasProfanity(newPost.Title) || await censor.ProbablyHasProfanity(newPost.Description))
             {
                 newPost.HasSensitiveContent = true;
             }
@@ -146,16 +141,16 @@ internal static partial class Program
         })
         .RequireAuthorization()
         //.RateLimit(TimeSpan.FromSeconds(config.PostLimitSeconds))
-        .RequireAuthentication(AuthenticationTypeFlags.Account | AuthenticationTypeFlags.CanvasUser);
+        .RequireAuthType(AuthTypeFlags.Account | AuthTypeFlags.CanvasUser);
 
-        app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, PostsConfiguration config, DatabaseContext database) =>
+        app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
             if (await database.PostContents.FindAsync(postContentId) is not { } postContent)
             {
                 return Results.NotFound(new ErrorResponse("Specified post content could not be found",  "posts.content.contentNotFound"));
             }
 
-            var contentPath = Path.Join(config.PostsFolder, "Content", postContent.ContentKey);
+            var contentPath = Path.Join(config.Value.PostsFolder, "Content", postContent.ContentKey);
             if (!File.Exists(contentPath))
             {
                 return Results.NotFound(new ErrorResponse("Specified post content could not be found",  "posts.content.contentNotFound"));
@@ -165,7 +160,7 @@ internal static partial class Program
             return Results.File(stream, postContent.ContentType, postContent.ContentKey);
         });
 
-        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, PostsConfiguration config, DatabaseContext database) =>
+        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
             var address = context.Connection.RemoteIpAddress;
             if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey)
@@ -186,7 +181,7 @@ internal static partial class Program
             }
             
             // Save data to CDN folder & create content key
-            var contentPath = Path.Join(config.PostsFolder, "Content");
+            var contentPath = Path.Join(config.Value.PostsFolder, "Content");
             if (!Directory.Exists(contentPath))
             {
                 Directory.CreateDirectory(contentPath);
@@ -225,7 +220,7 @@ internal static partial class Program
             
             // Banned content match check
             memoryStream.Seek(0L, SeekOrigin.Begin);
-            if (IsContentBanned(memoryStream, request.File.ContentType, config, database))
+            if (censor.IsContentBanned(memoryStream, request.File.ContentType))
             {
                 logger.LogTrace("Denied uploading post content {contentKey} from {address}, banned content hash match detected",
                     contentKey, address);
@@ -276,111 +271,8 @@ internal static partial class Program
             return Results.Ok();
         })
         .RequireAuthorization()
-        .RequireAuthentication(AuthenticationTypeFlags.Account | AuthenticationTypeFlags.CanvasUser)
+        .RequireAuthType(AuthTypeFlags.Account | AuthTypeFlags.CanvasUser)
         // TODO: Harden this if necessary, https://andrewlock.net/exploring-the-dotnet-8-preview-form-binding-in-minimal-apis
         .DisableAntiforgery();
-    }
-
-    private static bool IsContentBanned(Stream data, string contentType, PostsConfiguration config, DatabaseContext database)
-    {
-        const string logPrefix = "Could not check if content is banned:";
-        
-        switch (contentType)
-        {
-            case "image/gif":
-            {
-                using (var gifImage = Image.Load<Rgba32>(data))
-                {
-                    var frameCount = gifImage.Frames.Count;
-                    var maxFramesToProcess = Math.Min(config.MaxBannedContentProcessGifFrames, frameCount);
-                    var frameInterval = frameCount / maxFramesToProcess;
-                    var perceptualHash = new PerceptualHash();
-
-                    for (int i = 0; i < frameCount; i += frameInterval)
-                    {
-                        var frame = gifImage.Frames.CloneFrame(i);
-                        var frameHash = perceptualHash.Hash(frame);
-                        if (IsHashBanned(frameHash, config, database, logPrefix))
-                        {
-                            return true;
-                        }
-                    }
-                }
-                break;
-            }
-            case "image/jpeg" or "image/png" or "image/webp":
-            {
-                var perceptualHash = new PerceptualHash();
-                var contentHash = perceptualHash.Hash(data);
-                if (IsHashBanned(contentHash, config, database, logPrefix))
-                {
-                    return true;
-                }
-                break;
-            }
-            default:
-            {
-                logger.LogError("{logPrefix} Content of type {contentType} not recognised", logPrefix, contentType);
-                return false;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsHashBanned(ulong contentHash, PostsConfiguration config, DatabaseContext database, string logPrefix = "Could not check if content's hash is banned:")
-    {
-        var applicableBannedContents = database.BlockedContents.Where(content =>
-            content.HashType == ContentHashType.Perceptual && content.FileType == ContentFileType.Image);
-        foreach (var bannedContent in applicableBannedContents)
-        {
-            if (ulong.TryParse(bannedContent.Hash, out var bannedHash) && 
-                CompareHash.Similarity(contentHash, bannedHash) > config.MinBannedContentPerceptualPercent)
-            {
-                return true;
-            }
-            logger.LogWarning("{logPrefix} Content's {id}'s hash could not be parsed as ulong",
-                logPrefix, bannedContent.Id);
-        }
-        return false;
-    }
-
-    private static async Task<bool> ProbablyHasProfanity(string text)
-    {
-        const string logPrefix = "Failed to query profanity API:";
-        try
-        {
-            var content = JsonContent.Create(new { Message = text }, options: defaultJsonOptions);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            var result = await httpClient.PostAsync("https://vector.profanity.dev", content);
-            if (!result.IsSuccessStatusCode)
-            {
-                logger.LogError("{logPrefix} Status {statusCode} received", logPrefix, result.StatusCode);
-                return false;
-            }
-
-            var profanityResponse = await result.Content.ReadFromJsonAsync<ProfanityResponse>();
-            if (profanityResponse is null)
-            {
-                logger.LogError("{logPrefix} Deserialised profanity response {statusCode} received", logPrefix, result.StatusCode);
-                return false;
-            }
-            return profanityResponse.IsProfanity;
-        }
-        catch (Exception error)
-        {
-            logger.LogError("{logPrefix} {error}", logPrefix, error);
-            return false;
-        }
-    }
-
-    private static string CensorBannedUrls(string text, PostsConfiguration config)
-    {
-        return BannedUrlsRegex().Replace(text, match => 
-            {
-                var url = match.Value.Replace("https://", "").Replace("http://", "").Split('/')[0];
-                return config.PostContentAllowedDomains.Contains(url) ? match.Value : new string('*', match.Length);
-            })
-            .Trim();
     }
 }

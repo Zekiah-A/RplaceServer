@@ -1,3 +1,5 @@
+namespace HTTPOfficial.Services;
+
 public class TokenService
 {
     private readonly IHttpContextAccessor httpContextAccessor;
