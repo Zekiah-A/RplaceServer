@@ -4,7 +4,7 @@ This repo hosts a colection of server softwares intended for use with rplace.liv
 ### What's here:
  - RplaceServer (Library with base rplace server functionality that can be implemented by a server software (not for use independently))
  - TKOfficial (Official CLI server software implementation, for spinning up single canvas/instance servers)
- - HTTPOfficial (Central auth server software for rplace.live, which manages the game's global posts and accounts system (not for use independently))
+ - AuthOfficial (Central auth server software for rplace.live, which manages the game's global posts and accounts system (not for use independently))
 
 # RplaceServer
 A modular, moddable and scalable server software designed to host rplace.live canvases. Can be used standalone, GUI, or embedded inside of a client in order to allow for easy, no code self hosted game. Modular server library allows for setting up servers, and modifying game mechanics easily.
