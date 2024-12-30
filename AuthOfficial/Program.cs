@@ -254,14 +254,14 @@ internal static partial class Program
         // SMTP email sending service
         builder.Services.AddSingleton<EmailService>();
         
-        // Token service
-        builder.Services.AddSingleton<TokenService>();
+        // Token scoped service
+        builder.Services.AddScoped<TokenService>();
         
-        // Content filters / censors service
-        builder.Services.AddSingleton<CensorService>();
+        // Content filters / censors scoped service
+        builder.Services.AddScoped<CensorService>();
         
-        // Account service
-        builder.Services.AddSingleton<AccountService>();
+        // Account scoped service
+        builder.Services.AddScoped<AccountService>();
 
         // Account background hosted service
         builder.Services.AddHostedService<AccountBackgroundService>();

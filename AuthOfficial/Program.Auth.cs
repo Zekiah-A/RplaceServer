@@ -85,7 +85,7 @@ internal static partial class Program
                 Email = request.Email,
                 CreationDate = DateTime.UtcNow,
                 Status = AccountStatus.Pending,
-                SecurityStamp = GenerateSecurityStamp()
+                SecurityStamp = TokenService.GenerateSecurityStamp()
             };
             await database.Accounts.AddAsync(account);
             await database.SaveChangesAsync();
@@ -95,8 +95,8 @@ internal static partial class Program
             await email.SendVerificationEmailAsync(account.Email, verificationCode);
             
             // Generate initial JWT (limited capabilities until email is verified)
-            var (accessToken, refreshToken) = GenerateTokens(account, emailVerified: false, config);
-            await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            var (accessToken, refreshToken) = tokenService.GenerateTokens(account, emailVerified: false);
+            await tokenService.StoreRefreshTokenAsync(account, refreshToken);
             tokenService.SetTokenCookies(accessToken, refreshToken);
 
             // Send response success
@@ -127,8 +127,8 @@ internal static partial class Program
             await email.SendLoginVerificationEmailAsync(account.Email, account.Username, verificationCode);
 
             // Generate initial JWT (limited capabilities until email is verified)
-            var (accessToken, refreshToken) = GenerateTokens(account, emailVerified: false, config);
-            await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            var (accessToken, refreshToken) = tokenService.GenerateTokens(account, emailVerified: false);
+            await tokenService.StoreRefreshTokenAsync(account, refreshToken);
             tokenService.SetTokenCookies(accessToken, refreshToken);
 
             // Send response sxuccess
@@ -206,8 +206,8 @@ internal static partial class Program
             await database.SaveChangesAsync();
 
             // Generate full JWT
-            var (accessToken, refreshToken) = GenerateTokens(account, true, config);
-            await StoreRefreshTokenAsync(account, refreshToken, config, database);
+            var (accessToken, refreshToken) = tokenService.GenerateTokens(account, true);
+            await tokenService.StoreRefreshTokenAsync(account, refreshToken);
             tokenService.SetTokenCookies(accessToken, refreshToken);
 
             // Send response success
@@ -219,6 +219,19 @@ internal static partial class Program
                 emailVerified: true
             ));
         });
+
+        app.MapGet("/auth/logout", async (TokenService tokenService, HttpContext context) =>
+        {
+            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+
+            tokenService.ClearTokenCookies();
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            await context.Response.WriteAsJsonAsync(new LogoutResponse(
+                accountId
+            ));
+        })
+        .RequireAuthorization()
+        .RequireAuthType(AuthTypeFlags.Account);
 
         // Authenticate a client as a Canvas User
         app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, TokenService tokenService, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>
@@ -250,8 +263,8 @@ internal static partial class Program
             }
 
             // Generate full JWT
-            var (accessToken, refreshToken) = GenerateTokens(canvasUser, config);
-            await StoreRefreshTokenAsync(canvasUser, refreshToken, config, database);
+            var (accessToken, refreshToken) = tokenService.GenerateTokens(canvasUser);
+            await tokenService.StoreRefreshTokenAsync(canvasUser, refreshToken);
             tokenService.SetTokenCookies(accessToken, refreshToken);
 
             // Send response success
@@ -322,69 +335,6 @@ internal static partial class Program
         return null;
     }
 
-    private static (string token, string refreshToken) GenerateTokens(CanvasUser user, IOptionsSnapshot<AuthConfiguration> config)
-    {
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new("type", AuthTypeFlags.CanvasUser.ToString()),
-            new("userIntId", user.UserIntId.ToString()),
-            new("instanceId", user.InstanceId.ToString()),
-            new("securityStamp", user.SecurityStamp)
-        };
-        var token = GenerateSecurityToken(claims, config);
-        var refreshToken = GenerateRefreshToken();
-        return (new JwtSecurityTokenHandler().WriteToken(token), refreshToken);
-    }
-
-    private static (string token, string refreshToken) GenerateTokens(Account account, bool emailVerified, IOptionsSnapshot<AuthConfiguration> config)
-    {
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, account.Email),
-            new(JwtRegisteredClaimNames.Name, account.Username),
-            new("type", AuthTypeFlags.Account.ToString()),
-            new("tier", account.Tier.ToString()),
-            new("emailVerified", emailVerified.ToString()),
-            new("securityStamp", account.SecurityStamp)
-        };
-        var token = GenerateSecurityToken(claims, config);
-        var refreshToken = GenerateRefreshToken();
-        return (new JwtSecurityTokenHandler().WriteToken(token), refreshToken);
-    }
-
-    private static JwtSecurityToken GenerateSecurityToken(List<Claim> claims, IOptionsSnapshot<AuthConfiguration> config)
-    {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config.Value.JwtSecret));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
-
-        var token = new JwtSecurityToken(
-            issuer: config.Value.JwtIssuer,
-            audience: config.Value.JwtAudience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(config.Value.JwtExpirationMinutes),
-            signingCredentials: creds);
-
-        return token;
-    }
-
-    private static string GenerateRefreshToken()
-    {
-        var randomNumber = new byte[64];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomNumber);
-        return Convert.ToBase64String(randomNumber);
-    }
-
-    private static string GenerateSecurityStamp()
-    {
-        var randomNumber = new byte[32];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomNumber);
-        return Convert.ToBase64String(randomNumber);
-    }
-
     private static async Task<string> CreateVerificationCodeAsync(int accountId, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database, bool initial = false)
     {
         var code = RandomNumberGenerator.GetInt32(100_000, 999_999).ToString();
@@ -403,33 +353,5 @@ internal static partial class Program
         await database.SaveChangesAsync();
 
         return code;
-    }
-
-    private static async Task StoreRefreshTokenAsync(CanvasUser canvasUser, string refreshToken, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database)
-    {
-        var canvasUserToken = new CanvasUserRefreshToken
-        {
-            CanvasUserId = canvasUser.Id,
-            Token = refreshToken,
-            CreationDate = DateTime.UtcNow,
-            ExpirationDate = DateTime.UtcNow.AddDays(config.Value.RefreshTokenExpirationDays)
-        };
-
-        await database.CanvasUserRefreshTokens.AddAsync(canvasUserToken);
-        await database.SaveChangesAsync();
-    }
-
-    private static async Task StoreRefreshTokenAsync(Account account, string refreshToken, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database)
-    {
-        var accountToken = new AccountRefreshToken
-        {
-            AccountId = account.Id,
-            Token = refreshToken,
-            CreationDate = DateTime.UtcNow,
-            ExpirationDate = DateTime.UtcNow.AddDays(config.Value.RefreshTokenExpirationDays)
-        };
-
-        await database.AccountRefreshTokens.AddAsync(accountToken);
-        await database.SaveChangesAsync();
     }
 }

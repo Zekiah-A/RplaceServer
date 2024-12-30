@@ -31,8 +31,9 @@ public class AccountService
         
         // Purge all account data
         account.Username = "DeletedAccount#" + RandomNumberGenerator.GetInt32(0, int.MaxValue);
-        account.Email = "";
-        account.SecurityStamp = "";
+        account.Email = $"deleted{RandomNumberGenerator.GetHexString(32, true)}@rplace.live";
+        account.SecurityStamp = TokenService.GenerateSecurityStamp();
+        account.Biography = "";
         account.TwitterHandle = null;
         account.RedditHandle = null;
         account.DiscordHandle = null;

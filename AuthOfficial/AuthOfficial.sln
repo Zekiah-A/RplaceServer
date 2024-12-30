@@ -2,7 +2,7 @@
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.002.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HTTPOfficial", "HTTPOfficial.csproj", "{2CB68BD5-30BC-4FAC-8E42-93FCFE13F037}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AuthOfficial", "AuthOfficial.csproj", "{2CB68BD5-30BC-4FAC-8E42-93FCFE13F037}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

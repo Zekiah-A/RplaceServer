@@ -150,7 +150,7 @@ public class EmailService
         return $"""
             <div style="background-color: #f0f0f0;font-family: 'IBM Plex Sans', sans-serif;border-radius: 8px 8px 0px 0px;overflow: clip;height: 100%;display: flex;flex-direction: column;">
                 <div role="heading" style="background: orangered;color: white;padding: 8px;box-shadow: 0px 2px 4px #0000002b;display: flex;align-items: center;column-gap: 8px;">
-                    <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/images/rplace.png" style="background: white;border-radius: 8px;" height="56">
+                    <img src="https://raw.githubusercontent.com/rslashplace2/rslashplace2.github.io/main/favicon.png" style="background: white;border-radius: 8px;" height="56">
                     <h1 style="margin: 0px;">rplace.live: {templateName.ToSentenceCase()}</h1>
                 </div>
                 <div role="main" style="margin: 8px;flex-grow: 1;">
@@ -174,7 +174,7 @@ public class EmailService
                 <p>Someone used your email to register a new <a href="https://rplace.live" style="text-decoration: none;">rplace.live</a> account.</p>
                 <p>If that's you, then cool, your code is:</p>
                 <h1 style="background-color: #13131314;display: inline;padding: 4px;border-radius: 4px;"> {Code} </h1>
-                <p>Otherwise, you can ignore this email, we'll try not to message you again ❤️.</p>
+                <p>Otherwise, you can ignore this email, we'll try not to message you again ❤️</p>
                 <p>This code will expire in {ExpirationMinutes} minutes.</p>
             """,
         "LoginVerification" => """

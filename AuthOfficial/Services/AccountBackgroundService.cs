@@ -10,14 +10,12 @@ public class AccountBackgroundService : BackgroundService
     private readonly IServiceProvider serviceProvider;
     private readonly ILogger<AccountBackgroundService> logger;
     private readonly IOptionsMonitor<AccountConfiguration> config;
-    private readonly AccountService accountService;
 
-    public AccountBackgroundService(IServiceProvider serviceProvider, ILogger<AccountBackgroundService> logger, IOptionsMonitor<AccountConfiguration> config, AccountService accountService)
+    public AccountBackgroundService(IServiceProvider serviceProvider, ILogger<AccountBackgroundService> logger, IOptionsMonitor<AccountConfiguration> config)
     {
         this.serviceProvider = serviceProvider;
         this.logger = logger;
         this.config = config;
-        this.accountService = accountService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,6 +43,7 @@ public class AccountBackgroundService : BackgroundService
     {
         using var scope = serviceProvider.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
+        var accountService = scope.ServiceProvider.GetRequiredService<AccountService>();
 
         var expirationTime = TimeSpan.FromMinutes(config.CurrentValue.UnverifiedAccountExpiryMinutes);
         var now = DateTime.UtcNow;
