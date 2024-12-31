@@ -34,25 +34,29 @@ public class DatabaseContext : DbContext
         {
             // Primary key            
             entity.HasKey(account => account.Id);
-            
-            // Unique
+
+            // Unique & Indexes
             entity
                 .HasIndex(account => account.Username)
                 .IsUnique();
             entity
                 .HasIndex(account => account.Email)
                 .IsUnique();
+            entity
+                .HasIndex(account => account.Status);
 
             // Badges, Many : One
             entity
                 .HasMany(account => account.Badges)
                 .WithOne(badge => badge.Owner)
-                .HasForeignKey(badge => badge.OwnerId);
+                .HasForeignKey(badge => badge.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
             // Post author accounts, Many : One 
             entity
                 .HasMany(account => account.Posts)
                 .WithOne(post => post.AccountAuthor)
-                .HasForeignKey(post => post.AccountAuthorId);
+                .HasForeignKey(post => post.AccountAuthorId)
+                .OnDelete(DeleteBehavior.Restrict);
             // Linked users, One : Many
             entity
                 .HasMany(account => account.LinkedUsers)
@@ -80,17 +84,46 @@ public class DatabaseContext : DbContext
                 .IsRequired();
         });
 
+        modelBuilder.Entity<Forum>(entity =>
+        {
+            // Primary key
+            entity.HasKey(forum => forum.Id);
+
+            entity
+                .HasIndex(forum => forum.VanityName)
+                .IsUnique();
+            entity
+                .Property(forum => forum.VanityName)
+                .IsRequired();
+
+            entity.HasMany(forum => forum.Posts)
+                .WithOne(post => post.Forum)
+                .HasForeignKey(post => post.ForumId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<Post>(entity =>
         {
             // Primary key
             entity
                 .HasKey(post => post.Id);
 
+            // Indexes
+            entity
+                .HasIndex(post => post.CreationDate);
+            entity
+                .HasIndex(post => post.Upvotes);
+            entity
+                .HasIndex(post => post.Downvotes);
+
             // Post contents, One : Many
             entity
                 .HasMany(post => post.Contents)
                 .WithOne(content => content.Post)
                 .HasForeignKey(content => content.PostId);
+            entity
+                .Navigation(post => post.Contents)
+                .AutoInclude();
         });
 
         modelBuilder.Entity<Instance>(entity =>
@@ -98,10 +131,13 @@ public class DatabaseContext : DbContext
             // Primary key
             entity.HasKey(instance => instance.Id);
             
-            // Unique
+            // Unique & Required
             entity
                 .HasIndex(instance => instance.VanityName)
                 .IsUnique();
+            entity
+                .Property(instance => instance.VanityName)
+                .IsRequired();
 
             // Canvas Users, One : Many
             entity
