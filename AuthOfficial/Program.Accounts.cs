@@ -3,6 +3,7 @@ using AuthOfficial.ApiModel;
 using AuthOfficial.DataModel;
 using AuthOfficial.Services;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 
 namespace AuthOfficial;
 
@@ -20,7 +21,7 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.forbidden"));
+                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.get.forbidden"));
                 return;
             }
             
@@ -29,7 +30,7 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Specified account does not exist", "account.notFound"));
+                    new ErrorResponse("Specified account does not exist", "accounts.notFound"));
                 return;
             }
 
@@ -37,10 +38,10 @@ internal static partial class Program
             await context.Response.WriteAsJsonAsync(account);
         })
         .RequireAuthorization()
-        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireAuthType(AuthType.Account)
         .RequireClaims(ClaimTypes.NameIdentifier, "tier");
         
-        app.MapPatch("/accounts/{identifier}/profile", async (string identifier, IValidator<ProfileUpdateRequest> validator, ProfileUpdateRequest profileUpdate, HttpContext context, CensorService censor, DatabaseContext database) =>
+        app.MapPatch("/accounts/profiles/{identifier}", async (string identifier, IValidator<ProfileUpdateRequest> validator, ProfileUpdateRequest profileUpdate, HttpContext context, CensorService censor, DatabaseContext database) =>
         {
             var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
 
@@ -59,9 +60,10 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status400BadRequest;
                 await context.Response.WriteAsJsonAsync(new ErrorResponse(
-                    "Specified profile update was invalid", 
-                    "account.profile.invalidUpdate",
+                    "Specified profile details was invalid", 
+                    "accounts.profile.update.invalidDetails",
                     validationResult.ToDictionary()));
+                return;
             }
 
             // Update fields if provided
@@ -88,7 +90,7 @@ internal static partial class Program
             context.Response.StatusCode = StatusCodes.Status200OK;
         })
         .RequireAuthorization()
-        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireAuthType(AuthType.Account)
         .RequireClaims(ClaimTypes.NameIdentifier);
 
         app.MapDelete("/accounts/{identifier}", async (string identifier, HttpContext context, AccountService accountService, DatabaseContext database) =>
@@ -101,7 +103,7 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.forbidden"));
+                    new ErrorResponse("You are forbidden from accessing this account's details", "accounts.delete.forbidden"));
                 return;
             }
 
@@ -113,7 +115,7 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Specified account does not exist", "account.delete.notFound"));
+                    new ErrorResponse("Specified account does not exist", "accounts.notFound"));
                 return;
             }
 
@@ -121,19 +123,31 @@ internal static partial class Program
             context.Response.StatusCode = StatusCodes.Status200OK;
         })
         .RequireAuthorization()
-        .RequireAuthType(AuthTypeFlags.Account)
+        .RequireAuthType(AuthType.Account)
         .RequireClaims(ClaimTypes.NameIdentifier, "tier");
         
-        app.MapGet("/profiles/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
+        app.MapGet("/accounts/profiles/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
         {
-            var account = await database.Accounts.FindAsync(id);
+            var account = await database.Accounts
+                .Include(account => account.Badges)
+                .FirstOrDefaultAsync(account => account.Id == id);
             if (account is null)
             {
-                return Results.NotFound(new ErrorResponse("Specified profile does not exist",
-                    "account.profile.notFound"));
+                return Results.NotFound(
+                    new ErrorResponse("Specified profile does not exist", "profiles.notFound"));
             }
 
-            var profile = account.ToProfile();
+            var profile = new ProfileResponse
+            {
+                Id = account.Id,
+                Username = account.Username,
+                DiscordHandle = account.DiscordHandle,
+                TwitterHandle = account.TwitterHandle,
+                RedditHandle = account.RedditHandle,
+                PixelsPlaced = account.PixelsPlaced,
+                CreationDate = account.CreationDate,
+                Badges = account.Badges.ToList()
+            };
             return Results.Ok(profile);
         });
     }

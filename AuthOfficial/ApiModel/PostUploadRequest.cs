@@ -2,15 +2,13 @@ namespace AuthOfficial.ApiModel;
 
 public class PostUploadRequest
 {
-    public LinkageSubmission? CanvasUser { get; set; }
-    public int? AccountId { get; set; }
+    public int ForumId { get; set; }
     public string Title { get; set; }
     public string Description { get; set; }
 
-    public PostUploadRequest(LinkageSubmission? canvasUser, int? accountId, string title, string description)
+    public PostUploadRequest(int forumId, string title, string description)
     {
-        CanvasUser = canvasUser;
-        AccountId = accountId;
+        ForumId = forumId;
         Title = title;
         Description = description;
     }

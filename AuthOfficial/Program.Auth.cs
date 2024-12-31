@@ -231,7 +231,7 @@ internal static partial class Program
             ));
         })
         .RequireAuthorization()
-        .RequireAuthType(AuthTypeFlags.Account);
+        .RequireAuthType(AuthType.Account);
 
         // Authenticate a client as a Canvas User
         app.MapPost("/auth/link", async (LinkageSubmission request, HttpContext context, TokenService tokenService, IOptionsSnapshot<AuthConfiguration> config, DatabaseContext database) =>

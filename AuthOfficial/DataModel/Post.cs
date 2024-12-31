@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AuthOfficial.Authorization;
 
 namespace AuthOfficial.DataModel;
 
@@ -11,25 +12,28 @@ public class Post
     public int Downvotes { get; set; }
     public DateTime CreationDate { get; set; }
     public bool HasSensitiveContent { get; set; }
+    public DateTime? LastEdited { get; set; }
 
-	// ContentUploadKey should never be exposed in the API - Handle carefully
+    // Forum id
+    public int ForumId { get; set; }
     [JsonIgnore]
-    public string? ContentUploadKey { get; set; }
+    // Navigation property to post-containing forum
+    public Forum Forum { get; set; }
 
     // Navigation property to post contents
     public List<PostContent> Contents { get; set; } = [];
 
     // Either canvas user or Author is used depending on if post was created
     // under a global auth server account or a linked user
-    public int? CanvasUserId { get; set; }
+    public int? CanvasUserAuthorId { get; set; }
     // Navigation property to canvas user
     [JsonIgnore]
-    public CanvasUser? CanvasUser { get; set; }
+    public CanvasUser? CanvasUserAuthor { get; set; }
 
-    public int? AccountId { get; set; }
+    public int? AccountAuthorId { get; set; }
     // Navigation property to account owner
     [JsonIgnore]
-    public Account? Account { get; set; }
+    public Account? AccountAuthor { get; set; }
 
     public Post() { }
 

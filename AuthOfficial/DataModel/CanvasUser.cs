@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AuthOfficial.Authorization;
 
 namespace AuthOfficial.DataModel;
 
@@ -15,7 +16,7 @@ public class CanvasUser
     public List<Post> Posts { get; set; } = [];
 
     public int InstanceId { get; set; }
-    // Navigation property to linked instance
+    // Navigation property to parent instance
     [JsonIgnore]
     public Instance Instance { get; set; } = null!;
 

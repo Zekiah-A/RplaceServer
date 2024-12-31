@@ -4,7 +4,7 @@ namespace AuthOfficial.DataModel;
 /// Exists as a stopgap to prevent Account being directly cast to profile
 /// (which could yield a security risk if the contents are serialised).
 /// </summary>
-public abstract class ProfileBase
+public class ProfileResponse
 {
     // Must be unique
     public int Id { get; set; }

@@ -77,7 +77,7 @@ public class TokenService
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new("type", AuthTypeFlags.CanvasUser.ToString()),
+            new("type", AuthType.CanvasUser.ToString()),
             new("userIntId", user.UserIntId.ToString()),
             new("instanceId", user.InstanceId.ToString()),
             new("securityStamp", user.SecurityStamp)
@@ -94,7 +94,7 @@ public class TokenService
             new(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, account.Email),
             new(JwtRegisteredClaimNames.Name, account.Username),
-            new("type", AuthTypeFlags.Account.ToString()),
+            new("type", AuthType.Account.ToString()),
             new("tier", account.Tier.ToString()),
             new("emailVerified", emailVerified.ToString()),
             new("securityStamp", account.SecurityStamp)

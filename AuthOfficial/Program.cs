@@ -13,27 +13,29 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
+using CensorCore;
+using WatsonWebsocket;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using AuthOfficial.ApiModel;
 using AuthOfficial.Configuration;
 using AuthOfficial.DataModel;
 using AuthOfficial.Middlewares;
 using AuthOfficial.Services;
 using AuthOfficial.Validation;
-using CensorCore;
-using FluentValidation;
-using FluentValidation.AspNetCore;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.EntityFrameworkCore;
-using WatsonWebsocket;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using AuthOfficial.Authorization;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AuthOfficial;
 
@@ -85,21 +87,6 @@ internal static partial class Program
                 Version = Configuration.Config.CurrentVersion,
                 // TODO: Consider migrating instances to authenticate themselves with JWTs
                 InstanceKey = RandomNumberGenerator.GetHexString(64, true),
-                DefaultInstances =
-                [
-                    new Instance("server.rplace.live", true)
-                    {
-                        VanityName = "canvas1",
-                        FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
-                        Legacy = true
-                    },
-                    new Instance("server.rplace.live/testws", true)
-                    {
-                        VanityName = "placetest",
-                        FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
-                        Legacy = true
-                    }
-                ],
                 ServerConfiguration = new ServerConfiguration
                 {
                     Origin = "https://rplace.live",
@@ -108,6 +95,45 @@ internal static partial class Program
                     UseHttps = false,
                     CertPath = "PATH_TO_CA_CERT",
                     KeyPath = "PATH_TO_CA_KEY",
+                },
+                DatabaseConfiguration = new DatabaseConfiguration
+                {
+                    DefaultInstances =
+                    [
+                        new Instance("server.rplace.live", true)
+                        {
+                            Id = 1,
+                            VanityName = "canvas1",
+                            FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
+                            Legacy = true
+                        },
+                        new Instance("server.rplace.live/testws", true)
+                        {
+                            Id = 2,
+                            VanityName = "placetest",
+                            FileServerLocation = "raw.githubusercontent.com/rplacetk/canvas1/main",
+                            Legacy = true
+                        }
+                    ],
+                    DefaultForums =
+                    [
+                        new Forum()
+                        {
+                            Id = 1,
+                            VanityName = "canvas1",
+                            Title = "Canvas 1",
+                            Description = "The forum community for rplace.live's main canvas!",
+                            AssociatedInstanceId = 1
+                        },
+                        new Forum()
+                        {
+                            Id = 2,
+                            VanityName = "placetest",
+                            Title = "Test canvas",
+                            Description = "The forum community for rplace.live's test canvas!",
+                            AssociatedInstanceId = 2
+                        }
+                    ]
                 },
                 PostsConfiguration = new PostsConfiguration
                 {
@@ -300,8 +326,17 @@ internal static partial class Program
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
 
-        // Authentication service
-        builder.Services.AddAuthorization();
+        // Authorization service
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("PostAuthorPolicy", policy =>
+                policy.Requirements.Add(new PostAuthorRequirement()));
+        });
+
+        // Authorization services
+        builder.Services.AddSingleton<IAuthorizationHandler, PostAuthorizationHandler>();
+
+
         builder.Services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -404,8 +439,8 @@ internal static partial class Program
         var handler = new BodyAreaImageHandler(imgSharp, OptimizationMode.Normal);
         nudeNetAiService = AIService.Create(modelBytes, handler, false);
 
-        // Default canvas instances
-        await InsertDefaultInstancesAsync(app, config);
+        // Update database with static / default records
+        await InsertDatabaseDefaultsAsync(app, config.DatabaseConfiguration);
 
         // Shutdown and exceptions
         serverShutdownToken = new CancellationTokenSource();
@@ -428,20 +463,22 @@ internal static partial class Program
         // Map all AuthOfficial endopoints
         app.MapAuthEndpoints();
         app.MapAccountEndpoints();
-        app.MapPostEndpoints();
+        app.MapForumEndpoints();
         app.MapInstanceEndpoints();
+        app.MapPostEndpoints();
+        app.MapOverlayEndpoints();
 
         await Task.WhenAll(app.RunAsync(), wsServer.StartAsync(serverShutdownToken.Token));
         await Task.Delay(-1, serverShutdownToken.Token);
     }
 
-    private static async Task InsertDefaultInstancesAsync(WebApplication app, Configuration.Config config)
+    private static async Task InsertDatabaseDefaultsAsync(WebApplication app, DatabaseConfiguration config)
     {
         using var scope = app.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
         if (database is null)
         {
-            throw new Exception("Couldn't insert default instances, db was null");
+            throw new Exception("Couldn't insert database defaults: Database was null");
         }
 
         foreach (var defaultInstance in config.DefaultInstances)
@@ -449,6 +486,14 @@ internal static partial class Program
             if (!await database.Instances.AnyAsync(instance => instance.VanityName == defaultInstance.VanityName))
             {
                 database.Instances.Add(defaultInstance);
+            }
+        }
+
+        foreach (var defaultForum in config.DefaultForums)
+        {
+            if (!await database.Instances.AnyAsync(forum => forum.VanityName == defaultForum.VanityName))
+            {
+                database.Forums.Add(defaultForum);
             }
         }
 

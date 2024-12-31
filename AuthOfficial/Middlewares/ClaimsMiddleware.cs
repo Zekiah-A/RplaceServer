@@ -26,7 +26,7 @@ public class ClaimsMiddleware
                 {
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     await context.Response.WriteAsJsonAsync(
-                        new ErrorResponse("Required claim " + claimType + " was not present in the provided access token", "missingClaims"));
+                        new ErrorResponse("Required claim " + claimType + " was not present in the provided access token", "missingClaims", claimType));
                     return;
                 }
             }

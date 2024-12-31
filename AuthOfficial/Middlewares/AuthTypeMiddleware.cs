@@ -24,19 +24,19 @@ public class AuthTypeMiddleware
         if (authMetadata != null)
         {
             var typeClaim = context.User.Claims.FirstOrDefault(claim => claim.Type == "type");
-            
             if (typeClaim is null)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Invalid auth type", "invalidAuthType"));
+                    new ErrorResponse("Required claim type was not present in the provided access token", "missingClaims", "type"));
                 return;
             }
-            
-            if (Enum.TryParse<AuthTypeFlags>(typeClaim.Value, out var type) && !authMetadata.AuthTypeFlags.HasFlag(type))
+
+            if (Enum.TryParse<AuthType>(typeClaim.Value, out var type) && !authMetadata.AuthTypeFlags.HasFlag(type))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(new ErrorResponse("Unauthorized", "unauthorised"));
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Required claim type was not valid for the specified resource", "invalidClaims"));
                 return;
             }
         }

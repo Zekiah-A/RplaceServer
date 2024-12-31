@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
+using AuthOfficial.Authorization;
 
 namespace AuthOfficial.DataModel;
 
 public class Badge
+
 {
     public int Id { get; set; }
     public BadgeType Type { get; set; }

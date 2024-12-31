@@ -17,7 +17,7 @@ public static class Extensions
         return builder;
     }
 
-    public static TBuilder RequireAuthType<TBuilder>(this TBuilder builder, AuthTypeFlags authTypeFlags) where TBuilder : IEndpointConventionBuilder
+    public static TBuilder RequireAuthType<TBuilder>(this TBuilder builder, AuthType authTypeFlags) where TBuilder : IEndpointConventionBuilder
     {
         builder.Add(endpointBuilder =>
         {

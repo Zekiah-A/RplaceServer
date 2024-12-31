@@ -1,3 +1,11 @@
 namespace AuthOfficial.ApiModel;
 
-public record PostContentRequest(string ContentUploadKey, IFormFile File);
+public class PostContentRequest
+{
+    public IFormFile File { get; set; }
+
+    public PostContentRequest(IFormFile file)
+    {
+        File = file;
+    }
+}

@@ -1,7 +1,7 @@
 namespace AuthOfficial;
 
 [Flags]
-public enum AuthTypeFlags
+public enum AuthType
 {
     Account = 0,
     CanvasUser = 1

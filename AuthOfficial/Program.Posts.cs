@@ -1,9 +1,12 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using AuthOfficial.ApiModel;
 using AuthOfficial.Configuration;
 using AuthOfficial.DataModel;
 using AuthOfficial.Services;
+using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -11,11 +14,7 @@ using Microsoft.Extensions.Options;
 namespace AuthOfficial;
 
 internal static partial class Program
-{
-    // /posts/upload
-    [GeneratedRegex(@"^\/posts\/upload\/*$")]
-    private static partial Regex PostUploadEndpointRegex();
-    
+{    
     private static void MapPostEndpoints(this WebApplication app)
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
@@ -54,7 +53,7 @@ internal static partial class Program
             }
             if (authorId.HasValue)
             {
-                query = query.Where(post => post.AccountId == authorId);
+                query = query.Where(post => post.AccountAuthorId == authorId);
             }
             if (!string.IsNullOrEmpty(keyword))
             {
@@ -81,26 +80,97 @@ internal static partial class Program
             return Results.Ok(post);
         });
 
-        app.MapPost("/posts/upload", async ([FromBody] PostUploadRequest submission, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
+        app.MapPatch("/posts/{id:int}", async (int id, IValidator<PostUpdateRequest> validator, PostUpdateRequest request, HttpContext context, CensorService censor, IAuthorizationService authorizationService, DatabaseContext database) =>
         {
-            var userId = context.User.FindFirst("AccountId")?.Value;
-            var canvasUserId = context.User.FindFirst("CanvasUserId")?.Value;
-
-            if (userId is null && canvasUserId is null)
+            if (await database.Posts.FindAsync(id) is not { } post)
             {
-                // new ErrorResponse("Authentication required", "post.upload.unauthorized")
-                return Results.Unauthorized();
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Specified post does not exist", "posts.notFound"));
+                return;
             }
 
-            if (submission.Title.Length is < 1 or > 64)
+            // Determine if user has governing rights over post
+            var result = await authorizationService.AuthorizeAsync(context.User, id, "PostAuthorPolicy");
+            if (!result.Succeeded)
             {
-                return Results.BadRequest(
-                    new ErrorResponse("Post title should be between 1-64 characters long", "post.upload.badTitleLength"));
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("You are forbidden from editing this post", "posts.update.forbidden"));
+                return;
             }
-            if (submission.Description.Length is > 360)
+
+            // Validate new submission
+            var validationResult = await validator.ValidateAsync(request);
+            if (!validationResult.IsValid)
             {
-                return Results.BadRequest(
-                    new ErrorResponse("Post description can not be longer than 360 characters", "post.upload.badDescriptionLength"));
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(new ErrorResponse(
+                    "Specified post details were invalid", 
+                    "posts.update.invalidDetails",
+                    validationResult.ToDictionary()));
+                return;
+            }
+
+            if (request.Title is not null)
+            {
+                post.Title = censor.CensorBanned(request.Title);
+            }
+            if (request.Description is not null)
+            {
+                post.Description = censor.CensorBanned(request.Description);
+            }
+            post.LastEdited = DateTime.UtcNow;
+            await database.SaveChangesAsync();
+
+            context.Response.StatusCode = StatusCodes.Status201Created;
+            return;
+        })
+        .RequireAuthType(AuthType.Account | AuthType.CanvasUser)
+        .RequireClaims(ClaimTypes.NameIdentifier);
+
+
+        app.MapDelete("/posts/{id:int}", async (int id, HttpContext context, IAuthorizationService authorizationService, DatabaseContext database) =>
+        {
+            if (await database.Posts.FindAsync(id) is not { } post)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Specified post does not exist", "posts.notFound"));
+                return;
+            }
+
+            // Determine if user has governing rights over post
+            var result = await authorizationService.AuthorizeAsync(context.User, id, "PostAuthorPolicy");
+            if (!result.Succeeded)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("You are forbidden from deleting this post", "posts.delete.forbidden"));
+                return;
+            }
+
+            // TODO: Delete post
+            throw new NotImplementedException("Post deletion is not yet implemented!");
+        })
+        .RequireAuthType(AuthType.Account | AuthType.CanvasUser)
+        .RequireClaims(ClaimTypes.NameIdentifier);
+
+        app.MapPost("/posts", async (IValidator<PostUploadRequest> validator, PostUploadRequest submission, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
+        {
+            var user = context.User;
+            var authId = user.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var authType = user.Claims.FindFirstAs<AuthType>("type");
+
+            var validationResult = await validator.ValidateAsync(submission);
+            if (!validationResult.IsValid)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(new ErrorResponse(
+                    "Specified post details were invalid", 
+                    "posts.create.invalidDetails",
+                    validationResult.ToDictionary()));
+                return;
             }
 
             var newPost = new Post(submission.Title, submission.Description)
@@ -110,13 +180,13 @@ internal static partial class Program
                 CreationDate = DateTime.Now.ToUniversalTime(),
             };
 
-            if (userId is not null)
+            if (authType == AuthType.Account)
             {
-                newPost.AccountId = int.Parse(userId);
+                newPost.AccountAuthorId = authId;
             }
-            else if (canvasUserId is not null)
+            else if (authType == AuthType.CanvasUser)
             {
-                newPost.CanvasUserId = int.Parse(canvasUserId);
+                newPost.CanvasUserAuthorId = authId;
             }
 
             // Spam filtering
@@ -129,19 +199,18 @@ internal static partial class Program
                 newPost.HasSensitiveContent = true;
             }
 
-            // If client also wanted to upload content with this post, we give the post key, which gives them
-            // temporary permission to upload the content to the CDN.
-            var uploadKey = RandomNumberGenerator.GetHexString(64, true);
-            newPost.ContentUploadKey = uploadKey;
-
             await database.Posts.AddAsync(newPost);
             await database.SaveChangesAsync();
 
-            return Results.Ok(new { PostId = newPost.Id, ContentUploadKey = uploadKey });
+            context.Response.StatusCode = StatusCodes.Status201Created;
+            await context.Response.WriteAsJsonAsync(
+                new PostCreateResponse(newPost.Id));
+            return;
         })
         .RequireAuthorization()
         //.RateLimit(TimeSpan.FromSeconds(config.PostLimitSeconds))
-        .RequireAuthType(AuthTypeFlags.Account | AuthTypeFlags.CanvasUser);
+        .RequireAuthType(AuthType.Account | AuthType.CanvasUser)
+        .RequireClaims(ClaimTypes.NameIdentifier);
 
         app.MapGet("/posts/contents/{postContentId:int}", async (int postContentId, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
@@ -160,24 +229,38 @@ internal static partial class Program
             return Results.File(stream, postContent.ContentType, postContent.ContentKey);
         });
 
-        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
+        app.MapPost("/posts/{id:int}/contents", async (int id, [FromForm] PostContentRequest request, HttpContext context, IAuthorizationService authorizationService, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
-            var address = context.Connection.RemoteIpAddress;
-            if (await database.Posts.FirstOrDefaultAsync(post => post.ContentUploadKey == request.ContentUploadKey)
-                is not { } pendingPost)
+            var pendingPost = await database.Posts.Include(post => post.Contents).FirstOrDefaultAsync(post => post.Id == id);
+            if (await database.Posts.FindAsync(id) is not { } post)
             {
-                return Results.Unauthorized();
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Specified post does not exist", "posts.notFound"));
+                return;
             }
-            if (pendingPost.ContentUploadKey is null)
+
+            var user = context.User;
+            var authId = user.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var authType = user.Claims.FindFirstAs<AuthType>("type");
+
+            // Determine if user has governing rights over post
+            var result = await authorizationService.AuthorizeAsync(context.User, id, "PostAuthorPolicy");
+            if (!result.Succeeded)
             {
-                return Results.Unauthorized();
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("You are forbidden from uploading content to this post", "posts.content.upload.forbidden"));
+                return;
             }
 
             // Limit stream length to 5MB to prevent excessively large uploads
             if (context.Request.ContentLength > 5_000_000)
             {
-                return Results.UnprocessableEntity(new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)",
-                    "posts.content.tooLarge"));
+                context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Provided content length was larger than maximum allowed size (5mb)", "posts.content.upload.tooLarge"));
+                return;
             }
             
             // Save data to CDN folder & create content key
@@ -196,13 +279,13 @@ internal static partial class Program
             };
             if (extension is null)
             {
-                logger.LogInformation("Client {address} denied content upload for invalid content type.", address);
-                return Results.UnprocessableEntity(
-                    new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.invalidType"));
+                context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("File was not of valid type 'image/gif, image/jpeg, image/png, image/webp'", "post.content.upload.invalidType"));
+                return;
             }
 
             // Explicitly ensure that contents are fetched from navigation property
-            await database.Entry(pendingPost).Collection(post => post.Contents).LoadAsync();
             string contentKey;
             string contentFilePath;
             do
@@ -217,37 +300,43 @@ internal static partial class Program
             await using var memoryStream = new MemoryStream();
             await request.File.CopyToAsync(memoryStream);
             await memoryStream.FlushAsync();
-            
+
             // Banned content match check
             memoryStream.Seek(0L, SeekOrigin.Begin);
             if (censor.IsContentBanned(memoryStream, request.File.ContentType))
             {
-                logger.LogTrace("Denied uploading post content {contentKey} from {address}, banned content hash match detected",
-                    contentKey, address);
-                return Results.Forbid();
+                var address = context.Connection.RemoteIpAddress;
+                logger.LogInformation(
+                    "Client {authType} {authId} ({address}) blocked from uploading content for post {id} to {contentKey}, banned content hash match detected",
+                    authType, authId, address, id, contentKey);
+
+                context.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+                await context.Response.WriteAsJsonAsync(
+                    new ErrorResponse("Provided file was not valid", "post.content.upload.invalidFile"));
+                return;
             }
-            
+
             // Content filters
             try
             {
-                var result = await nudeNetAiService.RunModel(memoryStream.ToArray());
-                if (result is null)
+                var nudeNetResult = await nudeNetAiService.RunModel(memoryStream.ToArray());
+                if (nudeNetResult is null)
                 {
-                    logger.LogWarning("Error running CensorCore model on post content {contentKey}, result was null",
+                    logger.LogWarning("Couuldn't run CensorCore model on post content {contentKey}: result was null",
                         contentKey);
                 }
                 else
                 {
-                    if (result.Results.Count > 0)
+                    if (nudeNetResult.Results.Count > 0)
                     {
                         pendingPost.HasSensitiveContent = true;
                     }
 
-                    var session = result.Session;
+                    var session = nudeNetResult.Session;
                     if (session is not null)
                     {
-                        logger.LogTrace("Ran CensorCore on post content {contentKey}, {Image} {Tensor} {Model} from {address}",
-                            contentKey, session.ImageLoadTime, session.TensorLoadTime, session.ModelRunTime, address);
+                        logger.LogTrace("Ran CensorCore on post content {contentKey}, {Image} {Tensor} {Model}",
+                            contentKey, session.ImageLoadTime, session.TensorLoadTime, session.ModelRunTime);
                     }
                 }
             }
@@ -256,7 +345,7 @@ internal static partial class Program
                 logger.LogError("Error running CensorCore model on post content {contentKey}, {exception}",
                     contentKey, exception);
             }
-            
+
             // Save to file
             memoryStream.Seek(0, SeekOrigin.Begin);
             await using var fileStream = File.OpenWrite(contentFilePath);
@@ -264,14 +353,17 @@ internal static partial class Program
             fileStream.SetLength(0);
             await memoryStream.CopyToAsync(fileStream);
             await memoryStream.FlushAsync();
-            
+
+            // Store new content in database
             var postContent = new PostContent(contentKey, request.File.ContentType, id);
             await database.PostContents.AddAsync(postContent);
             await database.SaveChangesAsync();
-            return Results.Ok();
+            
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            return;
         })
         .RequireAuthorization()
-        .RequireAuthType(AuthTypeFlags.Account | AuthTypeFlags.CanvasUser)
+        .RequireAuthType(AuthType.Account | AuthType.CanvasUser)
         // TODO: Harden this if necessary, https://andrewlock.net/exploring-the-dotnet-8-preview-form-binding-in-minimal-apis
         .DisableAntiforgery();
     }

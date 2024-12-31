@@ -2,9 +2,9 @@ namespace AuthOfficial.Metadatas;
 
 internal class AuthTypeMetadata
 {
-    public AuthTypeFlags AuthTypeFlags { get; }
+    public AuthType AuthTypeFlags { get; }
 
-    public AuthTypeMetadata(AuthTypeFlags authTypeFlags)
+    public AuthTypeMetadata(AuthType authTypeFlags)
     {
         AuthTypeFlags = authTypeFlags;
     }

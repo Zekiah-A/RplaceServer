@@ -9,8 +9,8 @@ public class Config
 
     //  Instance & worker configurations
     public string InstanceKey { get; init; }
-    public List<Instance> DefaultInstances { get; set; }
 
+    public DatabaseConfiguration DatabaseConfiguration { get; init; }
     public ServerConfiguration ServerConfiguration { get; init; }
     public PostsConfiguration PostsConfiguration { get; init; }
     public AccountConfiguration AccountConfiguration { get; init; }

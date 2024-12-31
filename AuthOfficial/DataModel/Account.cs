@@ -1,8 +1,31 @@
 using System.Text.Json.Serialization;
 namespace AuthOfficial.DataModel;
 
-public class Account : ProfileBase
+public class Account
 {
+    // Profile
+
+    // Must be unique
+    public int Id { get; set; }
+    // Must be unique
+    public string Username { get; set; } = null!;
+
+    // Customisable
+    public string? DiscordHandle { get; set; }
+    public string? TwitterHandle { get; set; }
+    public string? RedditHandle { get; set; }
+    public string? Biography { get; set; }
+
+    // Meta
+    public DateTime CreationDate { get; set; }
+    public int PixelsPlaced { get; set; }
+
+    // Navigation property to badges
+    public List<Badge> Badges { get; set; } = [];
+
+
+    // Private account fields
+
     // Must be unique
     public string Email { get; set; } = null!;
     public AccountTier Tier { get; set; }
@@ -50,20 +73,5 @@ public class Account : ProfileBase
         RedditHandle = null;
         PixelsPlaced = 0;
         CreationDate = creationDate;
-    }
-
-    public Profile ToProfile()
-    {
-        return new Profile
-        {
-            Id = Id,
-            Username = Username,
-            DiscordHandle = DiscordHandle,
-            TwitterHandle = TwitterHandle,
-            RedditHandle = RedditHandle,
-            PixelsPlaced = PixelsPlaced,
-            CreationDate = CreationDate,
-            Badges = Badges.ToList()
-        };
     }
 }

@@ -17,6 +17,7 @@ public class DatabaseContext : DbContext
     public DbSet<CanvasUser> CanvasUsers { get; set; } = null!;
     
     public DbSet<Badge> Badges { get; set; } = null!;
+    public DbSet<Forum> Forums { get; set; } = null!;
     public DbSet<Post> Posts { get; set; } = null!;
     public DbSet<PostContent> PostContents { get; set; } = null!;
     public DbSet<BannedContent> BlockedContents { get; set; } = null!;
@@ -38,6 +39,8 @@ public class DatabaseContext : DbContext
         //    .HasKey(redditAuth => redditAuth.Id);
         modelBuilder.Entity<Post>()
             .HasKey(post => post.Id);
+        modelBuilder.Entity<Instance>()
+            .HasKey(instance => instance.Id);
         modelBuilder.Entity<Instance>()
             .HasKey(instance => instance.Id);
         modelBuilder.Entity<Badge>()
@@ -97,8 +100,8 @@ public class DatabaseContext : DbContext
         // Post auth accounts
         modelBuilder.Entity<Account>()
             .HasMany(account => account.Posts)
-            .WithOne(post => post.Account)
-            .HasForeignKey(post => post.AccountId);
+            .WithOne(post => post.AccountAuthor)
+            .HasForeignKey(post => post.AccountAuthorId);
         // Linked users
         modelBuilder.Entity<Account>()
             .HasMany(account => account.LinkedUsers)
@@ -131,8 +134,8 @@ public class DatabaseContext : DbContext
         // Post canvas user accounts
         modelBuilder.Entity<CanvasUser>()
             .HasMany(user => user.Posts)
-            .WithOne(post => post.CanvasUser)
-            .HasForeignKey(post => post.CanvasUserId);
+            .WithOne(post => post.CanvasUserAuthor)
+            .HasForeignKey(post => post.CanvasUserAuthorId);
 
         // Expiration date
         modelBuilder.Entity<AccountPendingVerification>()

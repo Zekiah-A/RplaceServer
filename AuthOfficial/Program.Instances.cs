@@ -57,12 +57,6 @@ internal static partial class Program
             return Results.Ok(canvasUserResponse);
         });
         
-        app.MapGet("/instances/overlays/{id:int}", async (int id, DatabaseContext database) =>
-        {
-            // TODO: Query canvas server for their list of overlays
-            throw new NotImplementedException();
-        });
-
         app.MapGet("/instances/{instanceId:int}/overlays", async (int instanceId, int id, DatabaseContext database) =>
         {
             // TODO: Query canvas server for their list of overlays
