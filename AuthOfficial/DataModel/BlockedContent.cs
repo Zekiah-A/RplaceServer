@@ -1,6 +1,6 @@
 namespace AuthOfficial.DataModel;
 
-public class BannedContent
+public class BlockedContent
 {
     public int Id { get; set; }
     
@@ -13,9 +13,9 @@ public class BannedContent
     public int? ModeratorId { get; set; } = null!;
     public Account? Moderator { get; set; } = null!;
     
-    public BannedContent() { }
+    public BlockedContent() { }
 
-    public BannedContent(string hash, ContentHashType hashType, ContentFileType fileType,
+    public BlockedContent(string hash, ContentHashType hashType, ContentFileType fileType,
         string reason, DateTime? date, int? moderatorId = null)
     {
         Hash = hash;
