@@ -366,6 +366,8 @@ internal static partial class Program
         
         // Validation service
         builder.Services.AddScoped<IValidator<ProfileUpdateRequest>, ProfileUpdateRequestValidator>();
+        builder.Services.AddScoped<IValidator<PostUpdateRequest>, PostUpdateRequestValidator>();
+        builder.Services.AddScoped<IValidator<PostUploadRequest>, PostUploadRequestValidator>();
         builder.Services.AddFluentValidationAutoValidation();
 
         var app = builder.Build();

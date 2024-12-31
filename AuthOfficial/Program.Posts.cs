@@ -80,7 +80,7 @@ internal static partial class Program
             return Results.Ok(post);
         });
 
-        app.MapPatch("/posts/{id:int}", async (int id, IValidator<PostUpdateRequest> validator, PostUpdateRequest request, HttpContext context, CensorService censor, IAuthorizationService authorizationService, DatabaseContext database) =>
+        app.MapPatch("/posts/{id:int}", async (int id, IValidator<PostUpdateRequest> validator, [FromBody] PostUpdateRequest request, HttpContext context, CensorService censor, IAuthorizationService authorizationService, DatabaseContext database) =>
         {
             if (await database.Posts.FindAsync(id) is not { } post)
             {
@@ -156,7 +156,7 @@ internal static partial class Program
         .RequireAuthType(AuthType.Account | AuthType.CanvasUser)
         .RequireClaims(ClaimTypes.NameIdentifier);
 
-        app.MapPost("/posts", async (IValidator<PostUploadRequest> validator, PostUploadRequest submission, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
+        app.MapPost("/posts", async (IValidator<PostUploadRequest> validator, [FromBody] PostUploadRequest submission, HttpContext context, CensorService censor, IOptionsSnapshot<PostsConfiguration> config, DatabaseContext database) =>
         {
             var user = context.User;
             var authId = user.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
