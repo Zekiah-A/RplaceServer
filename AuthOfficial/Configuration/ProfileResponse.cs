@@ -1,4 +1,6 @@
-namespace AuthOfficial.DataModel;
+using AuthOfficial.DataModel;
+
+namespace AuthOfficial.Configuration;
 
 /// <summary>
 /// Exists as a stopgap to prevent Account being directly cast to profile
@@ -22,5 +24,5 @@ public class ProfileResponse
     public int PixelsPlaced { get; set; }
 
     // Navigation property to badges
-    public List<Badge> Badges { get; set; } = [];
+    public List<AccountBadge> Badges { get; set; } = [];
 }

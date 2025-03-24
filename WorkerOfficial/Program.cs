@@ -243,7 +243,7 @@ async void OnAuthServerDisconnected(object? sender, EventArgs args)
 {
     logger.LogInformation("Disconnected from auth server, attempting to reconnect in {reconnectTime}", authReconnectTimeout);
     await authServer.StopAsync();
-    await Task.Delay(TimeSpan.FromSeconds(authReconnectTimeout));
+    await Task.Delay(authReconnectTimeout);
     await authServer.StartAsync();
 }
 
@@ -285,7 +285,8 @@ void OnAuthServerMessageReceived(object? sender, MessageReceivedEventArgs args)
             var width = packet.ReadUInt();
             var height = packet.ReadUInt();
             var cooldownMs = packet.ReadUInt();
-            var gameData = GameData.CreateBuilder()
+            
+            var gameData = IGameDataBuilder<GameData>.CreateBuilder()
                 .ConfigureCanvas(options =>
                 {
                     options.BoardWidth = width;
@@ -303,13 +304,13 @@ void OnAuthServerMessageReceived(object? sender, MessageReceivedEventArgs args)
                 {
                     options.CreateBackups = true;
                     options.CanvasFolder = Path.Combine(instanceDirectory, "Canvases");
-                    options.UseDatabase = true;
                     options.BackupFrequencyS = TimeSpan.FromMinutes(15).Seconds;
                     options.StaticResourcesFolder = Path.Combine(instanceDirectory, "StaticData");
                     options.SaveDataFolder = Path.Combine(instanceDirectory, "SaveData");
                     options.TimelapseLimitPeriodS = 900;
                     options.TimelapseEnabled = false;
-                });
+                })
+                .Build();
             var serverData = new ServerData(id, socketPort, webPort);
 
             // Set up the new instance server software data files

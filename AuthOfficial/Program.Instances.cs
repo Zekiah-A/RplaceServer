@@ -53,7 +53,7 @@ internal static partial class Program
 
             var instanceUserLastJoined = DateTimeOffset.FromUnixTimeMilliseconds(instanceUser.LastJoined).DateTime;
             var canvasUserResponse = new CanvasUserResponse(canvasUser.Id, canvasUser.UserIntId, canvasUser.InstanceId,
-                canvasUser.AccountId, instanceUser.ChatName, instanceUserLastJoined, instanceUser.PixelsPlaced, instanceUser.PlayTimeSeconds);
+                canvasUser.LinkedAccountId, instanceUser.ChatName, instanceUserLastJoined, instanceUser.PixelsPlaced, instanceUser.PlayTimeSeconds);
             return Results.Ok(canvasUserResponse);
         });
         

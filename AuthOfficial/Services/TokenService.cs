@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using AuthOfficial.Configuration;
 using AuthOfficial.DataModel;
 using Microsoft.Extensions.Options;
@@ -13,13 +14,18 @@ public class TokenService
 {
     private readonly IHttpContextAccessor httpContextAccessor;
     private readonly IOptionsMonitor<AuthConfiguration> config;
+    private readonly JsonSerializerOptions jsonOptions;
     private readonly DatabaseContext database;
-    
+
     public TokenService(IHttpContextAccessor httpContextAccessor, IOptionsMonitor<AuthConfiguration> config, DatabaseContext database)
     {
         this.httpContextAccessor = httpContextAccessor;
         this.config = config;
         this.database = database;
+        jsonOptions = new JsonSerializerOptions()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
     }
 
     public void SetTokenCookies(string accessToken, string refreshToken)
@@ -76,10 +82,10 @@ public class TokenService
     {
         var claims = new List<Claim>
         {
+            new(JwtRegisteredClaimNames.Typ, AuthType.CanvasUser.ToString()),
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new("type", AuthType.CanvasUser.ToString()),
-            new("userIntId", user.UserIntId.ToString()),
             new("instanceId", user.InstanceId.ToString()),
+            new("userIntId", user.UserIntId.ToString()),
             new("securityStamp", user.SecurityStamp)
         };
         var token = GenerateSecurityToken(claims);
@@ -89,14 +95,20 @@ public class TokenService
 
     public (string token, string refreshToken) GenerateTokens(Account account, bool emailVerified)
     {
+        var linkedUsers = database.CanvasUsers
+            .Where(user =>user.LinkedAccountId == account.Id)
+            .Select(user => new JwtLinkedUser(user.Id, user.InstanceId, user.UserIntId))
+            .ToList();
+
         var claims = new List<Claim>
         {
+            new(JwtRegisteredClaimNames.Typ, AuthType.Account.ToString()),
             new(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, account.Email),
             new(JwtRegisteredClaimNames.Name, account.Username),
-            new("type", AuthType.Account.ToString()),
+            new(JwtRegisteredClaimNames.Email, account.Email),
+            new(JwtRegisteredClaimNames.EmailVerified, emailVerified.ToString()),
+            new("linkedUsers", JsonSerializer.Serialize(linkedUsers, jsonOptions)),
             new("tier", account.Tier.ToString()),
-            new("emailVerified", emailVerified.ToString()),
             new("securityStamp", account.SecurityStamp)
         };
         var token = GenerateSecurityToken(claims);
@@ -107,14 +119,14 @@ public class TokenService
     public JwtSecurityToken GenerateSecurityToken(List<Claim> claims)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config.CurrentValue.JwtSecret));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
         var token = new JwtSecurityToken(
             issuer: config.CurrentValue.JwtIssuer,
             audience: config.CurrentValue.JwtAudience,
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(config.CurrentValue.JwtExpirationMinutes),
-            signingCredentials: creds);
+            signingCredentials: credentials);
 
         return token;
     }

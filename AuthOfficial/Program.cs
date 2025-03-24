@@ -36,13 +36,14 @@ using AuthOfficial.Services;
 using AuthOfficial.Validation;
 using AuthOfficial.Authorization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace AuthOfficial;
 
 /// <summary>
 /// Central rplace global auth server, intended to act as a backbone for global accounts, instance creation and posts.
 /// Test with:
-/// ASPNETCORE_ENVIRONMENT=development; dotnet run
+/// ASPNETCORE_ENVIRONMENT=development dotnet run
 /// </summary>
 internal static partial class Program
 {
@@ -68,7 +69,7 @@ internal static partial class Program
             Directory.CreateDirectory(logsPath);
         }
 
-        using var loggerFactory = LoggerFactory.Create(builder =>
+        var loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.AddFile(options =>
@@ -82,9 +83,9 @@ internal static partial class Program
         {
             // Create config
             logger.LogWarning("Could not find server config file, at {configPath}", configPath);
-            var defaultConfiguration = new Configuration.Config
+            var defaultConfiguration = new Config
             {
-                Version = Configuration.Config.CurrentVersion,
+                Version = Config.CurrentVersion,
                 // TODO: Consider migrating instances to authenticate themselves with JWTs
                 InstanceKey = RandomNumberGenerator.GetHexString(64, true),
                 ServerConfiguration = new ServerConfiguration
@@ -93,11 +94,12 @@ internal static partial class Program
                     Port = 8080,
                     SocketPort = 450,
                     UseHttps = false,
-                    CertPath = "PATH_TO_CA_CERT",
-                    KeyPath = "PATH_TO_CA_KEY",
+                    CertPath = "PATH-TO-CA-CERT",
+                    KeyPath = "PATH-TO-CA-KEY",
                 },
                 DatabaseConfiguration = new DatabaseConfiguration
                 {
+                    ConnectionString = "Host=localhost;Port=5432;Database=AuthOfficial;Username=authofficial;Password='YOUR-DATABASE-PASSWORD-HERE'",
                     DefaultInstances =
                     [
                         new Instance("server.rplace.live", true)
@@ -153,11 +155,11 @@ internal static partial class Program
                 },
                 EmailConfiguration = new EmailConfiguration
                 {
-                    SmtpHost = "SMTP_HOST",
+                    SmtpHost = "SMTP-HOST",
                     SmtpPort = 587,
-                    Username = "EMAIL_USERNAME",
-                    Password = "EMAIL_PASSWORD",
-                    FromEmail = "EMAIL_FROM",
+                    Username = "EMAIL-USERNAME",
+                    Password = "EMAIL-PASSWORD",
+                    FromEmail = "EMAIL-FROM",
                     FromName = "admin",
                     UseStartTls = true,
                     TimeoutSeconds = 30,
@@ -167,8 +169,8 @@ internal static partial class Program
                 AuthConfiguration = new AuthConfiguration
                 {
                     JwtSecret = RandomNumberGenerator.GetHexString(64, true),
-                    JwtIssuer = "JWT_ISSUER", // e.g https://server.rplace.live/auth
-                    JwtAudience = "WT_AUDIENCE", // e.g https://server.rplace.live/auth
+                    JwtIssuer = "JWT-ISSUER", // e.g https://server.rplace.live/auth
+                    JwtAudience = "JWT-AUDIENCE", // e.g https://server.rplace.live/auth
                     JwtExpirationMinutes = 60,
                     RefreshTokenExpirationDays = 30,
                     VerificationCodeExpirationMinutes = 15,
@@ -212,8 +214,8 @@ internal static partial class Program
             Directory.CreateDirectory(instancesPath);
         }
 
-        var configData = JsonSerializer.Deserialize<Configuration.Config>(await File.ReadAllTextAsync(configPath));
-        if (configData is null || configData.Version < Configuration.Config.CurrentVersion)
+        var configData = JsonSerializer.Deserialize<Config>(await File.ReadAllTextAsync(configPath));
+        if (configData is null || configData.Version < Config.CurrentVersion)
         {
             var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
             var oldConfigPath = $"{configPath}.{timestamp}.old";
@@ -295,7 +297,15 @@ internal static partial class Program
         // EFCore database service
         builder.Services.AddDbContext<DatabaseContext>(options =>
         {
-            options.UseSqlite("Data Source=server.db");
+            var connectionString = config.DatabaseConfiguration.ConnectionString;
+            options.UseNpgsql(connectionString);
+
+            if (builder.Environment.IsDevelopment())
+            {
+                options.UseLoggerFactory(loggerFactory)
+                    .EnableSensitiveDataLogging()
+                    .EnableDetailedErrors();
+            }
         });
         
         // Context accessor service
@@ -326,16 +336,14 @@ internal static partial class Program
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
 
-        // Authorization service
-        builder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy("PostAuthorPolicy", policy =>
-                policy.Requirements.Add(new PostAuthorRequirement()));
-        });
-
         // Authorization services
+        builder.Services.AddAuthorizationBuilder()
+            .AddPolicy("PostAuthorPolicy", policy =>
+                policy.Requirements.Add(new PostAuthorRequirement()));
         builder.Services.AddSingleton<IAuthorizationHandler, PostAuthorizationHandler>();
 
+        // https://learn.microsoft.com/en-us/aspnet/core/security/authentication/claims#claims-namespaces-default-namespaces
+        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
         builder.Services.AddAuthentication(options =>
         {
@@ -371,7 +379,7 @@ internal static partial class Program
         builder.Services.AddFluentValidationAutoValidation();
 
         var app = builder.Build();
-        
+
         // Static files middlewares
         app.UseStaticFiles();
 
@@ -490,6 +498,7 @@ internal static partial class Program
                 database.Instances.Add(defaultInstance);
             }
         }
+        await database.SaveChangesAsync();
 
         foreach (var defaultForum in config.DefaultForums)
         {
@@ -498,11 +507,9 @@ internal static partial class Program
                 database.Forums.Add(defaultForum);
             }
         }
-
         await database.SaveChangesAsync();
     }
-
-
+    
     public static X509Certificate2 LoadCertificate(string certPath, string keyPath)
     {
         var cert = X509Certificate2.CreateFromPemFile(certPath, keyPath);

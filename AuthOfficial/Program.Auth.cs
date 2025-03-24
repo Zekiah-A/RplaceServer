@@ -79,14 +79,12 @@ internal static partial class Program
             }
 
             // Create account with secure defaults
-            var account = new Account
-            {
-                Username = request.Username,
-                Email = request.Email,
-                CreationDate = DateTime.UtcNow,
-                Status = AccountStatus.Pending,
-                SecurityStamp = TokenService.GenerateSecurityStamp()
-            };
+            var securityStamp = TokenService.GenerateSecurityStamp();
+            var account = new Account(
+                request.Username,
+                request.Email,
+                securityStamp,
+                AccountTier.Bronze);
             await database.Accounts.AddAsync(account);
             await database.SaveChangesAsync();
 
@@ -222,7 +220,7 @@ internal static partial class Program
 
         app.MapGet("/auth/logout", async (TokenService tokenService, HttpContext context) =>
         {
-            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountId = context.User.Claims.FindFirstAs<int>(JwtRegisteredClaimNames.Sub);
 
             tokenService.ClearTokenCookies();
             context.Response.StatusCode = StatusCodes.Status200OK;
@@ -250,11 +248,8 @@ internal static partial class Program
             var canvasUser = await database.CanvasUsers.FirstOrDefaultAsync(user => user.UserIntId == userIntId);
             if (canvasUser is null)
             {
-                var newCanvasUser = new CanvasUser()
-                {
-                    InstanceId = request.InstanceId,
-                    UserIntId = (int) userIntId
-                };
+                var securityStamp = TokenService.GenerateSecurityStamp();
+                var newCanvasUser = new CanvasUser(request.InstanceId, (int) userIntId, securityStamp);
                 await database.CanvasUsers.AddAsync(newCanvasUser);
                 await database.SaveChangesAsync();
 

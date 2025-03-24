@@ -1,5 +1,6 @@
 using AuthOfficial.ApiModel;
 using AuthOfficial.Configuration;
+using AuthOfficial.DataModel;
 using AuthOfficial.Metadatas;
 using Microsoft.Extensions.Options;
 

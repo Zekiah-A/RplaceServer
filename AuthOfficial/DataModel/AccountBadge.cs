@@ -3,7 +3,7 @@ using AuthOfficial.Authorization;
 
 namespace AuthOfficial.DataModel;
 
-public class Badge
+public class AccountBadge
 
 {
     public int Id { get; set; }
@@ -15,9 +15,9 @@ public class Badge
     [JsonIgnore]
     public Account Owner { get; set; } = null!;
 
-    public Badge() { }
+    public AccountBadge() { }
 
-    public Badge(BadgeType type, DateTime awardDate)
+    public AccountBadge(BadgeType type, DateTime awardDate)
     {
         Type = type;
         AwardDate = awardDate;

@@ -16,4 +16,13 @@ public class Forum
 
     // Navigation property to forum posts
     public List<Post> Posts { get; set; } = [];
+
+    public Forum() { }
+
+    public Forum(string vanityName, string title, string description)
+    {
+        VanityName = vanityName;
+        Title = title;
+        Description = description;
+    }
 }

@@ -1,4 +1,4 @@
-namespace AuthOfficial.DataModel;
+namespace AuthOfficial.ApiModel;
 
 public class PostCreateResponse
 {        

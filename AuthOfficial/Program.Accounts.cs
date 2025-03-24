@@ -1,5 +1,6 @@
-using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using AuthOfficial.ApiModel;
+using AuthOfficial.Configuration;
 using AuthOfficial.DataModel;
 using AuthOfficial.Services;
 using FluentValidation;
@@ -13,7 +14,7 @@ internal static partial class Program
     {
         app.MapGet("/accounts/{identifier}", async (string identifier, HttpContext context, DatabaseContext database) =>
         {
-            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountId = context.User.Claims.FindFirstAs<int>(JwtRegisteredClaimNames.Sub);
             var accountTier = context.User.Claims.FindFirstAs<AccountTier>("tier");
 
             var targetId = identifier == "me" ? accountId : int.Parse(identifier);
@@ -39,11 +40,11 @@ internal static partial class Program
         })
         .RequireAuthorization()
         .RequireAuthType(AuthType.Account)
-        .RequireClaims(ClaimTypes.NameIdentifier, "tier");
+        .RequireClaims(JwtRegisteredClaimNames.Sub, "tier");
         
-        app.MapPatch("/accounts/profiles/{identifier}", async (string identifier, IValidator<ProfileUpdateRequest> validator, ProfileUpdateRequest profileUpdate, HttpContext context, CensorService censor, DatabaseContext database) =>
+        app.MapPatch("/accounts/{identifier}/profile", async (string identifier, IValidator<ProfileUpdateRequest> validator, ProfileUpdateRequest profileUpdate, HttpContext context, CensorService censor, DatabaseContext database) =>
         {
-            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountId = context.User.Claims.FindFirstAs<int>(JwtRegisteredClaimNames.Sub);
 
             var targetId = identifier == "me" ? accountId : int.Parse(identifier);
             var account = await database.Accounts.FindAsync(targetId);
@@ -51,7 +52,7 @@ internal static partial class Program
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
                 await context.Response.WriteAsJsonAsync(
-                    new ErrorResponse("Account not found", "account.notFound"));
+                    new ErrorResponse("Account not found", "accounts.notFound"));
                 return;
             }
 
@@ -91,11 +92,11 @@ internal static partial class Program
         })
         .RequireAuthorization()
         .RequireAuthType(AuthType.Account)
-        .RequireClaims(ClaimTypes.NameIdentifier);
+        .RequireClaims(JwtRegisteredClaimNames.Sub);
 
         app.MapDelete("/accounts/{identifier}", async (string identifier, HttpContext context, AccountService accountService, DatabaseContext database) =>
         {
-            var accountId = context.User.Claims.FindFirstAs<int>(ClaimTypes.NameIdentifier);
+            var accountId = context.User.Claims.FindFirstAs<int>(JwtRegisteredClaimNames.Sub);
             var accountTier = context.User.Claims.FindFirstAs<AccountTier>("tier");
 
             var targetId = identifier == "me" ? accountId : int.Parse(identifier);
@@ -124,17 +125,19 @@ internal static partial class Program
         })
         .RequireAuthorization()
         .RequireAuthType(AuthType.Account)
-        .RequireClaims(ClaimTypes.NameIdentifier, "tier");
+        .RequireClaims(JwtRegisteredClaimNames.Sub, "tier");
         
-        app.MapGet("/accounts/profiles/{id:int}", async (int id, HttpContext context, DatabaseContext database) =>
+        app.MapGet("/accounts/{identifier}/profile", async (string identifier, HttpContext context, DatabaseContext database) =>
         {
+            var accountId = context.User.Claims.FindFirstAs<int>(JwtRegisteredClaimNames.Sub);
+            var targetId = identifier == "me" ? accountId : int.Parse(identifier);
             var account = await database.Accounts
                 .Include(account => account.Badges)
-                .FirstOrDefaultAsync(account => account.Id == id);
+                .FirstOrDefaultAsync(account => account.Id == targetId);
             if (account is null)
             {
                 return Results.NotFound(
-                    new ErrorResponse("Specified profile does not exist", "profiles.notFound"));
+                    new ErrorResponse("Specified account does not exist", "accounts.notFound"));
             }
 
             var profile = new ProfileResponse

@@ -1,3 +1,5 @@
+using AuthOfficial.DataModel;
+
 namespace AuthOfficial.Metadatas;
 
 internal class AuthTypeMetadata

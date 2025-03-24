@@ -6,15 +6,15 @@ namespace AuthOfficial.DataModel;
 public class Post
 {
     public int Id { get; set; }
-    public string Title { get; set; }
-    public string Description { get; set; }
+    public string Title { get; set; } = null!;
+    public string Description { get; set; } = null!;
     public int Upvotes { get; set; }
     public int Downvotes { get; set; }
     public DateTime CreationDate { get; set; }
     public bool HasSensitiveContent { get; set; }
     public DateTime? LastEdited { get; set; }
 
-    // Forum id
+    // Forum Id
     public int ForumId { get; set; }
     [JsonIgnore]
     // Navigation property to post-containing forum
@@ -22,18 +22,13 @@ public class Post
 
     // Navigation property to post contents
     public List<PostContent> Contents { get; set; } = [];
+    
+    // Discriminator
+    //public PostType Type { get; set; }
 
-    // Either canvas user or Author is used depending on if post was created
-    // under a global auth server account or a linked user
-    public int? CanvasUserAuthorId { get; set; }
-    // Navigation property to canvas user
-    [JsonIgnore]
-    public CanvasUser? CanvasUserAuthor { get; set; }
-
-    public int? AccountAuthorId { get; set; }
-    // Navigation property to account owner
-    [JsonIgnore]
-    public Account? AccountAuthor { get; set; }
+    public int AuthorId { get; set; }
+    // Navigation property to post author
+    public AuthBase Author { get; set; } = null!;
 
     public Post() { }
 

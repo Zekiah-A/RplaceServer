@@ -7,8 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="SkiaSharp" Version="3.0.0-preview.2.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.0.0-preview.2.1" />
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\**">

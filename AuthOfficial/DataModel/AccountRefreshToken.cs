@@ -5,7 +5,7 @@ namespace AuthOfficial.DataModel;
 public class AccountRefreshToken
 {
     public int Id { get; set; }
-    public string Token { get; set; } = string.Empty;
+    public string Token { get; set; } = null!;
     public DateTime CreationDate { get; set; }
     public DateTime ExpirationDate { get; set; }
     public DateTime? RevokationDate { get; set; }

@@ -57,7 +57,7 @@ public class AccountService
             accountBadge.OwnerId == account.Id && accountBadge.Type == BadgeType.Veteran);
         if (veteranBadge is not null && DateTime.Now - account.CreationDate >= TimeSpan.FromDays(365))
         {
-            database.Badges.Add(new Badge(BadgeType.Veteran, DateTime.Now));
+            database.Badges.Add(new AccountBadge(BadgeType.Veteran, DateTime.Now));
         }
 
         await database.SaveChangesAsync();

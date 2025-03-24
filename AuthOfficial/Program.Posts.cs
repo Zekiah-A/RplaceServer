@@ -19,8 +19,8 @@ internal static partial class Program
     {
         app.MapGet("/posts", ([FromQuery] DateTime? sinceDate, [FromQuery] DateTime? beforeDate,
             [FromQuery] int? beforeUpvotes, [FromQuery] int? sinceUpvotes, [FromQuery] int? beforeDownvotes,
-            [FromQuery] int? sinceDownvotes, [FromQuery] int? authorId, [FromQuery] string? keyword,
-            [FromQuery] int limit, DatabaseContext database) =>
+            [FromQuery] int? sinceDownvotes, [FromQuery] int? authorId,
+            [FromQuery] string? keyword, [FromQuery] int limit, DatabaseContext database) =>
         {
             var useLimit = Math.Clamp(limit, 1, 32);
             var query = database.Posts.AsQueryable();
@@ -50,10 +50,6 @@ internal static partial class Program
             if (sinceDownvotes.HasValue)
             {
                 query = query.Where(post => post.Downvotes > beforeDownvotes.Value);
-            }
-            if (authorId.HasValue)
-            {
-                query = query.Where(post => post.AccountAuthorId == authorId);
             }
             if (!string.IsNullOrEmpty(keyword))
             {
@@ -177,21 +173,26 @@ internal static partial class Program
             {
                 Upvotes = 0,
                 Downvotes = 0,
-                CreationDate = DateTime.Now.ToUniversalTime(),
+                CreationDate = DateTime.UtcNow,
             };
 
-            if (authType == AuthType.Account)
+            // Author & authentication
+            AuthBase? author = authType switch
             {
-                newPost.AccountAuthorId = authId;
-            }
-            else if (authType == AuthType.CanvasUser)
+                AuthType.Account => await database.Accounts.FindAsync(authId),
+                AuthType.CanvasUser => await database.CanvasUsers.FindAsync(authId),
+                _ => null
+            };
+            if (author is null)
             {
-                newPost.CanvasUserAuthorId = authId;
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(new ErrorResponse(
+                    "You are not authorised to create a post", 
+                    "posts.create.unauthorised"));
+                return;
             }
-
-            // Spam filtering
-            newPost.Title = censor.CensorBanned(newPost.Title);
-            newPost.Description = censor.CensorBanned(newPost.Description);
+            newPost.Author = author;
+            newPost.AuthorId = author.Id;
             
             // Automatic sensitive content detection - (Thanks to https://profanity.dev)
             if (await censor.ProbablyHasProfanity(newPost.Title) || await censor.ProbablyHasProfanity(newPost.Description))
@@ -199,13 +200,16 @@ internal static partial class Program
                 newPost.HasSensitiveContent = true;
             }
 
+            // Spam filtering
+            newPost.Title = censor.CensorBanned(newPost.Title);
+            newPost.Description = censor.CensorBanned(newPost.Description);
+            
             await database.Posts.AddAsync(newPost);
             await database.SaveChangesAsync();
 
             context.Response.StatusCode = StatusCodes.Status201Created;
             await context.Response.WriteAsJsonAsync(
                 new PostCreateResponse(newPost.Id));
-            return;
         })
         .RequireAuthorization()
         //.RateLimit(TimeSpan.FromSeconds(config.PostLimitSeconds))

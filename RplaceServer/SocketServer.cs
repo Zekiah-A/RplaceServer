@@ -19,7 +19,7 @@ public sealed partial class SocketServer
     // Publicly modifiable runtime properties
     public Action<string>? Logger { get; set; }
     public ICaptchaGenerator? CaptchaGenerator { get; set; } = null;
-    public Dictionary<string, VipInfo> VipInfos { get; set; }  = [];
+    public Dictionary<string, VipInfo> VipInfos { get; set; } = [];
     public event EventHandler<ChatMessageEventArgs>? ChatMessageReceived;
     public event EventHandler<PixelPlacementEventArgs>? PixelPlacementReceived;
     public event EventHandler<PlayerConnectedEventArgs>? PlayerConnected;
